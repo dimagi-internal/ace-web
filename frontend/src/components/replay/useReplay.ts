@@ -62,8 +62,9 @@ export function useReplay(
   oppSlug: string,
   runId: string | null,
   stepMs: number = DEFAULT_STEP_MS,
-  /** Skills that recorded decisions — their finishes are highlight beats. */
-  decisionSkills?: ReadonlySet<string>,
+  /** Skills whose finish is worth a stop in highlights mode — they recorded
+   *  decisions or wrote a document that pops up. */
+  notableSkills?: ReadonlySet<string>,
 ): Replay {
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -124,8 +125,8 @@ export function useReplay(
     [clamp],
   );
   const highlights = useMemo(
-    () => (timeline ? highlightBeats(timeline, decisionSkills) : []),
-    [timeline, decisionSkills],
+    () => (timeline ? highlightBeats(timeline, notableSkills) : []),
+    [timeline, notableSkills],
   );
   // Where one step forward / back lands: the adjacent beat, or in highlights
   // mode the adjacent highlight.

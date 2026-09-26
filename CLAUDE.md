@@ -483,8 +483,10 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   WALKS the blocks, so a new product shows up without code; snapshot cache
   v11). The Phases screen shows them as a strip; in replay each carries
   `reveal_seq` (its producer's step_end, else its phase's last) and pops up in
-  a **Spotlight** on that beat, stays a kind-only placeholder before it, and a
-  right-rail **Flow** panel shows what the current skill took in / handed on
+  a **Spotlight** on that beat (along with any `.md` the finishing step wrote
+  that isn't already a product), stays a kind-only placeholder before it, and
+  a right-rail **Flow** chain grows a card per reached step — Inputs (↑ jumps
+  to the earlier card that made one) and Outputs (→ phases that use it) —
   from the plugin manifest's `producedBy`/`consumedBy` (the declared flow, not
   a trace). Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
   any run file in-page via `GET …/artifacts/{id}/view` — the id must belong to

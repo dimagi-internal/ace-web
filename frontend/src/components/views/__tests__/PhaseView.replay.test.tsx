@@ -145,12 +145,35 @@ describe("PhaseView in replay", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("shows the flow for the current step", () => {
+  it("grows a flow chain: the current step open with its inputs and outputs", () => {
     renderAt(replayAt(2, { spotlights: false }));
     const flow = screen.getByRole("complementary", { name: "Flow" });
-    expect(within(flow).getByText("Took in")).toBeInTheDocument();
+    expect(within(flow).getByText("Inputs")).toBeInTheDocument();
+    expect(within(flow).getByText("Outputs")).toBeInTheDocument();
     expect(within(flow).getByText(/your inputs/)).toBeInTheDocument();
-    expect(within(flow).getByText(/pdd-to-learn-app/)).toBeInTheDocument();
+    expect(within(flow).getByText("→ used in Phase 3")).toBeInTheDocument();
+    // Not reached yet: the later step has no card.
+    expect(within(flow).queryByText("pdd-to-learn-app")).not.toBeInTheDocument();
+  });
+
+  it("folds earlier steps to one line once the replay moves on", () => {
+    renderAt(replayAt(5, { spotlights: false }));
+    const flow = screen.getByRole("complementary", { name: "Flow" });
+    const earlier = within(flow).getByRole("button", { name: /idea-to-pdd/ });
+    expect(earlier).toHaveAttribute("aria-expanded", "false");
+    expect(within(earlier).getByText("1 in · 1 out")).toBeInTheDocument();
+    expect(within(flow).getByRole("button", { name: /pdd-to-learn-app/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  it("pops up the markdown a step wrote alongside what it built", () => {
+    renderAt(replayAt(2));
+    const spotlight = screen.getByRole("dialog", { name: /Just built/ });
+    // PDD product first, then the step's own idea-to-pdd.md as a second tab.
+    expect(within(spotlight).getByText("1 of 2", { exact: false })).toBeInTheDocument();
+    expect(within(spotlight).getByRole("button", { name: "idea-to-pdd.md" })).toBeInTheDocument();
   });
 
   it("lands a decision only once its skill has finished", () => {

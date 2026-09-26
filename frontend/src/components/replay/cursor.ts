@@ -5,6 +5,7 @@ import type {
   LadderStep,
   ReplayProduct,
 } from "@/api/replay";
+import type { Artifact, Step } from "@/api/types.ws";
 
 /**
  * The step cursor — which beat of the run the replay is showing.
@@ -126,14 +127,31 @@ export function phasesFinishedAt(timeline: DemoTimeline, beatIndex: number): Set
 }
 
 /**
+ * The markdown documents a step wrote — the other thing, besides products,
+ * worth popping up as a step finishes (an app's build summary, the chatbot's
+ * QA transcript, an eval report). Files already shown as products are left
+ * to the product pop-up rather than shown twice.
+ */
+export function stepDocuments(
+  step: Step | undefined,
+  alreadyShown: ReadonlySet<string> = new Set(),
+): Artifact[] {
+  if (!step) return [];
+  return step.artifacts.filter(
+    (a) => /\.(md|markdown)$/i.test(a.name || a.path) && !alreadyShown.has(a.drive_file_id),
+  );
+}
+
+/**
  * The beats worth stopping on when the presenter wants to move fast: every
- * phase start, and every finish that revealed a product, failed, or recorded
- * decisions. Ascending. The final beat is always included so Play ends on
- * the finished run.
+ * phase start, and every finish that revealed a product, failed, or belongs
+ * to a notable skill (one that recorded decisions or wrote a document).
+ * Ascending. The final beat is always included so Play ends on the finished
+ * run.
  */
 export function highlightBeats(
   timeline: DemoTimeline,
-  decisionSkills: ReadonlySet<string> = new Set(),
+  notableSkills: ReadonlySet<string> = new Set(),
 ): number[] {
   const total = timeline.events.length;
   const revealing = new Set((timeline.products ?? []).map((p) => revealIndexOf(p, total)));
@@ -142,7 +160,7 @@ export function highlightBeats(
     if (e.kind === "phase_start") out.push(i);
     else if (
       e.kind === "step_end" &&
-      (revealing.has(i) || stepFailed(e) || (e.skill != null && decisionSkills.has(e.skill)))
+      (revealing.has(i) || stepFailed(e) || (e.skill != null && notableSkills.has(e.skill)))
     ) {
       out.push(i);
     }
