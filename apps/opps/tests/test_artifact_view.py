@@ -32,7 +32,8 @@ class _Drive:
 
     def get_content(self, file_id, mime_type, *, export_as=None):
         self.calls.append(("content", file_id, export_as))
-        return FileContent(content=f"# body {file_id}\\+", content_type=export_as or "text/plain")
+        body = f"\\# body {file_id}\\+" if export_as else f"body {file_id}"
+        return FileContent(content=body, content_type=export_as or "text/plain")
 
     def export_bytes(self, file_id, export_mime):
         self.calls.append(("export", file_id, export_mime))
@@ -86,12 +87,14 @@ def test_run_folder_file_is_allowed():
 # ─── representation ─────────────────────────────────────────────────
 
 
-def test_prose_doc_is_markdown_passed_through_verbatim():
+def test_prose_doc_is_markdown_with_drives_escapes_undone():
+    """ACE writes markdown TEXT into Docs; the export escapes it (\\#, \\*\\*).
+    Left in, the renderer shows a PDD as raw `## Archetype`."""
     drive = _Drive()
     view = artifact_view.render(drive, artifact_view.resolve(
         drive, _snapshot([_art("a1", "pdd.md", DOC)]), "a1"))
     assert view.content_type.startswith("text/markdown")
-    assert view.body.endswith(b"\\+")  # escapes are the renderer's job
+    assert view.body == b"# body a1+"
     assert drive.calls == [("content", "a1", "text/markdown")]
 
 

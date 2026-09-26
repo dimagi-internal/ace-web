@@ -19,8 +19,8 @@ interface Props {
  * The PDD, the apps, the Connect opportunity and the training deck used to
  * be filenames inside an expanded skill row; this puts them at the top of
  * the screen. In a replay, a product the cursor hasn't reached yet is a
- * dashed placeholder showing only its KIND ("CommCare app") — its real name
- * is content the run hadn't produced yet, so it isn't shown until it has.
+ * dashed icon of its KIND (hover: "CommCare app") — its real name is content
+ * the run hadn't produced yet, so it isn't shown until it has.
  */
 export function ProductsStrip({ products, isRevealed, justRevealed }: Props) {
   const viewer = useViewer();
@@ -36,28 +36,35 @@ export function ProductsStrip({ products, isRevealed, justRevealed }: Props) {
         const meta = kindMeta(p.kind);
         const revealed = !isRevealed || isRevealed(p);
         const fresh = justRevealed?.has(p.id) ?? false;
+        if (!revealed) {
+          // Not built yet: just its kind's icon — enough to show what's
+          // coming without a row of identical "Document" chips.
+          return (
+            <span
+              key={p.id}
+              role="img"
+              aria-label={`${meta.label} — not built yet`}
+              title={`${meta.label} — not built yet at this point in the run`}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-border/70 text-muted-foreground/50"
+            >
+              <meta.icon className="h-3 w-3" aria-hidden />
+            </span>
+          );
+        }
         return (
           <button
             key={p.id}
             type="button"
-            disabled={!revealed}
             onClick={() => viewer?.open({ type: "product", product: p })}
-            title={
-              revealed
-                ? `${meta.label} — click to open`
-                : `${meta.label} — not built yet at this point in the run`
-            }
+            title={`${meta.label} — click to open`}
             className={cn(
-              "inline-flex max-w-[260px] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all duration-500",
-              revealed
-                ? "border-border bg-card text-foreground hover:border-primary/60 hover:bg-primary/5"
-                : "cursor-default border-dashed border-border/70 bg-transparent text-muted-foreground/60",
+              "inline-flex max-w-[260px] items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground transition-all duration-500 hover:border-primary/60 hover:bg-primary/5",
               fresh && "border-primary bg-primary/10 ring-2 ring-primary/40",
             )}
           >
-            <meta.icon className={cn("h-3.5 w-3.5 shrink-0", revealed && "text-primary")} aria-hidden />
+            <meta.icon className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
             <span className="truncate">
-              {revealed ? <Glossed text={p.title} /> : meta.label}
+              <Glossed text={p.title} />
             </span>
           </button>
         );

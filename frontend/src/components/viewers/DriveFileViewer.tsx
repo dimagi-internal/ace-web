@@ -5,6 +5,7 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { PatientLoader } from "@/components/opps/LoadingStates";
 import { parseFrontmatter } from "@/lib/frontmatter";
 
+import { PdfSlides } from "./PdfSlides";
 import { loadView, type ViewResult } from "./viewCache";
 
 interface Props {
@@ -14,6 +15,8 @@ interface Props {
   driveLink?: string | null;
   /** Height for the embedded media (PDF, video). */
   mediaHeight?: string;
+  /** How to count a PDF's pages — "Slide" for a deck. */
+  pdfUnit?: "Slide" | "Page";
 }
 
 /**
@@ -24,7 +27,7 @@ interface Props {
  * so it needs no knowledge of which skill made it — the same component opens
  * a PDD, a training deck and a device-walk screenshot.
  */
-export function DriveFileViewer({ url, driveLink, mediaHeight = "70vh" }: Props) {
+export function DriveFileViewer({ url, driveLink, mediaHeight = "70vh", pdfUnit = "Page" }: Props) {
   const [result, setResult] = useState<ViewResult | null>(null);
   const [nonce, setNonce] = useState(0);
 
@@ -105,14 +108,7 @@ export function DriveFileViewer({ url, driveLink, mediaHeight = "70vh" }: Props)
         </pre>
       );
     case "pdf":
-      return (
-        <iframe
-          src={result.objectUrl}
-          title={result.name ?? "Document"}
-          className="w-full rounded border border-border bg-white"
-          style={{ height: mediaHeight }}
-        />
-      );
+      return <PdfSlides src={result.objectUrl} unit={pdfUnit} maxHeight={mediaHeight} />;
     case "image":
       return (
         <img

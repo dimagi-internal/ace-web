@@ -28,8 +28,9 @@ describe("ProductsStrip", () => {
     render(<ProductsStrip products={PRODUCTS} isRevealed={(p) => p.id === "pdd"} />);
     expect(screen.getByText("Built so far · 1/2")).toBeInTheDocument();
     expect(screen.queryByText("Turmeric — FLW Training")).not.toBeInTheDocument();
-    const placeholder = screen.getByRole("button", { name: /CommCare app/ });
-    expect(placeholder).toBeDisabled();
+    // An icon of its kind, not a clickable chip.
+    expect(screen.getByRole("img", { name: "CommCare app — not built yet" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /CommCare app/ })).not.toBeInTheDocument();
   });
 
   it("renders nothing for a run with no products", () => {
