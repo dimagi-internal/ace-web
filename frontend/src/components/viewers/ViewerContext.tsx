@@ -86,7 +86,7 @@ export function ViewerProvider({
   const skillLabel = useCallback(
     (skill: string | null | undefined) => {
       if (!skill) return null;
-      return steps.find((s) => s.skill_name === skill)?.display_name || skill;
+      return steps.find((s) => s.skill_name === skill)?.display_name || humanizeSkill(skill);
     },
     [steps],
   );
@@ -178,4 +178,22 @@ export function ViewerHeading({ target, eyebrow }: { target: ViewerTarget; eyebr
       </div>
     </div>
   );
+}
+
+const SKILL_ACRONYMS = new Set(["ace", "pdd", "qa", "ocs", "llo", "flw", "hq", "ux", "faq", "uat", "ddd"]);
+
+/** A readable name for a skill that isn't a row in this run (a paired QA or
+ *  eval skill, the orchestrator): `idea-to-pdd-qa` → "Idea to PDD QA". */
+export function humanizeSkill(slug: string): string {
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w, i) =>
+      SKILL_ACRONYMS.has(w.toLowerCase())
+        ? w.toUpperCase()
+        : i === 0
+          ? w[0].toUpperCase() + w.slice(1)
+          : w,
+    )
+    .join(" ");
 }

@@ -3,7 +3,7 @@ import { MessageCircle } from "lucide-react";
 import type { Artifact, RunProduct, Step } from "@/api/types.ws";
 import { Glossed } from "@/components/glossary/Glossed";
 
-import { DriveFileViewer, OpenLink } from "./DriveFileViewer";
+import { DriveFileViewer } from "./DriveFileViewer";
 import { kindMeta } from "./productKinds";
 
 /** What a viewer needs to know about the run it is showing. */
@@ -46,6 +46,7 @@ export function ProductBody({ product, run, mediaHeight, onTalk }: Props) {
           url={run.viewUrl(product.file_id)}
           driveLink={product.url}
           mediaHeight={mediaHeight}
+          pdfUnit={product.kind === "deck" ? "Slide" : "Page"}
         />
       </div>
     );
@@ -76,18 +77,15 @@ export function ProductBody({ product, run, mediaHeight, onTalk }: Props) {
               ))}
             </dl>
           )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {product.url && <OpenLink href={product.url} label={meta.openLabel} />}
-            {product.chatbot && onTalk && (
-              <button
-                type="button"
-                onClick={() => onTalk(product.chatbot!)}
-                className="inline-flex items-center gap-1 rounded border border-primary/50 bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/20"
-              >
-                <MessageCircle className="h-3 w-3" /> Talk to it
-              </button>
-            )}
-          </div>
+          {product.chatbot && onTalk && (
+            <button
+              type="button"
+              onClick={() => onTalk(product.chatbot!)}
+              className="mt-3 inline-flex items-center gap-1 rounded border border-primary/50 bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+            >
+              <MessageCircle className="h-3 w-3" /> Talk to it
+            </button>
+          )}
         </div>
       </div>
       {structure && (

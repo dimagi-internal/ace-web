@@ -73,7 +73,7 @@ _URL_KEYS = (
 _SKIP_KEYS = frozenset({"ace_test_user"})
 
 _ACRONYMS = {
-    "llo", "flw", "ocs", "qa", "kpi", "pdd", "hq", "faq", "uat", "rag", "ddd", "id",
+    "llo", "flw", "ocs", "qa", "kpi", "pdd", "hq", "faq", "uat", "rag", "ddd", "id", "ppi",
 }
 
 _INDEX_SEGMENT = re.compile(r"^\d+$")

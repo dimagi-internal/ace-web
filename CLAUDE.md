@@ -489,7 +489,10 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   a trace). Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
   any run file in-page via `GET …/artifacts/{id}/view` — the id must belong to
   the run (step artifact, product file id, or run-folder child); Slides come
-  back as PDF, Sheets as CSV, prose Docs as markdown. Decisions land when their
+  back as PDF (drawn slide-by-slide with pdf.js — nginx serves its `.mjs`
+  worker via a dedicated location, stock mime.types doesn't map `.mjs`),
+  Sheets as CSV, prose Docs as markdown with Drive's escapes undone (ACE
+  writes markdown TEXT into Docs; left escaped it renders as raw `##`). Decisions land when their
   skill finishes; glossary terms (`lib/glossary.ts`) get hover definitions.
 - **Run compare** (`/w/<ws>/opps/<slug>/compare?base=<run>&head=<run>`; tick two runs
   on the Runs tab): "What the later run did differently" — new decisions, decisions

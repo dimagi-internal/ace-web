@@ -4,7 +4,7 @@ The Phases screen opens what a run made — the PDD, a training deck, a sheet,
 screenshots — in place rather than sending the reader off to Drive. That needs
 each file in a shape a browser draws without a Google sign-in:
 
-    Google Doc (prose, *.md)   → markdown export, passed through VERBATIM
+    Google Doc (prose, *.md)   → markdown export, Drive's escapes undone
     Google Doc (yaml/json)     → plain text (a markdown export escapes YAML)
     Google Slides              → PDF export
     Google Sheet               → CSV
@@ -12,9 +12,14 @@ each file in a shape a browser draws without a Google sign-in:
     text/*, yaml, json         → text
     anything else              → not viewable (the viewer offers Drive)
 
-Markdown is passed through verbatim because the viewer's renderer is
-CommonMark and resolves Drive's backslash escapes itself — the same call the
-public summary makes for the build memo (docs/learnings/drive-prose-export.md).
+Drive's escapes are undone (``unescape_markdown``, as ``read_prose`` does).
+ACE writes markdown TEXT into its Docs, and the markdown export escapes every
+``#``, ``*`` and ``-`` in that text; passed through verbatim, the renderer
+resolved the escapes into literal characters and a PDD showed up as raw
+``## Archetype`` / ``**atomic-visit**`` (seen on hh-poverty-targeting/
+20260722-1341 on first deploy). The build memo is the exception the summary
+makes — a natively formatted Doc whose tables need their escaped pipes —
+and it is not what this viewer mostly opens.
 
 **Authorization.** The id must belong to the run: a step artifact, a product's
 ``file_id`` (both off the cached rich snapshot), or a file directly in the run
@@ -26,7 +31,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from apps.opps.drive_client import DriveClient
-from apps.opps.drive_export import GOOGLE_DOC_MIME, MARKDOWN_EXPORT, prose_export_mime
+from apps.opps.drive_export import (
+    GOOGLE_DOC_MIME,
+    MARKDOWN_EXPORT,
+    prose_export_mime,
+    unescape_markdown,
+)
 
 SLIDES_MIME = "application/vnd.google-apps.presentation"
 SHEET_MIME = "application/vnd.google-apps.spreadsheet"
@@ -133,7 +143,8 @@ def render(drive: DriveClient, meta: FileMeta) -> ArtifactView:
             # A Doc with a prose name, or no extension at all (a PDD titled
             # "Turmeric Market Survey"), reads as a document.
             content = drive.get_content(meta.file_id, mime, export_as=MARKDOWN_EXPORT)
-            return view(_utf8(content.content), "text/markdown; charset=utf-8")
+            body = unescape_markdown(str(content.content or ""))
+            return view(_utf8(body), "text/markdown; charset=utf-8")
         content = drive.get_content(meta.file_id, mime)
         return view(_utf8(content.content), "text/plain; charset=utf-8")
     if mime == SLIDES_MIME:
