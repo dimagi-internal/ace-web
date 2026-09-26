@@ -7,6 +7,7 @@ import {
   beatAtIndex,
   beatForSkill,
   EMPTY_REVEAL,
+  highlightBeats,
   NO_BEAT,
   revealAt,
   type Beat,
@@ -28,6 +29,11 @@ export interface Replay {
   /** Number of beats in the run. */
   readonly total: number;
   readonly playing: boolean;
+  /** Next / Prev / Play move only between highlight beats (phase starts, and
+   *  finishes that built something, failed, or decided something). */
+  readonly highlightsOnly: boolean;
+  /** Pop products up over the screen as the beat that made them lands. */
+  readonly spotlights: boolean;
   start: () => void;
   stop: () => void;
   toggle: () => void;
@@ -37,6 +43,10 @@ export interface Replay {
   /** Jump to a beat. Pauses, so whoever is driving holds where they land. */
   goTo: (index: number) => void;
   goToSkill: (skill: string) => void;
+  toggleHighlights: () => void;
+  toggleSpotlights: () => void;
+  /** While held, auto-play waits — the spotlight holds the beat it's showing. */
+  hold: (held: boolean) => void;
 }
 
 /**
@@ -52,6 +62,8 @@ export function useReplay(
   oppSlug: string,
   runId: string | null,
   stepMs: number = DEFAULT_STEP_MS,
+  /** Skills that recorded decisions — their finishes are highlight beats. */
+  decisionSkills?: ReadonlySet<string>,
 ): Replay {
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -59,6 +71,9 @@ export function useReplay(
   const [timeline, setTimeline] = useState<DemoTimeline | null>(null);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [highlightsOnly, setHighlightsOnly] = useState(false);
+  const [spotlights, setSpotlights] = useState(true);
+  const held = useRef(false);
   const warmed = useRef<string | null>(null);
 
   const total = timeline?.events.length ?? 0;
@@ -108,8 +123,22 @@ export function useReplay(
     },
     [clamp],
   );
-  const next = useCallback(() => goTo(index + 1), [goTo, index]);
-  const prev = useCallback(() => goTo(index - 1), [goTo, index]);
+  const highlights = useMemo(
+    () => (timeline ? highlightBeats(timeline, decisionSkills) : []),
+    [timeline, decisionSkills],
+  );
+  // Where one step forward / back lands: the adjacent beat, or in highlights
+  // mode the adjacent highlight.
+  const stepFrom = useCallback(
+    (i: number, dir: 1 | -1) => {
+      if (!highlightsOnly || highlights.length === 0) return i + dir;
+      if (dir === 1) return highlights.find((h) => h > i) ?? total - 1;
+      return [...highlights].reverse().find((h) => h < i) ?? 0;
+    },
+    [highlightsOnly, highlights, total],
+  );
+  const next = useCallback(() => goTo(stepFrom(index, 1)), [goTo, stepFrom, index]);
+  const prev = useCallback(() => goTo(stepFrom(index, -1)), [goTo, stepFrom, index]);
   const restart = useCallback(() => goTo(0), [goTo]);
   const goToSkill = useCallback(
     (skill: string) => {
@@ -129,20 +158,28 @@ export function useReplay(
     });
   }, [total, index]);
 
-  // Auto-play: one beat per tick, stopping on the last.
+  // Auto-play: one beat (or highlight) per tick, stopping on the last, and
+  // waiting while something holds the current beat.
   useEffect(() => {
     if (!playing || total === 0) return;
     const id = window.setInterval(() => {
+      if (held.current) return;
       setIndex((i) => {
         if (i >= total - 1) {
           setPlaying(false);
           return i;
         }
-        return i + 1;
+        return Math.min(total - 1, stepFrom(i, 1));
       });
     }, stepMs);
     return () => window.clearInterval(id);
-  }, [playing, total, stepMs]);
+  }, [playing, total, stepMs, stepFrom]);
+
+  const toggleHighlights = useCallback(() => setHighlightsOnly((h) => !h), []);
+  const toggleSpotlights = useCallback(() => setSpotlights((v) => !v), []);
+  const hold = useCallback((h: boolean) => {
+    held.current = h;
+  }, []);
 
   // Warm every step's detail once, in the background. Failures are ignored:
   // this is a cache warm, and the drawer's own fetch is the fallback.
@@ -184,6 +221,8 @@ export function useReplay(
     reveal,
     total,
     playing,
+    highlightsOnly,
+    spotlights,
     start,
     stop,
     toggle,
@@ -192,5 +231,8 @@ export function useReplay(
     restart,
     goTo,
     goToSkill,
+    toggleHighlights,
+    toggleSpotlights,
+    hold,
   };
 }

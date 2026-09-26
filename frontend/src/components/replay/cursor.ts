@@ -1,4 +1,10 @@
-import type { DemoEvent, DemoTimeline, LadderPhase, LadderStep } from "@/api/replay";
+import type {
+  DemoEvent,
+  DemoTimeline,
+  LadderPhase,
+  LadderStep,
+  ReplayProduct,
+} from "@/api/replay";
 
 /**
  * The step cursor — which beat of the run the replay is showing.
@@ -88,4 +94,59 @@ export function findLadderStep(
     if (step) return { phase, step };
   }
   return null;
+}
+
+// ─── What the run built, and when ────────────────────────────────────
+
+/**
+ * The beat at which a product appears. A product no beat places (its phase
+ * recorded no steps — a fork's carried phases) appears at the final beat:
+ * it exists by the end of the run, and nowhere earlier can honestly claim it.
+ */
+export function revealIndexOf(product: ReplayProduct, total: number): number {
+  return product.reveal_seq ?? Math.max(0, total - 1);
+}
+
+/** Products brought into being at exactly this beat — the spotlight's cue. */
+export function productsAtBeat(timeline: DemoTimeline, index: number): ReplayProduct[] {
+  const total = timeline.events.length;
+  return (timeline.products ?? []).filter((p) => revealIndexOf(p, total) === index);
+}
+
+/** Phases whose last step has finished by `beatIndex`. A decision with no
+ *  skill of its own lands when its phase does. */
+export function phasesFinishedAt(timeline: DemoTimeline, beatIndex: number): Set<string> {
+  const lastEnd = new Map<string, number>();
+  timeline.events.forEach((e, i) => {
+    if (e.kind === "step_end") lastEnd.set(e.phase, i);
+  });
+  const out = new Set<string>();
+  for (const [phase, i] of lastEnd) if (i <= beatIndex) out.add(phase);
+  return out;
+}
+
+/**
+ * The beats worth stopping on when the presenter wants to move fast: every
+ * phase start, and every finish that revealed a product, failed, or recorded
+ * decisions. Ascending. The final beat is always included so Play ends on
+ * the finished run.
+ */
+export function highlightBeats(
+  timeline: DemoTimeline,
+  decisionSkills: ReadonlySet<string> = new Set(),
+): number[] {
+  const total = timeline.events.length;
+  const revealing = new Set((timeline.products ?? []).map((p) => revealIndexOf(p, total)));
+  const out: number[] = [];
+  timeline.events.forEach((e, i) => {
+    if (e.kind === "phase_start") out.push(i);
+    else if (
+      e.kind === "step_end" &&
+      (revealing.has(i) || stepFailed(e) || (e.skill != null && decisionSkills.has(e.skill)))
+    ) {
+      out.push(i);
+    }
+  });
+  if (total > 0 && out[out.length - 1] !== total - 1) out.push(total - 1);
+  return out;
 }

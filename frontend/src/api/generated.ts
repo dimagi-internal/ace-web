@@ -190,6 +190,28 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/view": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * View a run file in-page
+         * @description A run file (step artifact or product) rendered for the in-page viewer:
+         *     markdown for prose Docs, PDF for decks, CSV for sheets, bytes for media.
+         *     The response's Content-Type is what the viewer dispatches on.
+         */
+        readonly get: operations["apps_opps_api_view_artifact"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/fork": {
         readonly parameters: {
             readonly query?: never;
@@ -5408,6 +5430,30 @@ export interface operations {
         };
     };
     readonly apps_opps_api_download_artifact: {
+        readonly parameters: {
+            readonly query?: {
+                readonly run_id?: string | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly artifact_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_opps_api_view_artifact: {
         readonly parameters: {
             readonly query?: {
                 readonly run_id?: string | null;

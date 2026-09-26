@@ -1312,6 +1312,82 @@ def download_artifact(
 
 
 # ---------------------------------------------------------------------------
+# GET /w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/view
+# docs/specs/2026-09-26-replay-show-what-it-built-design.md
+# ---------------------------------------------------------------------------
+
+
+def load_artifact_view(workspace, slug: str, artifact_id: str, *, run_id: str | None = None):
+    """A run file in the shape the in-page viewer renders.
+
+    Returns an ``artifact_view.ArtifactView``; raises the module's
+    ``ArtifactNotFound`` / ``ArtifactTooLarge`` / ``ArtifactNotViewable``.
+    Resolution runs against the CACHED rich snapshot (step artifacts +
+    product file ids), so opening a file costs its own Drive read, not a
+    cold opp load. The monkeypatch target for tests.
+    """
+    from apps.opps import artifact_view
+    from apps.opps.drive_client import get_drive_client
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    if snapshot is None:
+        raise artifact_view.ArtifactNotFound(slug)
+    if run_id and (snapshot.get("current_run") or {}).get("run_id") != run_id:
+        # The snapshot loader falls back to the latest run for an unknown id;
+        # a file must never resolve against a run other than the one named.
+        raise artifact_view.ArtifactNotFound(run_id)
+    try:
+        drive = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound as exc:
+        raise artifact_view.ArtifactNotFound(str(exc)) from exc
+    meta = artifact_view.resolve(drive, snapshot, artifact_id)
+    return artifact_view.render(drive, meta)
+
+
+@router.get(
+    "/{slug}/artifacts/{artifact_id}/view",
+    summary="View a run file in-page",
+)
+def view_artifact(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    artifact_id: Annotated[str, Path()],
+    run_id: str | None = None,
+) -> HttpResponse:
+    """A run file (step artifact or product) rendered for the in-page viewer:
+    markdown for prose Docs, PDF for decks, CSV for sheets, bytes for media.
+    The response's Content-Type is what the viewer dispatches on."""
+    from urllib.parse import quote
+
+    from apps.opps import artifact_view
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        view = load_artifact_view(workspace, slug, artifact_id, run_id=run_id)
+    except artifact_view.ArtifactNotFound as exc:
+        raise ProblemError(
+            404, "File not found in this run", type_=TYPE_NOT_FOUND, detail=str(exc),
+        ) from exc
+    except artifact_view.ArtifactTooLarge as exc:
+        raise ProblemError(
+            413, "Too large to show in the page", type_=TYPE_VALIDATION, detail=str(exc),
+        ) from exc
+    except artifact_view.ArtifactNotViewable as exc:
+        raise ProblemError(
+            415, "No in-page viewer for this file type", type_=TYPE_VALIDATION, detail=str(exc),
+        ) from exc
+    response = HttpResponse(view.body, content_type=view.content_type)
+    # Header values must be latin-1; names can carry anything.
+    response["X-Artifact-Name"] = quote(view.name)
+    if view.web_link:
+        response["X-Drive-Link"] = view.web_link
+    response["Cache-Control"] = "private, max-age=300"
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Task 2.1.13 helpers — fork opp
 # ---------------------------------------------------------------------------
 

@@ -382,6 +382,28 @@ def _phase_timings(run_state: dict[str, Any] | None) -> dict[str, dict]:
     return out
 
 
+def _phase_products(run_state: dict[str, Any] | None) -> dict[str, dict]:
+    """Pull ``{phase: products}`` out of a parsed run_state.
+
+    Only phases carrying a non-empty ``products`` mapping are returned.
+    Values are passed through as parsed; ``apps.opps.run_products`` owns
+    interpreting them.
+    """
+    if not isinstance(run_state, dict):
+        return {}
+    phases = run_state.get("phases")
+    if not isinstance(phases, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for name, block in phases.items():
+        if not isinstance(block, dict):
+            continue
+        products = block.get("products")
+        if isinstance(products, dict) and products:
+            out[str(name)] = products
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # run mapper
 # --------------------------------------------------------------------------- #
@@ -431,6 +453,7 @@ def map_run_detail(
         folder_id=folder_id,
         decisions=decisions,
         phase_timings=_phase_timings(rs),
+        phase_products=_phase_products(rs),
     )
 
 

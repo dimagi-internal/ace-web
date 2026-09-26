@@ -247,6 +247,16 @@ class DriveClient(ABC):
     def update_binary(self, file_id: str, content: bytes, mime_type: str) -> None:
         """Replace the content of an existing file with binary bytes."""
 
+    def export_bytes(self, file_id: str, export_mime: str) -> bytes:
+        """Export a Google-native file (Doc, Slides, Sheet) as raw bytes in
+        ``export_mime`` — e.g. a deck as ``application/pdf``.
+
+        Separate from :meth:`get_content`, which decodes exports to text and
+        so cannot carry a PDF. Not abstract: a client that cannot export is
+        valid, it just has no in-page viewer for these types.
+        """
+        raise NotImplementedError(f"{type(self).__name__} cannot export {export_mime}")
+
     @abstractmethod
     def get_binary(self, file_id: str) -> bytes:
         """Fetch the raw bytes of a Drive file. Unlike ``get_content`` (which
@@ -622,6 +632,11 @@ class GoogleDriveClient(DriveClient):
         self._service.files().update(
             fileId=file_id, media_body=media, supportsAllDrives=True
         ).execute()
+
+    @_drive_retry
+    def export_bytes(self, file_id: str, export_mime: str) -> bytes:
+        content = self._service.files().export(fileId=file_id, mimeType=export_mime).execute()
+        return content if isinstance(content, bytes) else str(content).encode("utf-8")
 
     @_drive_retry
     def get_binary(self, file_id: str) -> bytes:

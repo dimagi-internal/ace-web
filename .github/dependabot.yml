@@ -35,6 +35,17 @@ updates:
     allow:
       - dependency-name: canopy-ui
       - dependency-name: canopy-client
+    # No release cooldown for these two. With `cooldown` absent Dependabot
+    # waits 3 days after a release before considering it — and canopy-ui
+    # shipped 0.11.0, 0.12.0, 0.12.1 and 0.12.2 inside three days, so every
+    # daily run logged "Filtered out 4 versions due to cooldown … Latest
+    # version is 0.10.0 … No update needed" and this loop never opened a
+    # single PR. A cooldown guards against a THIRD party's bad release; these
+    # are first-party, and the automerge workflow's frontend gate is the check.
+    cooldown:
+      exclude:
+        - canopy-ui
+        - canopy-client
     groups:
       # One PR per canopy release set, so the two can never land half-upgraded.
       canopy-sdk:

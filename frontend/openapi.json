@@ -713,6 +713,71 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/view": {
+      "get": {
+        "operationId": "apps_opps_api_view_artifact",
+        "summary": "View a run file in-page",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "A run file (step artifact or product) rendered for the in-page viewer:\nmarkdown for prose Docs, PDF for decks, CSV for sheets, bytes for media.\nThe response's Content-Type is what the viewer dispatches on.",
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/opps/{slug}/fork": {
       "post": {
         "operationId": "apps_opps_api_fork_opp_endpoint",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ExternalLink, History } from "lucide-react";
 
@@ -65,10 +65,17 @@ export default function OppWorkbenchPage() {
   const costRollup = useOppCostRollup(slug, workspaceSlug);
   // Replay is started from the tab row but plays on the Phases view, so the
   // page owns it. Lazily fetched — costs nothing until someone presses it.
+  const decisions = state.kind === "loaded" ? state.snapshot.current_run.decisions : undefined;
+  const decisionSkills = useMemo(
+    () => new Set((decisions ?? []).map((d) => d.skill).filter(Boolean)),
+    [decisions],
+  );
   const replay = useReplay(
     workspaceSlug ?? "",
     slug,
     state.kind === "loaded" ? state.snapshot.current_run.run_id : null,
+    undefined,
+    decisionSkills,
   );
   const { collapsed: chatCollapsed, toggle: toggleChatCollapsed } =
     usePaneCollapsed("ace.workbench.chatPaneCollapsed");

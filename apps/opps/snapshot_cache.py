@@ -76,7 +76,12 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        a clockless replay indefinitely — the Drive files never changed,
 #        so the changes feed can't invalidate it. The CODE did.
 #        Shipped 2026-09-17.
-_KEY_VERSION = "v10"
+#   v11 — RunDetail gained ``phase_products`` (the run's typed handoffs,
+#        served as ``current_run.products`` for the Phases screen's products
+#        strip and replay spotlights). Same failure as v10 without the bump:
+#        a warm v10 entry would serve a run with no products forever.
+#        Shipped 2026-09-26.
+_KEY_VERSION = "v11"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:
