@@ -329,7 +329,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   session to `SCOPE_TOOLS`, and the in-process call runs as the visitor via
   `grant.current_delegation()` in `apps/api/auth.py`, GET-only. Registered
   today: `opp-workbench` → `opps:read` (the seven read-only opp tools, never
-  `seeded_run`). The page is BROWSER-named (an SPA has no server-rendered
+  `seeded_run`). The page is BROWSER-named — the SDK's key mode, `PAGE_MODE = "key"` + `PAGE_PATTERNS` (an SPA has no server-rendered
   route to sign), which is why a page may only ever grant reads the visitor
   could already make. **OFF until `CANOPY_CLIENT_ID` is set** (commented out
   in `deploy/aws/ace-web.cfn.yaml`); turning it on also needs an ALB rule

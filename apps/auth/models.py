@@ -45,9 +45,8 @@ class PersonalToken(models.Model):
     #: and why the column is nullable rather than defaulted — the long-lived
     #: tokens this model was built for have no expiry to invent.
     #:
-    #: Set for a token minted from a canopy on-behalf-of assertion: that one
-    #: stands for somebody who is not present, so it should outlive the answer
-    #: it was minted for by as little as possible.
+    #: Set (``create_for_user(ttl_seconds=...)``) for a token that should
+    #: outlive what it was minted for by as little as possible.
     expires_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
