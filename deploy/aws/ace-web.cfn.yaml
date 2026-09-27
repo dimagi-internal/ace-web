@@ -161,9 +161,9 @@ Resources:
             # call our MCP AS the visitor, read-only, on registered pages. OFF
             # while unset. Turning it on also needs the ALB to route
             # /.well-known/oauth-*/ace* here and canopy's `ace-web` site row to
-            # name our issuer + MCP resource — see the PR that added this.
-            # - Name: CANOPY_CLIENT_ID
-            #   Value: "https://labs.connect.dimagi.com/canopy/oauth/client.json"
+            # name our issuer + MCP resource (both done 2026-09-27).
+            - Name: CANOPY_CLIENT_ID
+              Value: "https://labs.connect.dimagi.com/canopy/oauth/client.json"
             - Name: CANOPY_PUBLIC_BASE_URL
               Value: "/canopy"
             # Programmatic runs enqueue a session-targeted canopy Turn instead of
