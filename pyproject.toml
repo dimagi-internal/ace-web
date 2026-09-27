@@ -29,6 +29,11 @@ dependencies = [
     "python-json-logger>=2.0",
     "canopy-agent-runs",
     "pyjwt[crypto]>=2.8",
+    # The canopy SDK's Python half (host grant contract v1): signs the visitor
+    # assertion and the ID-JAG, redeems the jwt-bearer grant, verifies DPoP at
+    # our MCP. Import name `canopy_sdk`; the distribution name may change, the
+    # import will not. Pinned by tag below.
+    "dimagi-canopy[django]",
 ]
 
 # The Django-free run-lifecycle core (read model + DriveRunStore) lives in the
@@ -37,6 +42,7 @@ dependencies = [
 # only on the local DriveClient Protocol, not the Google SDK.
 [tool.uv.sources]
 canopy-agent-runs = { git = "https://github.com/dimagi-internal/canopy-web.git", subdirectory = "packages/canopy_agent_runs", tag = "canopy-agent-runs-v0.1.3" }
+dimagi-canopy = { git = "https://github.com/dimagi-internal/canopy-web.git", subdirectory = "sdk/python", tag = "dimagi-canopy-v0.1.0" }
 
 [project.optional-dependencies]
 dev = [

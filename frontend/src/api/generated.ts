@@ -2307,7 +2307,14 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Token */
+        /**
+         * Token
+         * @description Mint a canopy token for the signed-in person.
+         *
+         *     `page` is the SPA path the chat is open on. On a page ace-web has
+         *     registered, the arrival also lets the agent read that page's data as you
+         *     (read-only); anywhere else it changes nothing.
+         */
         readonly post: operations["apps_canopy_api_token"];
         readonly delete?: never;
         readonly options?: never;
@@ -8179,7 +8186,9 @@ export interface operations {
     };
     readonly apps_canopy_api_token: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly page?: string;
+            };
             readonly header?: never;
             readonly path?: never;
             readonly cookie?: never;

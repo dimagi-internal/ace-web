@@ -15,6 +15,11 @@ from django.core.cache import cache
 # no pytest-compatible signature. Skip collection for it explicitly.
 collect_ignore_glob = ["apps/auth/test_login_views.py"]
 
+# The canopy SDK's conformance fixtures (canopy_client, canopy_redeem,
+# canopy_mcp_headers, …): a stand-in canopy that redeems our ID-JAGs and calls
+# our MCP exactly as the real one does. Used by tests/test_canopy_host_grant.py.
+pytest_plugins = ["canopy_sdk.conformance.pytest_plugin"]
+
 
 @pytest.fixture(autouse=True)
 def _flush_default_cache():

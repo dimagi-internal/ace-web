@@ -66,7 +66,9 @@ def test_token_exchanges_for_request_user():
         r = c.post("/api/canopy/token")
     assert r.status_code == 200
     assert r.json() == {"token": "t", "expires_at": "x", "kind": "user"}
-    ex.assert_called_once_with(user.email)
+    # No page (or the grant off) means no scopes: the arrival is exactly the
+    # assertion-only request it always was.
+    ex.assert_called_once_with(user.email, scopes=())
 
 
 @override_settings(**ENABLED)
@@ -311,17 +313,24 @@ def test_no_signing_key_is_a_clear_error_not_a_fallback(settings):
     assert exc.value.status == 503
 
 
-def test_the_visitor_token_names_the_agent_so_canopy_knows_the_tenant():
+def test_the_visitor_token_names_the_agent_so_canopy_knows_the_tenant(settings):
     """canopy-web #960: `iss` names a site only within one canopy workspace.
     Without `agent_slug`, a second workspace registering `ace-web` would make
-    every sign-in here a 409."""
+    every sign-in here a 409. And with the host grant off, the body is exactly
+    the assertion + agent — no `id_jag`."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
     from apps.canopy import client as canopy_client
 
-    with mock.patch.object(canopy_client, "_assertion", return_value="signed"), \
-            mock.patch.object(canopy_client, "_post", return_value={"token": "t"}) as post, \
-            override_settings(CANOPY_AGENT_SLUG="ace"):
+    settings.CANOPY_SIGNING_KEY = ed25519.Ed25519PrivateKey.generate().private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()).decode()
+    settings.CANOPY_BASE_URL = "https://canopy.test"
+    settings.CANOPY_AGENT_SLUG = "ace"
+    with mock.patch.object(canopy_client, "_post", return_value={"token": "t"}) as post:
         canopy_client.visitor_token("jj@dimagi.com")
 
     path, body = post.call_args.args[:2]
     assert path == "/api/auth/contact-token"
-    assert body == {"assertion": "signed", "agent_slug": "ace"}
+    assert set(body) == {"assertion", "agent_slug"} and body["agent_slug"] == "ace"

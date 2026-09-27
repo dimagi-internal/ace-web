@@ -45,6 +45,15 @@ normally.
 Per-call workspace membership and role checks still apply — the MCP tool
 operates as the token's owner.
 
+**Canopy-delegated calls (host grant).** When `CANOPY_CLIENT_ID` is set, a
+second kind of caller exists: canopy's agent acting AS a signed-in visitor,
+with `Authorization: DPoP <token>` + a `DPoP` proof. The canopy SDK's DPoP gate
+(`apps/canopy/grant.py::mcp_app`, mounted in `config/asgi.py`) verifies it,
+the `DelegatedToolScope` middleware shows and allows only the tools the token's
+scopes map to (`grant.SCOPE_TOOLS`), and the tool's in-process request runs as
+the visitor, GET-only — it is NOT forwarded as a bearer. PAT callers are
+unaffected. See CLAUDE.md "ace-web is a canopy host through the canopy SDK".
+
 CSRF is not required for Bearer-authenticated requests (stateless tokens are
 not susceptible to cross-site forgery).
 

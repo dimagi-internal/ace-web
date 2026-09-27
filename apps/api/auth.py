@@ -37,6 +37,16 @@ class DjangoSessionAuth(SessionAuth):
         return super()._get_key(request)
 
     def authenticate(self, request: HttpRequest, key: str | None) -> object | None:
+        # 0. A canopy-delegated MCP tool call (host grant). Set only inside the
+        #    MCP server's DelegatedToolScope middleware, around the in-process
+        #    request one allowed tool makes — never from anything a client
+        #    sends — so it cannot be reached over HTTP.
+        from apps.canopy.grant import current_delegation
+
+        delegated = current_delegation()
+        if delegated is not None:
+            return self._authenticate_delegated(request, delegated)
+
         # 1. Bearer-token path — checked first so the CLI tool doesn't need
         #    a session cookie.
         auth_header = request.META.get("HTTP_AUTHORIZATION", "")
@@ -68,6 +78,27 @@ class DjangoSessionAuth(SessionAuth):
                 type_=TYPE_AUTH,
                 detail="This endpoint requires an authenticated session.",
             )
+        return user
+
+    @staticmethod
+    def _authenticate_delegated(request: HttpRequest, delegated) -> object:
+        """Run AS the visitor the delegated token names, read-only.
+
+        The scope → tool map already limited which route this is; GET-only is
+        the second fence, so a scope added carelessly still cannot write. Then
+        every existing per-user rule (workspace membership) applies as it would
+        to the visitor themselves.
+        """
+        from django.contrib.auth import get_user_model
+
+        if request.method not in ("GET", "HEAD"):
+            raise ProblemError(403, "Delegated access is read-only", type_=TYPE_AUTH)
+        user = get_user_model().objects.filter(
+            email__iexact=delegated.subject, is_active=True).first()
+        if user is None:
+            raise ProblemError(401, "The delegated subject has no active account",
+                               type_=TYPE_AUTH)
+        request.user = user  # type: ignore[assignment]
         return user
 
 

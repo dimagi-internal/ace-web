@@ -5862,7 +5862,18 @@
       "post": {
         "operationId": "apps_canopy_api_token",
         "summary": "Token",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": "",
+              "title": "Page",
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -5875,6 +5886,7 @@
             }
           }
         },
+        "description": "Mint a canopy token for the signed-in person.\n\n`page` is the SPA path the chat is open on. On a page ace-web has\nregistered, the arrival also lets the agent read that page's data as you\n(read-only); anywhere else it changes nothing.",
         "tags": [
           "canopy"
         ],
