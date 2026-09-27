@@ -1,3 +1,4 @@
+from canopy_sdk.django.views import token_endpoint as canopy_grant_token_endpoint
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.urls import include, path, re_path
@@ -5,9 +6,14 @@ from django.views.generic import TemplateView
 
 from apps.api.api import api
 from apps.api.views import redoc_docs, scalar_docs
+from apps.canopy import grant as canopy_grant
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # The canopy host grant's token endpoint (RFC 7523 jwt-bearer +
+    # private_key_jwt + DPoP), straight from the canopy SDK. Refuses every
+    # grant while CANOPY_CLIENT_ID is unset. Bare Django view, ahead of Ninja.
+    path("api/canopy/oauth/token", canopy_grant_token_endpoint, name="canopy_grant_token"),
     path("api/", api.urls),
     path("api/slack/", include("apps.slack.urls")),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
@@ -32,6 +38,14 @@ urlpatterns = [
         TemplateView.as_view(template_name="index.html"),
         name="public_opp_summary",
     ),
+    # RFC 8414 / RFC 9728 discovery for the canopy host grant. These live at
+    # the SITE ROOT (the well-known segment goes before the issuer's `/ace`
+    # path), outside FORCE_SCRIPT_NAME — Django sees the path unchanged. 404
+    # while the grant is off. Must precede the SPA catch-all.
+    re_path(r"^\.well-known/oauth-authorization-server(?P<rest>/.*)?$",
+            canopy_grant.authorization_server_metadata, name="canopy_grant_as_metadata"),
+    re_path(r"^\.well-known/oauth-protected-resource(?P<rest>/.*)?$",
+            canopy_grant.protected_resource_metadata, name="canopy_grant_pr_metadata"),
     # SPA catch-all: any non-api/non-admin/non-auth/non-static/non-assets path serves
     # the React index.html. React Router handles client-side routing from there.
     # login_required ensures unauthenticated users are redirected to /auth/login/.

@@ -25,7 +25,15 @@ async function requestToken() {
   // openapi-fetch CONSUMES the body to build `data` and never clones, so
   // calling `response.json()` here throws "body stream already read" on every
   // call — the defect fixed in #749. Use the parsed `data`.
-  const { data, error, response } = await apiClient.POST("/api/canopy/token", {});
+  //
+  // `page` is where the chat is open. ace-web decides server-side what, if
+  // anything, that page lets the agent read AS this person (the canopy host
+  // grant — off unless CANOPY_CLIENT_ID is set; apps/canopy/grant.py). The
+  // browser only names the page; it can never widen what the page grants.
+  const page = typeof window === "undefined" ? "" : window.location.pathname;
+  const { data, error, response } = await apiClient.POST("/api/canopy/token", {
+    params: { query: { page } },
+  });
   if (!response.ok || error || !data) {
     throw new Error(`Failed to fetch canopy token: ${response.status}`);
   }

@@ -312,6 +312,32 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   a dead page; every user-triggered canopy call (new chat, discuss-this-step)
   surfaces its error rather than swallowing it — see
   `RecentSessionsSidebar.handleNew`'s try/catch.
+- **ace-web is a canopy host through the canopy SDK (`dimagi-canopy`, import
+  `canopy_sdk`, pinned by tag in `pyproject.toml`).** The visitor assertion
+  above is signed by `canopy_sdk.host` (same claims, same RFC 7638 `kid`, same
+  `/api/canopy/jwks`); `CANOPY_HOST` (`config/canopy_host.py`) is DERIVED from
+  the flat `CANOPY_*` settings on every read, so `override_settings` on those
+  still reaches the SDK — don't turn it into a static dict. `sub` stays the
+  lower-cased email (the SDK default is `user.pk`; changing it would orphan
+  every contact canopy stored). **The host grant** (host grant contract v1,
+  `apps/canopy/grant.py`) lets canopy's agent call our MCP AS the visitor: the
+  SPA's token mint sends `?page=<path>`, and on a page in `PAGE_SCOPES` the
+  arrival carries an ID-JAG; canopy redeems it at `/api/canopy/oauth/token`
+  (the SDK's jwt-bearer view) for a DPoP-bound token in the SDK's own
+  `canopy_host_*` tables (never `PersonalToken`); at `/api/mcp/` the SDK's
+  DPoP gate resolves it, `DelegatedToolScope` (FastMCP middleware) limits the
+  session to `SCOPE_TOOLS`, and the in-process call runs as the visitor via
+  `grant.current_delegation()` in `apps/api/auth.py`, GET-only. Registered
+  today: `opp-workbench` → `opps:read` (the seven read-only opp tools, never
+  `seeded_run`). The page is BROWSER-named (an SPA has no server-rendered
+  route to sign), which is why a page may only ever grant reads the visitor
+  could already make. **OFF until `CANOPY_CLIENT_ID` is set** (commented out
+  in `deploy/aws/ace-web.cfn.yaml`); turning it on also needs an ALB rule
+  sending `/.well-known/oauth-{authorization-server,protected-resource}/ace*`
+  to this service (RFC 8414 puts discovery at the site root; the `/ace/*` rule
+  does not match, and the CI role cannot write listener rules) and canopy's
+  `ace-web` site row to name our issuer + MCP resource. Tests:
+  `tests/test_canopy_host_grant.py`, using the SDK's conformance fixtures.
 - **ace-web's view of canopy's API is GENERATED, not hand-written.**
   `frontend/src/api/canopy-generated.ts` comes from canopy-web's own OpenAPI
   schema via `npm run gen:canopy-api` (`frontend/scripts/gen-canopy-contract.mjs`).

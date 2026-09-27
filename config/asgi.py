@@ -26,6 +26,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 django_asgi_app = get_asgi_application()
 
 from apps.api.mcp_server import build_http_app  # noqa: E402
+from apps.canopy import grant as canopy_grant  # noqa: E402
 from apps.common.channels_auth import AceSessionAuthMiddleware  # noqa: E402
 from apps.opps.routing import websocket_urlpatterns as opps_ws_urlpatterns  # noqa: E402
 from apps.presence.routing import websocket_urlpatterns as presence_ws_urlpatterns  # noqa: E402
@@ -61,6 +62,11 @@ _channels_app = ProtocolTypeRouter(
 # and prepend it to the Mount path so both environments resolve correctly.
 _SCRIPT_NAME = os.environ.get("FORCE_SCRIPT_NAME", "").rstrip("/")
 _mcp_app = build_http_app()
+# The canopy host grant: while CANOPY_CLIENT_ID is set, the canopy SDK's DPoP
+# gate sits in front of the MCP app, so canopy can call it AS a visitor with a
+# DPoP-bound token (apps/canopy/grant.py). Unset, this is the MCP app untouched.
+# The lifespan below stays on the unwrapped app.
+_mcp_mount = canopy_grant.mcp_app(_mcp_app)
 
 
 @contextlib.asynccontextmanager
@@ -94,7 +100,7 @@ async def _composed_lifespan(app):
 
 application = Router(
     routes=[
-        Mount(f"{_SCRIPT_NAME}/api/mcp", app=_mcp_app),
+        Mount(f"{_SCRIPT_NAME}/api/mcp", app=_mcp_mount),
         # Catch-all: everything else → Channels / Django
         Mount("/", app=_channels_app),
     ],

@@ -73,11 +73,22 @@ def status(request: HttpRequest) -> dict:
 
 
 @router.post("/token", response={200: CanopyTokenOut})
-def token(request: HttpRequest) -> dict:
+def token(request: HttpRequest, page: str = "") -> dict:
+    """Mint a canopy token for the signed-in person.
+
+    `page` is the SPA path the chat is open on. On a page ace-web has
+    registered, the arrival also lets the agent read that page's data as you
+    (read-only); anywhere else it changes nothing.
+    """
     if not _enabled():
         raise ProblemError(503, "canopy hosted chat is not configured", type_=TYPE_UPSTREAM)
+    # The browser names its page; what that page GRANTS is decided here, from
+    # ace-web's own registry (apps/canopy/grant.py), and is () while the host
+    # grant is off.
+    from .grant import scopes_for_page
+
     try:
-        vouched = client.visitor_token(request.user.email)
+        vouched = client.visitor_token(request.user.email, scopes=scopes_for_page(page))
     except client.CanopyError as exc:
         raise _upstream(exc) from exc
     # Pick fields explicitly rather than passing canopy's raw dict through a

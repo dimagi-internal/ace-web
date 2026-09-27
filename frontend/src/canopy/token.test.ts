@@ -61,6 +61,18 @@ describe("getCanopyToken / peekCanopyToken", () => {
     expect(peekCanopyToken()).toBe("tok-1");
   });
 
+  it("names the page the chat is open on, so the server can decide what it grants", async () => {
+    const { getCanopyToken } = await import("./token");
+    window.history.pushState({}, "", "/ace/w/team/opps/field-hep");
+    mockTokenResponse("tok-1", "2026-07-25T01:00:00.000Z");
+
+    await getCanopyToken();
+
+    expect(postMock.mock.calls[0][1]).toEqual({
+      params: { query: { page: "/ace/w/team/opps/field-hep" } },
+    });
+  });
+
   it("returns the cached token on a second call within the TTL, without a fetch", async () => {
     const { getCanopyToken } = await import("./token");
     mockTokenResponse("tok-1", "2026-07-25T01:00:00.000Z");

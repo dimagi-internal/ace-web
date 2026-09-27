@@ -43,118 +43,105 @@ def _post(path: str, payload: dict, *, bearer: str) -> dict:
         raise CanopyError(502, str(exc.reason)) from exc
 
 
+def _host_config():
+    """The canopy SDK's view of ace-web as a host (``CANOPY_HOST``, derived from
+    the flat ``CANOPY_*`` settings in ``config/canopy_host.py``)."""
+    from canopy_sdk.contract import ContractError
+    from canopy_sdk.django import conf
+    from canopy_sdk.host import HostNotConfigured
+
+    if not settings.CANOPY_SIGNING_KEY or not settings.CANOPY_APP_NAME:
+        raise CanopyError(503, "CANOPY_SIGNING_KEY and CANOPY_APP_NAME must be set")
+    try:
+        config = conf.get_host_config()
+    except HostNotConfigured as exc:
+        raise CanopyError(503, str(exc)) from exc
+    except ContractError as exc:  # a key that is not Ed25519/P-256 PEM
+        raise CanopyError(503, f"CANOPY_SIGNING_KEY is unusable: {exc.code}") from exc
+    if not config.assertions_enabled:
+        raise CanopyError(503, "CANOPY_BASE_URL and CANOPY_APP_NAME must be set")
+    return config
+
+
+def _identity(email: str) -> tuple[str, dict]:
+    """ace-web's own id for the person (their lower-cased email) and the claims
+    it vouches for. ace-web signs people in only through OAuth that verified
+    this address, and canopy resolves a verified email to an EXISTING account
+    only, at a domain ace-web's site is allowed to resolve."""
+    from .grant import subject_for
+
+    subject = subject_for(email)
+    return subject, {"email": subject, "email_verified": True}
+
+
 def _assertion(email: str) -> str:
     """A short-lived statement, signed by ace-web, that `email` is the person on
-    ace-web right now — the canopy SDK's host contract (canopy-web
-    docs/architecture/embedding-a-canopy-agent.md, step 3).
+    ace-web right now — the canopy SDK's visitor assertion (host grant contract
+    §0): ``iss`` = our site name, ``sub`` = the person, ``aud`` = canopy, 60s,
+    single-use ``jti``, ``kid`` = our key's RFC 7638 thumbprint.
 
     canopy verifies it against ace-web's PUBLIC key (Connected sites) and answers
     with either their existing canopy account or a contact. It holds nothing
     that could sign one, and it never creates an account.
     """
-    import datetime as dt
-    import uuid
+    from canopy_sdk.host import sign_visitor_assertion
 
-    import jwt
-
-    if not settings.CANOPY_SIGNING_KEY or not settings.CANOPY_APP_NAME:
-        raise CanopyError(503, "CANOPY_SIGNING_KEY and CANOPY_APP_NAME must be set")
-    now = int(dt.datetime.now(dt.UTC).timestamp())
-    email = (email or "").strip().lower()
-    return jwt.encode(
-        {
-            "iss": settings.CANOPY_APP_NAME,        # this site's name in canopy
-            "sub": email,                           # ace-web's own id for the person
-            "aud": settings.CANOPY_ASSERTION_AUDIENCE or settings.CANOPY_BASE_URL.rstrip("/"),
-            "iat": now,
-            "exp": now + 60,                        # canopy caps assertions at 120s
-            "jti": str(uuid.uuid4()),               # single use
-            "email": email,
-            # ace-web signs people in only through Google OAuth, which verified
-            # this address. canopy resolves a verified email to an EXISTING account
-            # only, at a domain ace-web's site is allowed to resolve.
-            "email_verified": True,
-        },
-        settings.CANOPY_SIGNING_KEY,
-        algorithm="EdDSA",
-        # Names WHICH key signed this, so canopy can hold two during a
-        # rotation and still pick the right one.
-        headers={"kid": active_kid()},
-    )
+    subject, claims = _identity(email)
+    return sign_visitor_assertion(_host_config(), subject, **claims)
 
 
-def _jwk_from_private(pem: str) -> dict:
-    """The PUBLIC half of a PEM private key, as a JWK with an RFC 7638 `kid`.
+def arrival(email: str, *, scopes=()) -> dict:
+    """The body ace-web POSTs to canopy's arrival endpoint.
 
-    Derived from the key rather than configured beside it: a `kid` that does
-    not change with the key gives canopy nothing to select on during a
-    rotation, and a second setting to keep in step is a second thing to get
-    wrong.
+    With ``scopes`` (a page's, from ``grant.scopes_for_page``) and the host grant
+    on, it also carries an ID-JAG naming the same person for our MCP. Without
+    either it is exactly the request it always was: an assertion plus
+    ``agent_slug``, which names the canopy TENANT this token is for — a site's
+    name is unique only within a canopy workspace (canopy-web #960), so without
+    it canopy refuses (409 ambiguous_issuer) the day a second workspace
+    registers an ``ace-web``. A failed ID-JAG never fails the arrival.
     """
-    import base64
-    import hashlib
+    from canopy_sdk.host import arrival_payload
 
-    from cryptography.hazmat.primitives import serialization
-    from jwt.algorithms import OKPAlgorithm
-
-    key = serialization.load_pem_private_key(pem.encode(), password=None)
-    jwk = OKPAlgorithm.to_jwk(key.public_key(), as_dict=True)
-    jwk.update({"use": "sig", "alg": "EdDSA"})
-    canonical = json.dumps({"crv": jwk["crv"], "kty": jwk["kty"], "x": jwk["x"]},
-                           separators=(",", ":"), sort_keys=True).encode()
-    jwk["kid"] = base64.urlsafe_b64encode(hashlib.sha256(canonical).digest()).decode().rstrip("=")
-    return jwk
+    subject, claims = _identity(email)
+    return arrival_payload(_host_config(), subject, scopes=scopes,
+                           agent_slug=settings.CANOPY_AGENT_SLUG, **claims)
 
 
 def active_kid() -> str:
-    return _jwk_from_private(settings.CANOPY_SIGNING_KEY)["kid"]
+    """The ``kid`` our assertions and ID-JAGs carry: the RFC 7638 thumbprint of
+    the live key's public half, derived from the key (never configured beside
+    it, which would be a second thing to keep in step)."""
+    return _host_config().kid
 
 
 def published_jwks() -> list[dict]:
     """Every key canopy should currently accept from us: the one we sign with,
-    plus any retired public halves still inside their rollover window.
+    plus any retired public halves still inside their rollover window
+    (``CANOPY_RETIRED_PUBLIC_KEYS``).
 
     Without the retired half, switching signer refuses every assertion already
     in flight and every one canopy checks against a cache it has not refreshed.
+    The same keys verify our ID-JAGs.
     """
-    from cryptography.hazmat.primitives import serialization
-    from jwt.algorithms import OKPAlgorithm
+    from .grant import host_config
 
-    if not settings.CANOPY_SIGNING_KEY:
-        return []
-    out = [_jwk_from_private(settings.CANOPY_SIGNING_KEY)]
-    seen = {out[0]["kid"]}
-    for pem in [p.strip() for p in (settings.CANOPY_RETIRED_PUBLIC_KEYS or "").split("|")
-                if p.strip()]:
-        try:
-            pub = serialization.load_pem_public_key(pem.encode())
-            jwk = OKPAlgorithm.to_jwk(pub, as_dict=True)
-            jwk.update({"use": "sig", "alg": "EdDSA"})
-            import base64
-            import hashlib
-            canonical = json.dumps({"crv": jwk["crv"], "kty": jwk["kty"], "x": jwk["x"]},
-                                   separators=(",", ":"), sort_keys=True).encode()
-            jwk["kid"] = base64.urlsafe_b64encode(
-                hashlib.sha256(canonical).digest()).decode().rstrip("=")
-        except Exception:  # noqa: BLE001 - a bad retired key must not hide the live one
-            continue
-        if jwk["kid"] not in seen:
-            seen.add(jwk["kid"])
-            out.append(jwk)
-    return out
+    config = host_config()
+    return config.jwks()["keys"] if config else []
 
 
-def visitor_token(email: str) -> dict:
+def visitor_token(email: str, *, scopes=()) -> dict:
     """A canopy token for the person whose command ace-web is carrying out —
     `kind` "user" when they have a canopy account (arriving as themselves),
-    "contact" otherwise. Both are first-class."""
-    # `agent_slug` names the canopy TENANT this token is for. A site's name is
-    # unique only within a canopy workspace (canopy-web #960), so without it
-    # canopy has to guess from the name alone — and refuses (409
-    # ambiguous_issuer) the day a second workspace registers an `ace-web`.
-    resp = _post("/api/auth/contact-token",
-                 {"assertion": _assertion(email), "agent_slug": settings.CANOPY_AGENT_SLUG},
-                 bearer="")
+    "contact" otherwise. Both are first-class.
+
+    Posted with ace-web's own client rather than the SDK's ``mint_contact_token``,
+    which returns only ``token`` + ``expires_at``: ace-web routes every later
+    call by ``kind``.
+    """
+    from canopy_sdk import contract
+
+    resp = _post(contract.ARRIVAL_PATH, arrival(email, scopes=scopes), bearer="")
     resp.setdefault("kind", "contact")
     return resp
 

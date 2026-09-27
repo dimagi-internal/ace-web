@@ -108,6 +108,14 @@ class _BearerPassthrough(httpx.Auth):
             return None
         if request is None:
             return None
+        # A canopy-delegated request (host grant) is NOT forwarded as a bearer:
+        # its token means nothing to Django. The tool call runs as the visitor
+        # through `apps.canopy.grant.current_delegation()` instead, set for the
+        # call's duration by the DelegatedToolScope middleware.
+        from apps.canopy.grant import principal_of
+
+        if principal_of(request) is not None:
+            return None
         auth_header = request.headers.get("authorization") or request.headers.get(
             "Authorization"
         )
@@ -236,6 +244,11 @@ def build_mcp() -> FastMCP:
         route_map_fn=_route_map_fn,
         validate_output=False,  # API returns problem+json on error; don't schema-validate
     )
+    # A canopy-delegated session (host grant) sees and calls only the tools its
+    # scopes map to; every other caller is unaffected (apps/canopy/grant.py).
+    from apps.canopy.grant import tool_scope_middleware
+
+    mcp.add_middleware(tool_scope_middleware())
 
     exposed = [
         route

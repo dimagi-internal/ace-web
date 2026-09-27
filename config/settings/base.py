@@ -56,6 +56,9 @@ INSTALLED_APPS = [
     "apps.videos.apps.VideosConfig",
     "apps.slack.apps.SlackConfig",
     "apps.canopy",
+    # The canopy SDK's host half (app label `canopy_host`): the single-use jti
+    # table and the delegated-token table behind the host grant.
+    "canopy_sdk.django",
     "apps.presence.apps.PresenceConfig",
 ]
 
@@ -311,6 +314,24 @@ CANOPY_RETIRED_PUBLIC_KEYS = env("CANOPY_RETIRED_PUBLIC_KEYS", default="").repla
 CANOPY_PUBLIC_BASE_URL = env("CANOPY_PUBLIC_BASE_URL", default="/canopy")
 CANOPY_WORKSPACE = env("CANOPY_WORKSPACE", default="connect")
 CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
+
+# --- canopy host grant (host grant contract v1, canopy SDK) -----------------------
+# Lets a canopy agent call ace-web's MCP AS the signed-in visitor, limited to the
+# read-only tools the visitor's PAGE maps to (apps/canopy/grant.py). ace-web
+# issues an ID-JAG beside the visitor assertion; canopy redeems it at our token
+# endpoint for a DPoP-bound token. OFF until CANOPY_CLIENT_ID is set: it is
+# canopy's OAuth client id — the URL of its client metadata document, e.g.
+# https://labs.connect.dimagi.com/canopy/oauth/client.json — and the ONE client
+# allowed to redeem. The other three default from ACE_PUBLIC_BASE_URL.
+CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
+CANOPY_GRANT_ISSUER = env("CANOPY_GRANT_ISSUER", default="")
+CANOPY_GRANT_RESOURCE = env("CANOPY_GRANT_RESOURCE", default="")
+CANOPY_GRANT_TOKEN_ENDPOINT = env("CANOPY_GRANT_TOKEN_ENDPOINT", default="")
+# The SDK's own setting, computed from the flat CANOPY_* settings above on every
+# read (so override_settings on any of them reaches the SDK too).
+from config.canopy_host import CanopyHostSettings  # noqa: E402
+
+CANOPY_HOST = CanopyHostSettings()
 
 # Run execution on canopy's harness (spec: canopy-web
 # docs/superpowers/specs/2026-07-26-run-execution-convergence-design.md).
