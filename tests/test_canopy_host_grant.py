@@ -136,8 +136,8 @@ def test_off_by_default_the_arrival_has_no_id_jag_even_on_a_registered_page(host
     user = User.objects.create_user(email="a@dimagi.com")
     c = Client()
     c.force_login(user)
-    with mock.patch.object(canopy_client, "_post",
-                           return_value={"token": "t", "expires_at": "x", "kind": "user"}) as post:
+    with mock.patch("canopy_sdk.host.mint_contact_token",
+                    return_value={"token": "t", "expires_at": "x", "kind": "user"}) as post:
         r = c.post(f"/api/canopy/token?page={WORKBENCH}")
     assert r.status_code == 200
     assert set(post.call_args.args[1]) == {"assertion", "agent_slug"}
@@ -173,10 +173,15 @@ def test_only_the_opp_workbench_is_a_registered_page(path, key):
 
 
 def test_the_sdk_accepts_the_registries(host_key):
-    """The SDK refuses a page naming a scope the server does not offer."""
+    """The SDK refuses a page naming a scope the server does not offer — and,
+    in key mode (an SPA: the browser names its page), any scope that is not
+    read-only."""
     from canopy_sdk.django import conf
 
-    conf.page_tokens()
+    registry = conf.page_registry()
+    assert registry.mode == "key"
+    assert registry.scopes_for("opp-workbench") == ("opps:read",)
+    assert registry.scopes_for("opps:read") == (), "a page names scopes; it cannot BE one"
 
 
 @pytest.mark.asyncio
@@ -282,8 +287,8 @@ def test_the_token_endpoint_page_param_reaches_the_arrival(grant_on):
     user = User.objects.create_user(email="alice@dimagi.com")
     c = Client()
     c.force_login(user)
-    with mock.patch.object(canopy_client, "_post",
-                           return_value={"token": "t", "expires_at": "x", "kind": "user"}) as post:
+    with mock.patch("canopy_sdk.host.mint_contact_token",
+                    return_value={"token": "t", "expires_at": "x", "kind": "user"}) as post:
         assert c.post(f"/api/canopy/token?page={WORKBENCH}").status_code == 200
         assert "id_jag" in post.call_args.args[1]
         assert c.post("/api/canopy/token?page=/ace/w/team/sessions").status_code == 200
@@ -404,7 +409,8 @@ async def test_a_bound_token_is_useless_without_its_key(grant_on, canopy_redeem,
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_dpop_request_with_a_bad_proof_is_refused_at_the_gate(grant_on, canopy_redeem):
-    app = grant.mcp_app(mock.AsyncMock())
+    inner = mock.AsyncMock()
+    app = grant.mcp_app(inner)
     sent = []
 
     async def send(message):
@@ -414,7 +420,7 @@ async def test_a_dpop_request_with_a_bad_proof_is_refused_at_the_gate(grant_on, 
              "headers": [(b"authorization", b"DPoP whatever"), (b"dpop", b"not-a-proof")]}
     await app(scope, mock.AsyncMock(), send)
     assert sent[0]["status"] == 401
-    app.app.assert_not_called()
+    inner.assert_not_called()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -436,12 +442,21 @@ async def test_personal_tokens_are_unchanged_with_the_grant_on(grant_on, workben
             assert result.structured_content["items"] == []
 
 
-def test_with_the_grant_off_the_mcp_app_is_untouched(host_key):
-    """Merging this changes nothing: no gate, no principal."""
-    import asyncio
+@pytest.mark.asyncio
+async def test_off_the_mounted_mcp_refuses_dpop_401_and_passes_bearers(host_key):
+    """The SDK's gate is installed unconditionally: with the grant off, a DPoP
+    request is a 401 (never a 500) and a PAT reaches the app with no principal."""
+    seen = []
 
-    inner = mock.AsyncMock()
-    scope = {"type": "http", "headers": [(b"authorization", b"DPoP x")]}
-    asyncio.run(grant.mcp_app(inner)(scope, None, None))
-    passed = inner.call_args.args[0]
-    assert passed["headers"] == scope["headers"] and passed[grant.PRINCIPAL_SCOPE_KEY] is None
+    async def app(scope, receive, send):
+        seen.append(scope.get(grant.PRINCIPAL_SCOPE_KEY, "missing"))
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    assert not grant.grant_enabled()
+    transport = httpx.ASGITransport(app=grant.mcp_app(app))
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as c:
+        r = await c.post("/", headers={"Authorization": "DPoP abc", "DPoP": "x.y.z"})
+        assert r.status_code == 401 and r.json()["error"] == "invalid_dpop_proof"
+        assert (await c.post("/", headers={"Authorization": "Bearer pat"})).status_code == 200
+    assert seen == [None]

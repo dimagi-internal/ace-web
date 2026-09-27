@@ -328,9 +328,79 @@ def test_the_visitor_token_names_the_agent_so_canopy_knows_the_tenant(settings):
         serialization.NoEncryption()).decode()
     settings.CANOPY_BASE_URL = "https://canopy.test"
     settings.CANOPY_AGENT_SLUG = "ace"
-    with mock.patch.object(canopy_client, "_post", return_value={"token": "t"}) as post:
+    with mock.patch("canopy_sdk.host.mint_contact_token", return_value={"token": "t"}) as mint:
         canopy_client.visitor_token("jj@dimagi.com")
 
-    path, body = post.call_args.args[:2]
-    assert path == "/api/auth/contact-token"
+    config, body = mint.call_args.args[:2]
+    assert config.canopy_base_url == "https://canopy.test"
     assert set(body) == {"assertion", "agent_slug"} and body["agent_slug"] == "ace"
+
+
+def _signing(settings):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    settings.CANOPY_SIGNING_KEY = ed25519.Ed25519PrivateKey.generate().private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()).decode()
+    settings.CANOPY_BASE_URL = "https://canopy.test"
+    settings.CANOPY_AGENT_SLUG = "ace"
+
+
+class _Resp:
+    def __init__(self, body: bytes):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self.body
+
+
+def test_the_visitor_token_carries_kind_from_the_sdk_mint(settings):
+    """ace-web routes every later call on `kind`; the SDK's mint returns it."""
+    from apps.canopy import client as canopy_client
+
+    _signing(settings)
+    sent = {}
+
+    def urlopen(request, timeout=None):
+        sent["url"] = request.full_url
+        return _Resp(b'{"token": "t", "expires_at": "x", "kind": "user"}')
+
+    with mock.patch("urllib.request.urlopen", urlopen):
+        vouched = canopy_client.visitor_token("jj@dimagi.com")
+    assert sent["url"] == "https://canopy.test/api/auth/contact-token"
+    assert vouched["kind"] == "user" and vouched["token"] == "t"
+    with mock.patch("urllib.request.urlopen", lambda r, timeout=None: _Resp(b'{"token": "t"}')):
+        assert canopy_client.visitor_token("jj@dimagi.com")["kind"] == "contact"
+
+
+def test_canopys_refusal_keeps_its_status(settings):
+    import io
+    import urllib.error
+
+    from apps.canopy import client as canopy_client
+
+    _signing(settings)
+
+    def refuse(request, timeout=None):
+        raise urllib.error.HTTPError(request.full_url, 409, "no", {},
+                                     io.BytesIO(b"ambiguous_issuer"))
+
+    with mock.patch("urllib.request.urlopen", refuse), \
+            pytest.raises(canopy_client.CanopyError) as exc:
+        canopy_client.visitor_token("jj@dimagi.com")
+    assert exc.value.status == 409
+
+    def down(request, timeout=None):
+        raise urllib.error.URLError("down")
+
+    with mock.patch("urllib.request.urlopen", down), \
+            pytest.raises(canopy_client.CanopyError) as exc:
+        canopy_client.visitor_token("jj@dimagi.com")
+    assert exc.value.status == 502

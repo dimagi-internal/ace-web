@@ -2346,32 +2346,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/canopy/on-behalf-token": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /**
-         * Trade a canopy assertion for a token acting as its subject
-         * @description Verify canopy's on-behalf-of assertion and return an ace-web token for
-         *     the person it names.
-         *
-         *     A canopy agent answering one of our users calls this once, then uses the
-         *     token as an ordinary Bearer. Every existing per-user rule in ace-web then
-         *     applies to what it reads, with nothing new to teach them — which is the
-         *     point: the agent stops reading as itself.
-         */
-        readonly post: operations["apps_canopy_api_on_behalf_token"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/api/health": {
         readonly parameters: {
             readonly query?: never;
@@ -5073,26 +5047,6 @@ export interface components {
              * @default user
              */
             readonly kind: string;
-        };
-        /**
-         * OnBehalfTokenOut
-         * @description A short-lived ace-web token that acts as that person.
-         */
-        readonly OnBehalfTokenOut: {
-            /** Token */
-            readonly token: string;
-            /** Expires At */
-            readonly expires_at?: string | null;
-            /** Acting As */
-            readonly acting_as: string;
-        };
-        /**
-         * OnBehalfIn
-         * @description Canopy's signed statement about who its agent is answering.
-         */
-        readonly OnBehalfIn: {
-            /** Assertion */
-            readonly assertion: string;
         };
         /**
          * HealthCheckOut
@@ -8224,30 +8178,6 @@ export interface operations {
                     readonly "application/json": {
                         readonly [key: string]: unknown;
                     };
-                };
-            };
-        };
-    };
-    readonly apps_canopy_api_on_behalf_token: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["OnBehalfIn"];
-            };
-        };
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["OnBehalfTokenOut"];
                 };
             };
         };

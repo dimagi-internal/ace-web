@@ -133,17 +133,19 @@ def published_jwks() -> list[dict]:
 def visitor_token(email: str, *, scopes=()) -> dict:
     """A canopy token for the person whose command ace-web is carrying out —
     `kind` "user" when they have a canopy account (arriving as themselves),
-    "contact" otherwise. Both are first-class.
+    "contact" otherwise. Both are first-class, and ace-web routes every later
+    call by `kind`.
 
-    Posted with ace-web's own client rather than the SDK's ``mint_contact_token``,
-    which returns only ``token`` + ``expires_at``: ace-web routes every later
-    call by ``kind``.
+    The SDK's ``mint_contact_token`` returns canopy's whole response (``kind``
+    included, defaulted for an older canopy); a refusal keeps canopy's HTTP
+    status so ``api._upstream`` answers as it always has.
     """
-    from canopy_sdk import contract
+    from canopy_sdk.host import MintFailed, mint_contact_token
 
-    resp = _post(contract.ARRIVAL_PATH, arrival(email, scopes=scopes), bearer="")
-    resp.setdefault("kind", "contact")
-    return resp
+    try:
+        return mint_contact_token(_host_config(), arrival(email, scopes=scopes))
+    except MintFailed as exc:
+        raise CanopyError(exc.status or 502, str(exc)[:300]) from exc
 
 
 def create_contact_session(contact_token: str, *, title: str, metadata: dict) -> dict:

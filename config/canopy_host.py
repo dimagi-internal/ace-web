@@ -62,6 +62,10 @@ class CanopyHostSettings(Mapping):
             or (f"{public}/api/canopy/oauth/token" if public else ""),
             "SCOPE_TOOLS": _registry("SCOPE_TOOLS"),
             "PAGE_SCOPES": _registry("PAGE_SCOPES"),
+            # An SPA: the browser names its page (its path) and the registry
+            # decides the scopes — the SDK's key mode (read-only scopes only).
+            "PAGE_MODE": "key",
+            "PAGE_PATTERNS": _registry("PAGE_PATTERNS"),
             # ace-web's `sub` for a person is their lower-cased email (what the
             # visitor assertion has always carried), so "is this subject still
             # live" is asked by email, not by primary key (the SDK default).
@@ -83,4 +87,5 @@ def _registry(name: str) -> dict:
     # code (apps/canopy/grant.py), not environment.
     from apps.canopy import grant
 
-    return {k: list(v) for k, v in getattr(grant, name).items()}
+    value = getattr(grant, name)
+    return {k: (v if isinstance(v, str) else list(v)) for k, v in value.items()}

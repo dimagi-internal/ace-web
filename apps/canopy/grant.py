@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import contextvars
 import logging
-import re
 
 log = logging.getLogger(__name__)
 
@@ -62,19 +61,16 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "opp-workbench": ("opps:read",),
 }
 
-#: How a page key is recognised from the SPA's location. ace-web is a
-#: single-page app: the server never renders a route, so it cannot sign a page
-#: token the way a server-rendered host does (``canopy_sdk.host.PageTokens``).
-#: The browser names its path; the server decides what, if anything, it grants.
-PAGE_PATTERNS: dict[str, re.Pattern[str]] = {
-    "opp-workbench": re.compile(
-        r"^/w/[^/]+/opps/(?!compare/)[^/]+(?:/runs/[^/]+(?:/steps/[^/]+)?)?/?$"
-    ),
+#: How a page is recognised from the SPA's location (the WHOLE path must
+#: match; ``/ace`` is the router basename, frontend/src/router.tsx). ace-web is
+#: a single-page app: the server never renders a route, so it cannot sign a
+#: page token. It uses the SDK's KEY mode instead (``PAGE_MODE = "key"`` in
+#: ``config/canopy_host.py``, ``canopy_sdk.host.PageRegistry``): the browser
+#: names its path, and the registry decides what, if anything, it grants — a
+#: path can only SELECT among the read-only scopes registered here.
+PAGE_PATTERNS: dict[str, str] = {
+    "opp-workbench": r"(?:/ace)?/w/[^/]+/opps/(?!compare/)[^/]+(?:/runs/[^/]+(?:/steps/[^/]+)?)?/?",
 }
-
-#: The SPA's router basename (frontend/src/router.tsx).
-SPA_BASENAME = "/ace"
-MAX_PAGE_LENGTH = 512
 
 #: Where the resolved principal rides on the MCP request's ASGI scope, from the
 #: DPoP gate to the FastMCP middleware. Set only by ``mcp_app``; a client cannot
@@ -121,22 +117,19 @@ def subject_active(subject: str) -> bool:
 
 def page_key(path: str) -> str:
     """The registered page a SPA path is on, or ``""``."""
-    path = (path or "")[:MAX_PAGE_LENGTH].split("?", 1)[0].split("#", 1)[0]
-    if path == SPA_BASENAME or path.startswith(SPA_BASENAME + "/"):
-        path = path[len(SPA_BASENAME):] or "/"
-    for key, pattern in PAGE_PATTERNS.items():
-        if key in PAGE_SCOPES and pattern.match(path):
-            return key
-    return ""
+    from canopy_sdk.django import conf
+
+    return conf.page_registry().key_for(path)
 
 
 def scopes_for_page(path: str) -> tuple[str, ...]:
     """The scopes a page grants — from the registry, never from the request.
     ``()`` for an unregistered page, or while the grant is off."""
-    key = page_key(path)
-    if not key or not grant_enabled():
+    from canopy_sdk.django import conf
+
+    if not grant_enabled():
         return ()
-    return tuple(PAGE_SCOPES[key])
+    return tuple(conf.page_scopes(path, None))
 
 
 # --- the MCP side ------------------------------------------------------------------------
@@ -164,35 +157,18 @@ def _publish_principal(app):
     return inner
 
 
-class _GrantedMCP:
-    """The MCP ASGI app, with the SDK's DPoP gate in front while the grant is on.
-
-    Off, it is the MCP app untouched. On, a request with ``Authorization: DPoP``
-    must carry a valid proof and a live delegated token or it is refused at the
-    gate; every other request (PATs) passes through with no principal.
-    """
-
-    def __init__(self, app):
-        from canopy_sdk.django.asgi import dpop_gate
-
-        self.app = app
-        self._gated = dpop_gate(_publish_principal(app), require_principal=True)
-
-    async def __call__(self, scope, receive, send):
-        if scope.get("type") == "http" and grant_enabled():
-            await self._gated(scope, receive, send)
-            return
-        if scope.get("type") == "http":
-            scope = {**scope, PRINCIPAL_SCOPE_KEY: None}
-        await self.app(scope, receive, send)
-
-    def __getattr__(self, name):
-        # `lifespan` and friends belong to the wrapped Starlette app.
-        return getattr(self.app, name)
-
-
 def mcp_app(app):
-    return _GrantedMCP(app)
+    """The MCP ASGI app behind the SDK's DPoP gate, installed unconditionally.
+
+    A request with ``Authorization: DPoP`` must carry a valid proof and a live
+    delegated token or it is refused at the gate — and while the grant is off
+    (no ``CANOPY_CLIENT_ID``) every DPoP request is refused 401
+    ``invalid_dpop_proof``, never a 500. Every other request (PATs) passes
+    through untouched, with no principal.
+    """
+    from canopy_sdk.django.asgi import dpop_gate
+
+    return dpop_gate(_publish_principal(app), require_principal=True)
 
 
 def principal_of(request):
