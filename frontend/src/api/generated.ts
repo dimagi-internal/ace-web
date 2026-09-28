@@ -450,6 +450,40 @@ export interface paths {
         readonly patch: operations["apps_opps_tenancy_api_patch_opp_tenancy"];
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/clone": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Clone a run into another workspace (blocking) */
+        readonly post: operations["apps_opps_clone_api_clone_run_endpoint"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/clones": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Where this run has been cloned */
+        readonly get: operations["apps_opps_clone_api_list_run_clones"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/sessions": {
         readonly parameters: {
             readonly query?: never;
@@ -2757,6 +2791,37 @@ export interface components {
             readonly ocs_team?: string | null;
             /** Labs Allowed Domains */
             readonly labs_allowed_domains?: readonly string[] | null;
+        };
+        /** RunCloneOut */
+        readonly RunCloneOut: {
+            /** Id */
+            readonly id: number;
+            /** Source Workspace */
+            readonly source_workspace: string;
+            /** Target Workspace */
+            readonly target_workspace: string;
+            /** Opp Slug */
+            readonly opp_slug: string;
+            /** Run Id */
+            readonly run_id: string;
+            /** Status */
+            readonly status: string;
+            /** Files Copied */
+            readonly files_copied: number;
+            /** Error */
+            readonly error: string;
+            /** Created By */
+            readonly created_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+        };
+        /** RunCloneIn */
+        readonly RunCloneIn: {
+            /** To Workspace */
+            readonly to_workspace: string;
         };
         /** Page[SessionListOut] */
         readonly Page_SessionListOut_: {
@@ -5788,6 +5853,58 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["OppTenancyOut"];
+                };
+            };
+        };
+    };
+    readonly apps_opps_clone_api_clone_run_endpoint: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RunCloneIn"];
+            };
+        };
+        readonly responses: {
+            /** @description Created */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RunCloneOut"];
+                };
+            };
+        };
+    };
+    readonly apps_opps_clone_api_list_run_clones: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": readonly components["schemas"]["RunCloneOut"][];
                 };
             };
         };

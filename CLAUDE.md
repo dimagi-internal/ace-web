@@ -195,6 +195,20 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   accepted before HQ sign-in yields a password account that then breaks HQ SSO).
   This is step A of `docs/specs/2026-09-28-clone-and-release-design.md`
   (per-opp tenancy, opp-bound ACE sessions, clone-to-new-workspace, release).
+- **Per-opp tenancy + clone-to-new-workspace** (same spec, steps B/C). Each
+  opp records where its assets live — `OppWorkspace.tenancy` (`hq_domain`,
+  `connect_pm_org`, `connect_holding_org`, `ocs_team`, `labs_allowed_domains`;
+  schema `apps/opps/tenancy.py`) — copied from `Workspace.default_tenancy` at
+  creation, owner-only PATCH, every change a `TenancyChange` row in the
+  workspace activity feed. ACE's `bin/ace-bind` reads it
+  (`GET /api/w/{ws}/opps/{slug}/tenancy`) to lock a session to one opp's
+  tenancy. `dimagi-team`'s opps were backfilled with the shared tenants;
+  `connect_pm_org` was deliberately left unset (no run surface records it).
+  `POST /api/w/{ws}/opps/{slug}/runs/{run}/clone {to_workspace}`
+  (`apps/opps/run_cloner.py`, owner of BOTH workspaces) copies one run whole
+  — screenshots and videos included — into the target workspace's Drive root
+  under the same run id, plus the opp-level files on first clone; the record
+  is a `RunClone` row, never a write to the source run.
 - **Multi-tenancy via Workspaces**: ace-web is multi-tenant. The unit of tenancy
   is the **Workspace** — a name + a Drive root folder + a member list with roles
   (Owner / Editor / Viewer). All opp/session/upload/videos reads scope by
