@@ -100,26 +100,30 @@ At bind time, ACE fetches the opp's tenancy from ace-web (PAT or canopy
 delegation) and records a copy in `run_state.yaml` (`tenancy:`), so each run
 shows which tenancy it used.
 
-ACE's MCP servers (connect, ocs, gdrive, mobile) load the bound tenancy when
-they start and **guard every call**:
+**Where the guard lives: a PreToolUse hook, not the MCP servers** (changed
+while building, 2026-09-28). The MCP servers have no common dispatch point
+(`ace-connect`'s wrapper sees no arguments; `ace-gdrive` has ~47 hand-written
+handlers), and connect-labs is a remote server nothing in-process can see. A
+plugin PreToolUse hook is the one choke point every ACE tool crosses, and
+Claude Code gives it the session id. So:
 
-- **Explicit targets are checked.** A call that names a domain, org, team or
-  Drive folder is checked against the tenancy and refused with a typed
-  `outside_bound_tenancy` error if it points anywhere else.
-- **Missing targets default to the tenancy.** A call that names no target uses
-  the tenancy's value. Today it falls back to `.env`.
-- **Shared templates are read-only.** Reads of shared templates (the OCS golden
-  template, deck stencils, the connect-baseline screenshots) go through an
-  explicit read-only allowlist.
-- **Credentials are scoped where the system allows it.** OCS tokens are per
-  team, and HQ API keys can be limited to one project space. A session loads
-  only the bound tenancy's keys, so even a buggy tool cannot reach another
-  tenancy. Connect only has a user-level token, so there the guard is the only
-  protection.
-- **An unbound session is read-only** across opps.
-- **The existing HQ guard is folded in.** `assertAceOwnedHqDomain`
-  (`lib/destructive-guards.ts`) is the precedent; it becomes a special case of
-  this guard.
+- **Binding** is `bin/ace-bind <ws>/<opp>`: it fetches the opp's tenancy and
+  writes `~/.ace/opp-bind/<session id>.json` (keyed by
+  `$CLAUDE_CODE_SESSION_ID`). It can happen mid-session, after the opp is
+  resolved.
+- **The guard** (`hooks/tenancy_guard.py`, targets in
+  `config/tenancy-targets.json`) checks each ace-connect / ace-ocs /
+  connect-labs **write**: HQ `domain` / `downstream_domain`, Connect
+  `organization_slug` / `target_organization_slug` / apps' `cc_domain`, Labs
+  `allowed_domains`, and — because OCS's team is fixed at server start — the
+  install's `OCS_TEAM_SLUG`. Source arguments (`upstream_domain`) are not
+  checked: reading from the shared space into a partner's is how a clone
+  works. A tenancy field that is not set up refuses rather than guesses.
+- **Unbound sessions are allowed and logged** (`unbound-writes.log`) while
+  entry points are wired to bind; enforcement for unbound sessions comes after.
+- **Still to do:** Drive (a parent-chain walk to "inside the opp folder"),
+  defaults from tenancy instead of `.env` inside the servers, and scoped
+  credentials (per-team OCS token, domain-scoped HQ key).
 
 **Inbound turns (`/ace:turn`)** can touch several opps in one turn. The turn
 triages while unbound (read-only), then sends each act-tier action to a session
@@ -204,25 +208,29 @@ account, and HQ sign-in then fails for them.
 - **Endpoint:** a new endpoint copies a run into another workspace. The caller
   must be an owner of both workspaces; to anyone else, either workspace returns
   404.
-- **Not a fork:** it copies the run whole. It reuses `opp_forker.py`'s Drive
-  machinery: `run_state.yaml` is written first, then the bulk copy, retrying
-  only on 429, with progress polling.
+- **Not a fork:** it copies the run whole and verbatim — every phase folder,
+  including the Phase 6 screenshots and videos a reviewer needs (a fork skips
+  them). `run_state.yaml` is copied first, as in a fork (ace-web#734).
 - **Destination:** the copy lands under the target workspace's Drive root as
-  `<opp-slug>/runs/<run-id>/`, with the same run id. An `OppWorkspace` row is
-  created in the target if needed, with tenancy taken from the **target
-  workspace's default**.
+  `<opp-slug>/runs/<run-id>/`, with the same run id. The first clone of an opp
+  into a workspace also copies its opp-level files (`opp.yaml`, `pdd.md`,
+  `inputs/` — everything above `runs/`); later runs reuse them. An
+  `OppWorkspace` row is created in the target if needed, with tenancy taken
+  from the **target workspace's default**. A run already in the target is a
+  409 (trash it there to re-clone).
 - **Products:** the copied run's `products` blocks still point at the source
   tenancy's assets until the ACE command rewrites them system by system.
-- **Forward link:** the source run records `cloned_to: {workspace, opp,
-  run}`.
+- **Record:** a `RunClone` row (source, target, opp, run, status, files,
+  error, who) — in ace-web's database, NOT the source run's `run_state.yaml`,
+  so the source is never written to. `GET …/runs/{run}/clones` lists them.
 - **Redirect (enabled by `release`, not by the clone):** the source run's
   public summary endpoint can redirect (HTTP 308) to the released clone's
   summary. The link Spark already has therefore lands on their copy.
 - **Workbench:** internal users see a banner linking to the released copy
   instead of being redirected.
-- **Cache:** both runs' snapshot caches are invalidated. `cloned_to` and
-  `released` are optional pass-through fields, so `_KEY_VERSION` does not
-  change.
+- **Cache:** the target workspace's opp cache is cleared after a clone (a
+  new child of the root is a listing the Drive Changes feed does not reliably
+  report).
 
 ## ACE changes (`dimagi-internal/ace`)
 
@@ -230,25 +238,19 @@ account, and HQ sign-in then fails for them.
 
 This is the foundation, and it is valuable before any partner exists.
 
-- **Bind a session.** Add a bind step to session start (the `/ace:run`
-  preflight, and the turn and run-dispatch entry points). It fetches tenancy
-  from ace-web and writes it to `run_state.yaml` and to the MCP servers'
-  environment.
-- **Guard the MCP servers.** Add the tenancy guard to each MCP server's tool
-  dispatch, with the read-only template allowlist.
-- **Retire the `.env` defaults.** Replace every `.env`-derived default target
-  with the bound tenancy's value.
-- **Scope credentials.** Load only the bound tenancy's credentials where they
-  are per-tenant (OCS per-team token, a domain-scoped HQ API key).
-- **Tests:**
-  - every targeted tool refuses an out-of-tenancy target;
-  - every untargeted tool resolves from tenancy;
-  - an unbound session cannot write.
+- **v1 (ace#2530):** `bin/ace-bind` + the PreToolUse tenancy guard, described
+  under "Opp-bound sessions"; unbound sessions allowed and logged.
+- **Next:** wire `/ace:run`, `/ace:turn` and ace-web run dispatch to bind
+  (needs `connect_pm_org` set on `dimagi-team`'s opps first — a bound session
+  refuses Connect writes while it is unset); then refuse unbound writes; then
+  Drive, in-server tenancy defaults, and scoped credentials.
+- **Tests:** `test/hooks/tenancy-guard.test.ts` spawns the real hook and
+  `bin/ace-bind`.
 
 ### E. `/ace:clone-to-new-workspace <opp>/<run-id> --to <workspace>`
 
 A generic clone with nothing partner-specific in it. It works on a completed
-run, leaves the source untouched apart from a `cloned_to` note, sends no
+run, leaves the source untouched (the clone is a `RunClone` row), sends no
 invites, and adds no redirects.
 
 1. **Preflight.**

@@ -137,3 +137,42 @@ class TenancyChange(models.Model):
     class Meta:
         db_table = "workspace_tenancy_changes"
         indexes = [models.Index(fields=["workspace", "-created_at"])]
+
+
+class RunClone(models.Model):
+    """One run copied into another workspace (clone-to-new-workspace).
+
+    The record lives here rather than in the source run's Drive files, so a
+    clone leaves the source run untouched. `release` later reads it to decide
+    whether the source's public summary link should forward to the clone.
+    Spec: docs/specs/2026-09-28-clone-and-release-design.md § C.
+    """
+
+    STATUS_CHOICES = [("copying", "Copying"), ("done", "Done"), ("error", "Error")]
+
+    source_workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="clones_out"
+    )
+    target_workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="clones_in"
+    )
+    opp_slug = models.CharField(max_length=64)
+    run_id = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="copying")
+    files_copied = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "workspace_run_clones"
+        indexes = [
+            models.Index(fields=["source_workspace", "opp_slug", "run_id"]),
+            models.Index(fields=["target_workspace", "opp_slug", "run_id"]),
+        ]
