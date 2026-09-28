@@ -32,6 +32,10 @@ class Workspace(models.Model):
     # Editor on first login. Stored as JSON list for portability across the
     # Postgres prod DB and the in-memory SQLite test DB.
     auto_join_domains = models.JSONField(default=list, blank=True)
+    # Tenancy a new opp in this workspace starts with (copied at creation;
+    # the opp's own `OppWorkspace.tenancy` is the truth after that). Shape:
+    # apps.opps.tenancy.Tenancy.
+    default_tenancy = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -109,3 +113,27 @@ class WorkspaceInvite(models.Model):
         if self.accepted_at is not None or self.revoked_at is not None:
             return False
         return self.expires_at > timezone.now()
+
+
+class TenancyChange(models.Model):
+    """Audit row for a tenancy change (apps.opps.tenancy). Tenancy decides
+    where ACE may write, so every change records who made it and the values
+    before and after. `opp_slug` is blank for the workspace default."""
+
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="tenancy_changes"
+    )
+    opp_slug = models.CharField(max_length=64, blank=True, default="")
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="+",
+    )
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "workspace_tenancy_changes"
+        indexes = [models.Index(fields=["workspace", "-created_at"])]

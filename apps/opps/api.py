@@ -638,7 +638,10 @@ def patch_opp_and_return_card(workspace, slug: str, body: OppPatchIn) -> dict:
     ow, _ = OppWorkspace.objects.get_or_create(
         workspace=workspace,
         slug=slug,
-        defaults={"display_name": slug},
+        defaults={
+            "display_name": slug,
+            "tenancy": dict(workspace.default_tenancy or {}),
+        },
     )
     ow.display_name = body.title
     ow.save(update_fields=["display_name", "updated_at"])

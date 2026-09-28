@@ -119,6 +119,7 @@ def create_opp(
             working_session=session,
             created_by=owner,
             workspace=workspace,
+            tenancy=dict(workspace.default_tenancy or {}),
         )
 
     return CreateOppResult(slug=slug, workspace=opp_ws, working_session=session)

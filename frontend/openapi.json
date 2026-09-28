@@ -1320,6 +1320,106 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/tenancy": {
+      "get": {
+        "operationId": "apps_opps_tenancy_api_get_opp_tenancy",
+        "summary": "Get opp tenancy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OppTenancyOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "apps_opps_tenancy_api_patch_opp_tenancy",
+        "summary": "Set opp tenancy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OppTenancyOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Tenancy"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/sessions": {
       "get": {
         "operationId": "apps_sessions_api_list_sessions",
@@ -6706,6 +6806,108 @@
         "title": "OppHealthOut",
         "type": "object"
       },
+      "OppTenancyOut": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "tenancy": {
+            "$ref": "#/components/schemas/Tenancy"
+          },
+          "drive_root_folder_id": {
+            "title": "Drive Root Folder Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "tenancy",
+          "drive_root_folder_id",
+          "source"
+        ],
+        "title": "OppTenancyOut",
+        "type": "object"
+      },
+      "Tenancy": {
+        "additionalProperties": false,
+        "description": "Every field is optional: a missing one means \"not set up yet\", which\nACE's preflight reports as a missing setup item rather than guessing.",
+        "properties": {
+          "hq_domain": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hq Domain"
+          },
+          "connect_pm_org": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connect Pm Org"
+          },
+          "connect_holding_org": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connect Holding Org"
+          },
+          "ocs_team": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocs Team"
+          },
+          "labs_allowed_domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labs Allowed Domains"
+          }
+        },
+        "title": "Tenancy",
+        "type": "object"
+      },
       "Page_SessionListOut_": {
         "properties": {
           "items": {
@@ -9311,6 +9513,11 @@
             },
             "title": "Auto Join Domains",
             "type": "array"
+          },
+          "default_tenancy": {
+            "additionalProperties": true,
+            "title": "Default Tenancy",
+            "type": "object"
           }
         },
         "required": [
@@ -9396,6 +9603,18 @@
               }
             ],
             "title": "Auto Join Domains"
+          },
+          "default_tenancy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tenancy"
           }
         },
         "title": "WorkspacePatchIn",

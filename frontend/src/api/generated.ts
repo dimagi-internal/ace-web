@@ -432,6 +432,24 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/tenancy": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get opp tenancy */
+        readonly get: operations["apps_opps_tenancy_api_get_opp_tenancy"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /** Set opp tenancy */
+        readonly patch: operations["apps_opps_tenancy_api_patch_opp_tenancy"];
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/sessions": {
         readonly parameters: {
             readonly query?: never;
@@ -2713,6 +2731,33 @@ export interface components {
             /** Error */
             readonly error?: string | null;
         };
+        /** OppTenancyOut */
+        readonly OppTenancyOut: {
+            /** Slug */
+            readonly slug: string;
+            readonly tenancy: components["schemas"]["Tenancy"];
+            /** Drive Root Folder Id */
+            readonly drive_root_folder_id: string;
+            /** Source */
+            readonly source: string;
+        };
+        /**
+         * Tenancy
+         * @description Every field is optional: a missing one means "not set up yet", which
+         *     ACE's preflight reports as a missing setup item rather than guessing.
+         */
+        readonly Tenancy: {
+            /** Hq Domain */
+            readonly hq_domain?: string | null;
+            /** Connect Pm Org */
+            readonly connect_pm_org?: string | null;
+            /** Connect Holding Org */
+            readonly connect_holding_org?: string | null;
+            /** Ocs Team */
+            readonly ocs_team?: string | null;
+            /** Labs Allowed Domains */
+            readonly labs_allowed_domains?: readonly string[] | null;
+        };
         /** Page[SessionListOut] */
         readonly Page_SessionListOut_: {
             /** Items */
@@ -3684,6 +3729,10 @@ export interface components {
             readonly member_count: number;
             /** Auto Join Domains */
             readonly auto_join_domains?: readonly string[];
+            /** Default Tenancy */
+            readonly default_tenancy?: {
+                readonly [key: string]: unknown;
+            };
         };
         /** WorkspaceCreateIn */
         readonly WorkspaceCreateIn: {
@@ -3702,6 +3751,10 @@ export interface components {
             readonly drive_root_folder_id?: string | null;
             /** Auto Join Domains */
             readonly auto_join_domains?: readonly string[] | null;
+            /** Default Tenancy */
+            readonly default_tenancy?: {
+                readonly [key: string]: unknown;
+            } | null;
         };
         /**
          * UserRefOut
@@ -5685,6 +5738,56 @@ export interface operations {
                     readonly "application/json": {
                         readonly [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    readonly apps_opps_tenancy_api_get_opp_tenancy: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["OppTenancyOut"];
+                };
+            };
+        };
+    };
+    readonly apps_opps_tenancy_api_patch_opp_tenancy: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["Tenancy"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["OppTenancyOut"];
                 };
             };
         };
