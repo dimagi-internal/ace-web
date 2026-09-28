@@ -22,6 +22,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
+from apps.auth.login_gate import admission_rule
 from apps.auth.models import User
 from apps.auth.oauth import fetch_user_email, fetch_userinfo, introspect_token
 
@@ -216,19 +217,24 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         if api_email:
             profile_data["email"] = api_email
 
-    # Enforce allowed email domains, but only when the list is non-empty.
-    # Empty list = allow any Connect-authenticated user; per-workspace
-    # membership is the real access-control gate.
+    # Admission: the allowed email domains (when the list is non-empty), a
+    # pending workspace invite, or an existing workspace membership. Checked
+    # BEFORE the User row is created, so a rejected outsider leaves nothing.
     email = (profile_data.get("email") or "").strip().lower()
-    logger.info(f"Final email for domain check: {email!r}")
-    allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
-    if allowed_domains:
-        _, _, email_domain = email.rpartition("@")
-        if email_domain not in allowed_domains:
-            logger.warning(f"Rejected login for non-allowed email: {email!r}")
-            allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
-            messages.error(request, f"Access is restricted to {allowed_str} accounts.")
-            return redirect("auth:login")
+    logger.info(f"Final email for admission check: {email!r}")
+    rule = admission_rule(email)
+    if rule is None:
+        logger.warning(f"Rejected login for non-admitted email: {email!r}")
+        allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
+        allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
+        messages.error(
+            request,
+            f"Access is restricted to {allowed_str} accounts. If you were invited, "
+            "sign in with the email address the invite was sent to.",
+        )
+        return redirect("auth:login")
+    if rule in ("invite", "membership"):
+        logger.info(f"Admitted login for {email!r} by {rule}")
 
     # Build display name
     first_name = profile_data.get("first_name", "")

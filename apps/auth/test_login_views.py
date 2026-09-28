@@ -29,6 +29,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from apps.auth.login_gate import admission_rule
 from apps.auth.models import User
 
 logger = logging.getLogger(__name__)
@@ -67,17 +68,15 @@ def test_login(request: HttpRequest) -> HttpResponse:
     if not email:
         return JsonResponse({"error": "email is required"}, status=400)
 
-    # Enforce allowed email domains — same semantics as the real OAuth flow.
-    # Empty list = allow any email (workspace membership is the real gate).
-    allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
-    if allowed_domains:
-        _, _, email_domain = email.rpartition("@")
-        if email_domain not in allowed_domains:
-            allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
-            return JsonResponse(
-                {"error": f"email must be from: {allowed_str}"},
-                status=400,
-            )
+    # Same admission rule as the real OAuth flow: allowed domains (empty list
+    # = anyone), a pending workspace invite, or an existing membership.
+    if admission_rule(email) is None:
+        allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
+        allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
+        return JsonResponse(
+            {"error": f"email must be from: {allowed_str}, or be invited"},
+            status=400,
+        )
 
     user, _created = User.objects.get_or_create(
         email=email,
