@@ -41,7 +41,14 @@ everything themselves, instead of ACE.**
 - **Invite-only login.** ace-web admits invited people from outside the domain
   list. We do not add each partner's domain to the list.
 - **Partners get their own areas.** That means their own HQ project space,
-  Connect orgs, OCS team and Labs scope.
+  Connect orgs and Labs scope.
+- **No OCS account for reviewers** (2026-09-28). OCS permissions are team-wide
+  (no per-chatbot grant: Chatbot Admin can edit every bot on the team, Chat
+  Viewer reads every bot's transcripts), so reviewers chat through the bot's
+  public link, which needs no login and exposes nothing else. The bot stays on
+  ACE's team; a per-partner OCS team is only for a partner taking the bot over.
+- **Whether to create Connect program-manager orgs per partner is open**
+  (Jon is checking, 2026-09-28). The Connect clone step waits on it.
 - **Where an opp's assets live is stored per opp, not per tenant.** It is
   normally the same for every opp in a workspace.
 - **One model for everyone.** Dimagi's opps use the same model. Nothing is
@@ -311,14 +318,13 @@ Each of the per-system steps below ships on its own.
 - Copy the run's workflows and dashboards onto the clones (`copy_workflow`) and
   rewrite `synthetic.*`.
 
-**OCS**
+**OCS — not rebuilt**
 
-- **Preflight requires** the team to exist and ACE to hold credentials for it:
-  a login plus `OCS_API_TOKEN_<SLUG>`. There is no create-team tool.
-- **Tools must change first.** The write tools need to resolve their team from
-  the bound tenancy; today they only reach `OCS_TEAM_SLUG`. That comes with D.
-- **The bot is rebuilt** from the source run's prompt, knowledge files and
-  settings, then published. A clone cannot cross teams.
+- The bot stays on ACE's team and the copied `products.ocs_chatbot` is kept.
+  Reviewers use its `public_url` (no account). The clone records
+  `clone.ocs: {status: kept, reason: public-link}` (ace#2532).
+- `ocs_team` stays in the tenancy schema for a later handover step (a partner
+  running the bot themselves), which would rebuild the bot in their team.
 
 ### E2. `/ace:release <opp>/<run-id> --reviewers <email[:role]>,...`
 
@@ -348,7 +354,7 @@ invite is the very last.
      - HQ: `commcare_invite_web_user` (App Editor is acceptable, because the
        space holds only this tenancy's apps).
      - Connect: `connect_add_org_member` (viewer).
-     - OCS: `ocs_add_team_member`.
+     - OCS: **no account** — the bot's public link goes in the invite email.
      - Labs: `labs_allowed_domains` already covers access.
    - Then the ace-web workspace invite (A), with an email that carries the
      "Log in with CommCare HQ first" steps.
@@ -373,7 +379,7 @@ invite is the very last.
 | ace-web | yes (workspace) | yes, Drive | yes | yes, after A |
 | HQ | yes, `commcare_create_domain` | no | app copy across spaces | yes |
 | Connect | **no** (manual org) | **no** (holding org fixed at creation) | recreate program + opp | yes |
-| OCS | **no** (manual team) | **no** (clone stays in-team) | rebuild, after D | yes, after D |
+| OCS | **no** (manual team) | **no** (clone stays in-team) | not needed: public link | team-wide only — not used |
 | Labs | n/a | no allowlist update | clone with new allowlist | email domain only |
 
 ## Build order
@@ -386,16 +392,16 @@ Each item is its own PR, merged when green.
 3. ACE **D**: opp binding and the tenancy guard, with `.env` defaults retired.
 4. ace-web **C**: copying a run into another workspace, and the redirect.
 5. ACE **E**: clone skeleton (preflight, `clone` block, report), then HQ.
-6. ACE **E**: Connect.
+6. ACE **E**: Connect (waits on the program-manager org decision).
 7. ACE **E**: Labs.
-8. ACE **E**: OCS.
+8. ~~ACE **E**: OCS~~ — dropped: reviewers use the public link.
 9. ACE **E2**: `release` (audit, invites, redirect, record), absorbing
    **F**.
 
 **First use: Spark.**
 
 1. Create the `spark` workspace and set its default tenancy.
-2. Do the manual Connect-org and OCS-team setup.
+2. Do the manual Connect-org setup (pending the program-manager decision).
 3. Clone `spark-facilitator/20260926-1413` into `spark`.
 4. Run `release` on the clone with Anne, Sasha, Rachel and Enock as reviewers.
    It audits, polishes and redirects the link they already have, then invites
