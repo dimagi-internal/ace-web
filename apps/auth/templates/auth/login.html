@@ -12,6 +12,7 @@
     .btn { display: inline-block; background: #1a56db; color: #fff; text-decoration: none; padding: .75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; border: none; width: 100%; box-sizing: border-box; }
     .btn:hover { background: #1e429f; }
     .messages { margin-bottom: 1rem; }
+    .invite-help { margin-top: 1rem; font-size: .9rem; color: #4b5563; }
     .messages li { list-style: none; background: #fee2e2; color: #991b1b; padding: .6rem 1rem; border-radius: 4px; margin-bottom: .5rem; }
     .dev-panel { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed #ddd; text-align: left; }
     .dev-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #888; font-weight: 600; margin-bottom: .5rem; }
@@ -33,6 +34,12 @@
     </ul>
     {% endif %}
     <a class="btn" href="{% url 'auth:initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Sign in with Connect</a>
+    {% if "/invite/" in next %}
+    <p class="invite-help">You've been invited to a workspace. On the Connect page, choose
+      <strong>Log in with CommCare HQ</strong> and sign in with the email address the invite
+      was sent to. No Connect account yet? That creates one for you. If you don't have a
+      CommCare HQ account, create a free one at commcarehq.org first.</p>
+    {% endif %}
 
     {% if show_test_login %}
     <div class="dev-panel">

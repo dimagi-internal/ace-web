@@ -183,9 +183,18 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `apps/auth/oauth_views.py` + `apps/auth/oauth.py`. Tenant-unique session cookies
   (`sessionid_ace`, `csrftoken_ace`) and path-scoped (`/ace/`) to avoid collisions
   with scout on the shared `labs.connect.dimagi.com` host.
-  `AUTH_USER_MODEL = "ace_auth.User"`. **No domain filter** — workspace
-  membership is the access-control gate. `ACE_ALLOWED_EMAIL_DOMAINS` is preserved
-  as a deployment safety knob (non-empty → revert to allowlisted signups).
+  `AUTH_USER_MODEL = "ace_auth.User"`. Workspace membership is the
+  access-control gate. **Sign-in admission** is `apps/auth/login_gate.admission_rule`
+  (invite-only login, 2026-09-28): an email is admitted by
+  `ACE_ALLOWED_EMAIL_DOMAINS` (empty list = anyone), OR a pending
+  `WorkspaceInvite`, OR an existing `WorkspaceMembership` — checked before the
+  User row is created. The membership rule is load-bearing: accepting an invite
+  uses it up, so without it an invited partner signs in exactly once; removing
+  someone's last membership is how an outsider is cut off. Invitees are told on
+  the login page to use "Log in with CommCare HQ" at Connect (a Connect invite
+  accepted before HQ sign-in yields a password account that then breaks HQ SSO).
+  This is step A of `docs/specs/2026-09-28-clone-and-release-design.md`
+  (per-opp tenancy, opp-bound ACE sessions, clone-to-new-workspace, release).
 - **Multi-tenancy via Workspaces**: ace-web is multi-tenant. The unit of tenancy
   is the **Workspace** — a name + a Drive root folder + a member list with roles
   (Owner / Editor / Viewer). All opp/session/upload/videos reads scope by

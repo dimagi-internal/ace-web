@@ -28,6 +28,13 @@ def test_login_page_public(client):
     assert b"Sign in with Connect" in resp.content
 
 
+def test_login_page_shows_hq_first_help_for_invite_links(client):
+    resp = client.get("/auth/login/?next=/ace/invite/tok123")
+    assert b"Log in with CommCare HQ" in resp.content
+    plain = client.get("/auth/login/")
+    assert b"Log in with CommCare HQ" not in plain.content
+
+
 def test_initiate_redirects_to_connect_with_pkce(client):
     resp = client.get("/auth/initiate/")
     assert resp.status_code == 302
@@ -112,6 +119,47 @@ def test_callback_rejects_email_outside_allowlist_when_set(client, settings):
     assert resp.status_code == 302
     assert "/auth/login/" in resp.url
     assert not User.objects.filter(email="ext@example.com").exists()
+
+
+def test_callback_admits_invited_outsider(client, settings):
+    """Invite-only login: an email outside the allowlist with a pending
+    workspace invite signs in (spec 2026-09-28-clone-and-release § A)."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.workspaces.models import Workspace, WorkspaceInvite
+
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com"]
+    owner = User.objects.create(email="owner@dimagi.com", display_name="Owner")
+    ws = Workspace.objects.create(
+        slug="spark", display_name="Spark", drive_root_folder_id="f-spark", created_by=owner
+    )
+    WorkspaceInvite.objects.create(
+        workspace=ws, email="anne@sparkmicrogrants.org", role="viewer", invited_by=owner,
+        expires_at=timezone.now() + timedelta(days=7),
+    )
+
+    session = client.session
+    session["oauth_state"] = "s123"
+    session["oauth_code_verifier"] = "v123"
+    session["oauth_next"] = "/"
+    session.save()
+
+    token_json = {"access_token": "tok", "expires_in": 3600}
+    profile = {"id": 2, "username": "anne", "email": "Anne@SparkMicrogrants.org"}
+
+    with patch("apps.auth.oauth_views.httpx.post") as mock_post, \
+         patch("apps.auth.oauth_views.introspect_token", return_value=profile), \
+         patch("apps.auth.oauth_views.fetch_userinfo", return_value=None):
+        mock_post.return_value.raise_for_status = lambda: None
+        mock_post.return_value.json.return_value = token_json
+        resp = client.get("/auth/callback/?state=s123&code=authcode")
+
+    assert resp.status_code == 302
+    assert "/auth/login/" not in resp.url
+    assert User.objects.filter(email="anne@sparkmicrogrants.org").exists()
+    assert "_auth_user_id" in client.session
 
 
 def test_callback_auto_joins_workspace_on_domain_match(client, settings, db):
