@@ -20,6 +20,7 @@ import {
 import { Button } from "canopy-ui/ui";
 import { SlackPanel } from "@/components/SlackPanel";
 import { useNavigate } from "react-router-dom";
+import { DefaultTenancyPanel, type Tenancy } from "@/components/workspaces/DefaultTenancyPanel";
 
 const ROLE_OPTIONS: WorkspaceRole[] = ["owner", "editor", "viewer"];
 
@@ -268,6 +269,14 @@ export default function WorkspaceSettingsPage() {
           )}
         </section>
       )}
+
+      <DefaultTenancyPanel
+        tenancy={(ws.default_tenancy ?? {}) as Tenancy}
+        canEdit={isOwner}
+        onSave={async (patch) => {
+          setWs(await updateWorkspace(workspaceSlug!, { default_tenancy: patch }));
+        }}
+      />
 
       {isOwner && (
         <section className="mt-8">
