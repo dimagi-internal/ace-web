@@ -144,3 +144,159 @@ def list_run_clones(
         .order_by("-created_at")
     )
     return JsonResponse([_out(c) for c in rows], safe=False)
+
+
+# ---------------------------------------------------------------------------
+# release — record reviewers, optionally forward the source's public summary
+# ---------------------------------------------------------------------------
+
+
+class RunReleaseIn(StrictModel):
+    # Added to the recorded reviewers (lower-cased, de-duplicated); never removes.
+    reviewers: list[str] = []
+    # True: the source run of this run's clone forwards its public summary
+    # here (308). False: stop forwarding. Absent: unchanged.
+    forward_source: bool | None = None
+
+
+class ReleaseSourceOut(StrictModel):
+    workspace: str
+    opp_slug: str
+    run_id: str
+
+
+class RunReleaseOut(StrictModel):
+    workspace: str
+    opp_slug: str
+    run_id: str
+    reviewers: list[str]
+    forwards_from: ReleaseSourceOut | None
+    released_by: str | None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+
+def _release_out(r) -> dict:
+    src = r.forwards_from
+    return RunReleaseOut.model_validate(
+        {
+            "workspace": r.workspace_id,
+            "opp_slug": r.opp_slug,
+            "run_id": r.run_id,
+            "reviewers": list(r.reviewers or []),
+            "forwards_from": (
+                {"workspace": src.source_workspace_id, "opp_slug": src.opp_slug,
+                 "run_id": src.run_id}
+                if src else None
+            ),
+            "released_by": r.released_by.email if r.released_by else None,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+        }
+    ).model_dump(mode="json")
+
+
+def forwarded_summary_target(workspace_slug: str, opp_slug: str, run_id: str):
+    """If this run's public summary is forwarded to a released clone, return
+    ``(workspace, opp_slug, run_id)`` of the clone, else None."""
+    from apps.workspaces.models import RunRelease
+
+    r = (
+        RunRelease.objects.filter(
+            forwards_from__source_workspace_id=workspace_slug,
+            forwards_from__opp_slug=opp_slug,
+            forwards_from__run_id=run_id,
+        )
+        .order_by("-updated_at")
+        .first()
+    )
+    return (r.workspace_id, r.opp_slug, r.run_id) if r else None
+
+
+def _clear_public_summary_cache(workspace: str, opp_slug: str, run_id: str) -> None:
+    from django.core.cache import cache
+
+    from .api import _summary_cache_key
+
+    for member in (True, False):
+        cache.delete(_summary_cache_key(workspace, opp_slug, run_id, is_member=member))
+
+
+@router.post(
+    "/{slug}/runs/{run_id}/release",
+    response={200: RunReleaseOut},
+    summary="Record a release (reviewers, source-link forwarding)",
+)
+def release_run_endpoint(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+    body: RunReleaseIn,
+) -> HttpResponse:
+    from django.db import transaction
+
+    from apps.workspaces.models import RunClone, RunRelease
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_owner(request, workspace)
+
+    with transaction.atomic():
+        release, _ = RunRelease.objects.select_for_update().get_or_create(
+            workspace=workspace, opp_slug=slug, run_id=run_id,
+            defaults={"released_by": request.user},
+        )
+        reviewers = list(release.reviewers or [])
+        for email in body.reviewers:
+            e = email.strip().lower()
+            if e and e not in reviewers:
+                reviewers.append(e)
+        release.reviewers = reviewers
+        old_source = release.forwards_from
+        if body.forward_source is True:
+            clone = (
+                RunClone.objects.filter(target_workspace=workspace, opp_slug=slug,
+                                        run_id=run_id, status="done")
+                .order_by("-created_at")
+                .first()
+            )
+            if clone is None:
+                raise ProblemError(
+                    400, "This run is not a finished clone, so there is no source link "
+                    "to forward", type_=TYPE_VALIDATION,
+                )
+            release.forwards_from = clone
+        elif body.forward_source is False:
+            release.forwards_from = None
+        release.save()
+
+    for src in {old_source, release.forwards_from} - {None}:
+        _clear_public_summary_cache(src.source_workspace_id, src.opp_slug, src.run_id)
+    release = RunRelease.objects.select_related("forwards_from", "released_by").get(
+        pk=release.pk
+    )
+    return JsonResponse(_release_out(release))
+
+
+@router.get(
+    "/{slug}/runs/{run_id}/release",
+    response={200: RunReleaseOut},
+    summary="Get a run's release record",
+)
+def get_release(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    from apps.workspaces.models import RunRelease
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    release = (
+        RunRelease.objects.select_related("forwards_from", "released_by")
+        .filter(workspace=workspace, opp_slug=slug, run_id=run_id)
+        .first()
+    )
+    if release is None:
+        raise ProblemError(404, "Not released", type_=TYPE_NOT_FOUND)
+    return JsonResponse(_release_out(release))

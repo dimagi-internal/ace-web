@@ -484,6 +484,24 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/release": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get a run's release record */
+        readonly get: operations["apps_opps_clone_api_get_release"];
+        readonly put?: never;
+        /** Record a release (reviewers, source-link forwarding) */
+        readonly post: operations["apps_opps_clone_api_release_run_endpoint"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/sessions": {
         readonly parameters: {
             readonly query?: never;
@@ -2822,6 +2840,49 @@ export interface components {
         readonly RunCloneIn: {
             /** To Workspace */
             readonly to_workspace: string;
+        };
+        /** ReleaseSourceOut */
+        readonly ReleaseSourceOut: {
+            /** Workspace */
+            readonly workspace: string;
+            /** Opp Slug */
+            readonly opp_slug: string;
+            /** Run Id */
+            readonly run_id: string;
+        };
+        /** RunReleaseOut */
+        readonly RunReleaseOut: {
+            /** Workspace */
+            readonly workspace: string;
+            /** Opp Slug */
+            readonly opp_slug: string;
+            /** Run Id */
+            readonly run_id: string;
+            /** Reviewers */
+            readonly reviewers: readonly string[];
+            readonly forwards_from: components["schemas"]["ReleaseSourceOut"] | null;
+            /** Released By */
+            readonly released_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** RunReleaseIn */
+        readonly RunReleaseIn: {
+            /**
+             * Reviewers
+             * @default []
+             */
+            readonly reviewers: readonly string[];
+            /** Forward Source */
+            readonly forward_source?: boolean | null;
         };
         /** Page[SessionListOut] */
         readonly Page_SessionListOut_: {
@@ -5905,6 +5966,58 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": readonly components["schemas"]["RunCloneOut"][];
+                };
+            };
+        };
+    };
+    readonly apps_opps_clone_api_get_release: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RunReleaseOut"];
+                };
+            };
+        };
+    };
+    readonly apps_opps_clone_api_release_run_endpoint: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RunReleaseIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RunReleaseOut"];
                 };
             };
         };

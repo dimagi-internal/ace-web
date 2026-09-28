@@ -507,7 +507,25 @@ export async function getPublicOppSummary(
   if (!resp.ok) {
     throw new Error(`getPublicOppSummary: ${resp.status}`);
   }
+  // A released clone can take over this run's link: the API 308s to the
+  // clone's summary and fetch follows it. Move the page there too, so the
+  // address, and every write the page makes, is the clone's.
+  const moved = resp.redirected ? forwardedSummaryPath(resp.url, base) : null;
+  if (moved && moved !== window.location.pathname) {
+    window.location.replace(moved + window.location.search + window.location.hash);
+  }
   return (await resp.json()) as OppSummaryPayload;
+}
+
+/**
+ * The summary PAGE path for a redirected summary API URL, or null when the
+ * URL is not a summary API URL. `base` is the app's path prefix (e.g. `/ace`).
+ */
+export function forwardedSummaryPath(apiUrl: string, base: string): string | null {
+  const path = new URL(apiUrl, "http://x").pathname;
+  const m = path.match(/\/api\/opps\/public\/([^/]+)\/([^/]+)\/runs\/([^/]+)\/summary\/?$/);
+  if (!m) return null;
+  return `${base}/opps/${m[1]}/${m[2]}/runs/${m[3]}/summary`;
 }
 
 /** Raised with the server's human-readable detail when a reaction is refused. */
