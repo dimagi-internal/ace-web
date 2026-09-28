@@ -1544,6 +1544,124 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/release": {
+      "post": {
+        "operationId": "apps_opps_clone_api_release_run_endpoint",
+        "summary": "Record a release (reviewers, source-link forwarding)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunReleaseOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunReleaseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "apps_opps_clone_api_get_release",
+        "summary": "Get a run's release record",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunReleaseOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/sessions": {
       "get": {
         "operationId": "apps_sessions_api_list_sessions",
@@ -7111,6 +7229,123 @@
           "to_workspace"
         ],
         "title": "RunCloneIn",
+        "type": "object"
+      },
+      "ReleaseSourceOut": {
+        "additionalProperties": false,
+        "properties": {
+          "workspace": {
+            "title": "Workspace",
+            "type": "string"
+          },
+          "opp_slug": {
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace",
+          "opp_slug",
+          "run_id"
+        ],
+        "title": "ReleaseSourceOut",
+        "type": "object"
+      },
+      "RunReleaseOut": {
+        "additionalProperties": false,
+        "properties": {
+          "workspace": {
+            "title": "Workspace",
+            "type": "string"
+          },
+          "opp_slug": {
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "reviewers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reviewers",
+            "type": "array"
+          },
+          "forwards_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseSourceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "released_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace",
+          "opp_slug",
+          "run_id",
+          "reviewers",
+          "forwards_from",
+          "released_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RunReleaseOut",
+        "type": "object"
+      },
+      "RunReleaseIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reviewers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Reviewers",
+            "type": "array"
+          },
+          "forward_source": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forward Source"
+          }
+        },
+        "title": "RunReleaseIn",
         "type": "object"
       },
       "Page_SessionListOut_": {

@@ -2233,11 +2233,31 @@ def public_opp_summary(
     """
     from django.core.cache import cache as _cache
 
+    # A released clone can take over this run's public link (release step 3):
+    # 308 to the clone's summary API. The page follows the redirect and moves
+    # its own address to the clone (OppSummaryPage), so the payload contract
+    # is unchanged.
+    from apps.opps.clone_api import forwarded_summary_target
     from apps.opps.drive_cache import CachedDriveClient
     from apps.opps.drive_client import get_drive_client
     from apps.opps.summary import build_summary_payload
     from apps.service_accounts.exceptions import ServiceAccountNotFound
     from apps.workspaces.models import Workspace, WorkspaceMembership
+
+    forward = forwarded_summary_target(workspace, slug, run_id)
+    if forward is not None:
+        from urllib.parse import quote
+
+        from django.conf import settings as dj_settings
+        from django.http import HttpResponsePermanentRedirect
+
+        prefix = (getattr(dj_settings, "FORCE_SCRIPT_NAME", "") or "").rstrip("/")
+        f_ws, f_slug, f_run = (quote(x, safe="") for x in forward)
+        resp = HttpResponsePermanentRedirect(
+            f"{prefix}/api/opps/public/{f_ws}/{f_slug}/runs/{f_run}/summary"
+        )
+        resp.status_code = 308
+        return resp
 
     is_member = bool(
         getattr(request.user, "is_authenticated", False)
