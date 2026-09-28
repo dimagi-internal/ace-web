@@ -1,9 +1,10 @@
-# Per-opp tenancy, opp-bound ACE sessions, and release-to-new-workspace
+# Per-opp tenancy, opp-bound ACE sessions, clone-to-new-workspace, and release
 
 **Date**: 2026-09-28
 **Status**: Approved in conversation (Jonathan, 2026-09-28), spec under review
 **Owner**: Jonathan Jackson
-**Command name**: `release-to-new-workspace` (working name)
+**Commands**: `clone-to-new-workspace` (mechanical, generic) and `release`
+(external-facing steps on top); working names
 **Spans**: ace-web (this repo) and the ACE plugin (`dimagi-internal/ace`)
 **Background**: ACE's design doc "External reviewer access to ACE runs — design v1"
 (Google Doc `1DMFXXUikPo_e-UU3zT7Zq8CQ6OMFPKKtna00VWGLmio`, from the ACE turn
@@ -52,7 +53,9 @@ everything themselves, instead of ACE.**
   Drive.
 - **Anonymous editing is out of scope.** Anonymous editing of the public
   summary will be removed entirely once this system is in place.
-- **Release is its own command,** run on a completed run.
+- **Clone and release are separate commands.** Clone is the generic
+  mechanical copy into a new workspace and tenancy. Release is a second step
+  that adds audit, invites, redirect and polish for outside reviewers.
 - **ACE merges its own PRs** as the work iterates.
 
 ## Concepts
@@ -210,15 +213,16 @@ account, and HQ sign-in then fails for them.
   workspace's default**.
 - **Products:** the copied run's `products` blocks still point at the source
   tenancy's assets until the ACE command rewrites them system by system.
-- **Forward link:** the source run records `released_to: {workspace, opp,
+- **Forward link:** the source run records `cloned_to: {workspace, opp,
   run}`.
-- **Redirect:** once the release's ace-web step is complete, the source run's
-  public summary endpoint redirects (HTTP 308) to the released run's summary.
-  The link Spark already has therefore lands on their copy.
+- **Redirect (enabled by `release`, not by the clone):** the source run's
+  public summary endpoint can redirect (HTTP 308) to the released clone's
+  summary. The link Spark already has therefore lands on their copy.
 - **Workbench:** internal users see a banner linking to the released copy
   instead of being redirected.
-- **Cache:** both runs' snapshot caches are invalidated. `released_to` is an
-  optional pass-through field, so `_KEY_VERSION` does not change.
+- **Cache:** both runs' snapshot caches are invalidated. `cloned_to` and
+  `released` are optional pass-through fields, so `_KEY_VERSION` does not
+  change.
 
 ## ACE changes (`dimagi-internal/ace`)
 
@@ -241,10 +245,11 @@ This is the foundation, and it is valuable before any partner exists.
   - every untargeted tool resolves from tenancy;
   - an unbound session cannot write.
 
-### E. `/ace:release-to-new-workspace <opp>/<run-id> --to <workspace>`
+### E. `/ace:clone-to-new-workspace <opp>/<run-id> --to <workspace>`
 
-The command runs on a completed run and leaves the source run untouched. It has
-four stages:
+A generic clone with nothing partner-specific in it. It works on a completed
+run, leaves the source untouched apart from a `cloned_to` note, sends no
+invites, and adds no redirects.
 
 1. **Preflight.**
    - Resolve the target workspace's default tenancy.
@@ -252,24 +257,24 @@ four stages:
    - If anything is missing, stop **before creating anything** and list what a
      human must do (e.g. "Connect staff: create program-manager org `spark` and
      add ace@dimagi-ai.com as admin").
-2. **Release.**
+2. **Clone.**
    - ace-web copies the run (C).
-   - ACE then binds a session to the **new** opp and recreates each system's
-     assets there, one step per system. Binding to the new opp means the guard
-     itself stops a step from writing into the source tenancy.
-   - Each step records what it created in a `release` block, in both runs'
+   - ACE binds a session to the **new** opp and rebuilds each system's assets
+     there, one step per system. Binding to the new opp means the guard itself
+     stops a step from writing into the source tenancy.
+   - Each step records what it created in a `clone` block, in both runs'
      `run_state.yaml`.
-3. **Invite.**
-   - Invite the target workspace's members to each system, with roles limited
-     to the new tenancy.
-   - Every invite is shown for approval before it is sent.
-4. **Report.** Per system: created, invited, or NOT DONE with the reason. Each
-   line has a read-back proving it (id, URL, member list).
+3. **Report.** Per system: created, or NOT DONE with the reason. Each line has
+   a read-back proving it (id, URL).
 
-**Resumable and idempotent.** A step whose `release` entry is complete is
-skipped on rerun. A step that may have succeeded without confirming it (the HQ
-app copy often times out after making the copy) re-lists before retrying,
-because a blind retry creates a duplicate.
+**Always rebuild, even when the tenancies match.** An opp's products belong to
+that opp. Otherwise two opps in two workspaces would share one Connect
+opportunity, and a grant on one would expose the other.
+
+**Resumable and idempotent.** A step whose `clone` entry is complete is skipped
+on rerun. A step that may have succeeded without confirming it (the HQ app copy
+often times out after making the copy) re-lists before retrying, because a
+blind retry creates a duplicate.
 
 Each of the per-system steps below ships on its own.
 
@@ -281,13 +286,11 @@ Each of the per-system steps below ships on its own.
   and grid-menu settings.
 - Build and release (`commcare_make_build`, `commcare_release_build`), and
   record the `hq_app_id`s.
-- Invite members with `commcare_invite_web_user`. App Editor is acceptable,
-  because the space holds only this tenancy's apps.
 - **Not in v1:** mobile workers. There is no tool to create them, so the report
   lists them as a manual step.
 - **First live check:** a cross-space unlinked copy has only been tested within
-  one space. The first run verifies it on Spark before anything else is built
-  on top of it.
+  one space. The first clone verifies it on Spark before anything else is
+  built on top of it.
 
 **Connect**
 
@@ -297,7 +300,6 @@ Each of the per-system steps below ships on its own.
 - Recreate the program in `connect_pm_org` and the opportunity targeting
   `connect_holding_org`. They point at the **new** HQ apps and reuse the source
   run's payment units, verification flags and dates.
-- Invite members with `connect_add_org_member`, as viewer by default.
 
 **Labs**
 
@@ -306,7 +308,6 @@ Each of the per-system steps below ships on its own.
   existing opp.
 - Copy the run's workflows and dashboards onto the clones (`copy_workflow`) and
   rewrite `synthetic.*`.
-- The finest access control available is an email domain.
 
 **OCS**
 
@@ -317,13 +318,49 @@ Each of the per-system steps below ships on its own.
 - **The bot is rebuilt** from the source run's prompt, knowledge files and
   settings, then published. A clone cannot cross teams.
 
+### E2. `/ace:release <opp>/<run-id>`
+
+Run on the clone, when someone outside is about to review it. It needs no
+clone: a Dimagi-internal run can be released to Dimagi reviewers. A clone is
+needed only when the reviewers must not see the rest of the tenancy.
+
+1. **Audit.**
+   - Run `run-surface-audit` on the run.
+   - Stop if the audit finds anything broken.
+2. **Invite.**
+   - Grant the opp workspace's members access in each system, with roles
+     limited to the opp's tenancy.
+   - Every invite is approved first.
+   - This absorbs `share-run-access`'s grant step (F).
+   - For each system:
+     - HQ: `commcare_invite_web_user` (App Editor is acceptable, because the
+       space holds only this tenancy's apps).
+     - Connect: `connect_add_org_member` (viewer).
+     - OCS: `ocs_add_team_member`.
+     - Labs: `labs_allowed_domains` already covers access.
+     - ace-web: a workspace invite (A).
+3. **Redirect (optional).**
+   - When the source run's summary link has already been sent, the source's
+     public summary 308-redirects to the released run (ace-web C).
+   - Internal users see a banner in the Workbench instead of being redirected.
+4. **Record.**
+   - `released: {at, by, to: [emails]}` in `run_state.yaml`.
+   - The Workbench shows it.
+5. **Polish.** An open list, grown as external reviews teach us. Starting
+   ideas:
+   - strip internal-only links and notes from the public summary;
+   - regenerate screenshots that show shared-tenant URLs;
+   - send the invite email with the "Log in with CommCare HQ first" steps.
+
 ### F. share-run-access
 
 - Fix ace#2525.
 - It keeps its job of granting access within an opp's *current* tenancy.
 - It refuses to grant a non-member of the opp's workspace access to a tenancy
-  shared with other workspaces, and points at `release-to-new-workspace`
+  shared with other workspaces, and points at `clone-to-new-workspace`
   instead.
+- Its grant step is absorbed by `release` (E2), leaving `share-run-access`
+  as a thin wrapper or retiring it.
 
 ## What each system can do (research, 2026-09-28)
 
@@ -344,18 +381,21 @@ Each item is its own PR, merged when green.
 2. ace-web **B**: tenancy model, API, and the `dimagi-team` backfill.
 3. ACE **D**: opp binding and the tenancy guard, with `.env` defaults retired.
 4. ace-web **C**: copying a run into another workspace, and the redirect.
-5. ACE **E**: command skeleton (preflight, `release` block, report), then HQ.
+5. ACE **E**: clone skeleton (preflight, `clone` block, report), then HQ.
 6. ACE **E**: Connect.
 7. ACE **E**: Labs.
 8. ACE **E**: OCS.
-9. ACE **F**: `share-run-access`.
+9. ACE **E2**: `release` (audit, invites, redirect, record), absorbing
+   **F**.
 
 **First use: Spark.**
 
 1. Create the `spark` workspace and set its default tenancy.
 2. Do the manual Connect-org and OCS-team setup.
-3. Run the command on `spark-facilitator/20260926-1413`.
-4. Invite Anne, Sasha, Rachel and Enock.
+3. Clone `spark-facilitator/20260926-1413` into `spark`.
+4. Invite Anne, Sasha, Rachel and Enock to the `spark` workspace.
+5. Run `release` on the clone, which invites them in each system and
+   redirects the link they already have.
 
 ## Testing
 
@@ -379,7 +419,7 @@ Each item is its own PR, merged when green.
 - **D:** see D.
 - **E:**
   - dry-run mode per step;
-  - rerun idempotence from a recorded `release` block;
+  - rerun idempotence from a recorded `clone` block;
   - HQ verified live on Spark first.
 - **After deploy:** run `scripts/qa/labs_probe.py`.
 
@@ -390,5 +430,5 @@ Each item is its own PR, merged when green.
 - Per-user (rather than per-domain) Labs access.
 - Separate ACE agents or identities per tenancy (see "One agent, and when that
   stops being enough").
-- Keeping a released run in sync with later source runs. Releasing a newer run
-  is another invocation.
+- Keeping a clone in sync with later source runs. Cloning a newer run is
+  another invocation.
