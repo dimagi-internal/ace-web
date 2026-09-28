@@ -318,39 +318,41 @@ Each of the per-system steps below ships on its own.
 - **The bot is rebuilt** from the source run's prompt, knowledge files and
   settings, then published. A clone cannot cross teams.
 
-### E2. `/ace:release <opp>/<run-id>`
+### E2. `/ace:release <opp>/<run-id> --reviewers <email[:role]>,...`
 
 Run on the clone, when someone outside is about to review it. It needs no
 clone: a Dimagi-internal run can be released to Dimagi reviewers. A clone is
 needed only when the reviewers must not see the rest of the tenancy.
 
+**Everything is set up before anyone is invited.** Reviewers are not members
+of the workspace during the clone or the release, so nothing half-built is
+ever visible to them. Invites are the last step, and the ace-web workspace
+invite is the very last.
+
 1. **Audit.**
    - Run `run-surface-audit` on the run.
    - Stop if the audit finds anything broken.
-2. **Invite.**
-   - Grant the opp workspace's members access in each system, with roles
-     limited to the opp's tenancy.
-   - Every invite is approved first.
-   - This absorbs `share-run-access`'s grant step (F).
-   - For each system:
+2. **Polish.** An open list, grown as external reviews teach us. Starting
+   ideas:
+   - strip internal-only links and notes from the public summary;
+   - regenerate screenshots that show shared-tenant URLs.
+3. **Redirect (optional).**
+   - When the source run's summary link has already been sent, the source's
+     public summary 308-redirects to the released run (ace-web C).
+   - Internal users see a banner in the Workbench instead of being redirected.
+4. **Invite, last.** Every invite is approved first, shown together as one
+   list. This absorbs `share-run-access`'s grant step (F).
+   - First, access in each system, limited to the opp's tenancy:
      - HQ: `commcare_invite_web_user` (App Editor is acceptable, because the
        space holds only this tenancy's apps).
      - Connect: `connect_add_org_member` (viewer).
      - OCS: `ocs_add_team_member`.
      - Labs: `labs_allowed_domains` already covers access.
-     - ace-web: a workspace invite (A).
-3. **Redirect (optional).**
-   - When the source run's summary link has already been sent, the source's
-     public summary 308-redirects to the released run (ace-web C).
-   - Internal users see a banner in the Workbench instead of being redirected.
-4. **Record.**
+   - Then the ace-web workspace invite (A), with an email that carries the
+     "Log in with CommCare HQ first" steps.
+5. **Record.**
    - `released: {at, by, to: [emails]}` in `run_state.yaml`.
    - The Workbench shows it.
-5. **Polish.** An open list, grown as external reviews teach us. Starting
-   ideas:
-   - strip internal-only links and notes from the public summary;
-   - regenerate screenshots that show shared-tenant URLs;
-   - send the invite email with the "Log in with CommCare HQ first" steps.
 
 ### F. share-run-access
 
@@ -393,9 +395,9 @@ Each item is its own PR, merged when green.
 1. Create the `spark` workspace and set its default tenancy.
 2. Do the manual Connect-org and OCS-team setup.
 3. Clone `spark-facilitator/20260926-1413` into `spark`.
-4. Invite Anne, Sasha, Rachel and Enock to the `spark` workspace.
-5. Run `release` on the clone, which invites them in each system and
-   redirects the link they already have.
+4. Run `release` on the clone with Anne, Sasha, Rachel and Enock as reviewers.
+   It audits, polishes and redirects the link they already have, then invites
+   them in each system, and last of all to the `spark` workspace.
 
 ## Testing
 
