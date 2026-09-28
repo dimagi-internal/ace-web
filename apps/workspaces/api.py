@@ -72,6 +72,7 @@ def _workspace_to_dict(ws, requesting_user) -> dict:
         "role": role_for(requesting_user, ws) or "viewer",
         "member_count": ws.memberships.count(),
         "auto_join_domains": list(ws.auto_join_domains or []),
+        "default_tenancy": dict(ws.default_tenancy or {}),
         "created_at": ws.created_at,
         "updated_at": ws.updated_at,
     }
@@ -127,6 +128,23 @@ def _membership_to_dict(membership) -> dict:
         "role": membership.role,
         "joined_at": membership.joined_at,
     }
+
+
+def _set_default_tenancy(ws, user, raw: dict) -> None:
+    """Merge into the workspace's default tenancy (same rules as the opp
+    PATCH: a key set to null clears it, an absent key is kept) and audit it."""
+    from pydantic import ValidationError
+
+    from apps.opps import tenancy as tenancy_mod
+
+    before = tenancy_mod.clean(ws.default_tenancy)
+    try:
+        after = tenancy_mod.merge(before, raw)
+    except ValidationError as exc:
+        raise ProblemError(400, "Invalid default_tenancy", type_=TYPE_VALIDATION,
+                           detail=str(exc)) from exc
+    ws.default_tenancy = after
+    tenancy_mod.record_change(workspace=ws, opp_slug="", user=user, before=before, after=after)
 
 
 def _require_owner_role(workspace, user) -> None:
@@ -312,6 +330,9 @@ def patch_workspace(user, slug: str, updates: dict) -> dict:
     if "auto_join_domains" in updates:
         ws.auto_join_domains = _normalize_auto_join_domains(updates["auto_join_domains"])
         changed.append("auto_join_domains")
+    if updates.get("default_tenancy") is not None:
+        _set_default_tenancy(ws, user, updates["default_tenancy"])
+        changed.append("default_tenancy")
     if changed:
         ws.save(update_fields=changed + ["updated_at"])
     return _workspace_to_dict(ws, user)
@@ -342,6 +363,9 @@ def update_workspace(
     if "auto_join_domains" in updates:
         ws.auto_join_domains = _normalize_auto_join_domains(updates["auto_join_domains"])
         changed.append("auto_join_domains")
+    if updates.get("default_tenancy") is not None:
+        _set_default_tenancy(ws, request.user, updates["default_tenancy"])
+        changed.append("default_tenancy")
     if changed:
         ws.save(update_fields=changed + ["updated_at"])
     payload = WorkspaceOut.model_validate(_workspace_to_dict(ws, request.user)).model_dump(
@@ -529,7 +553,7 @@ def get_workspace_activity(workspace, user) -> list[dict]:
         AccessLog.objects.filter(context__workspace_slug=workspace.slug)
         .order_by("-created_at")[:100]
     )
-    return [
+    items = [
         {
             "action": r.action,
             "subject": r.subject,
@@ -539,6 +563,28 @@ def get_workspace_activity(workspace, user) -> list[dict]:
         }
         for r in rows
     ]
+    # Tenancy changes: where ACE may write for an opp (blank subject = the
+    # workspace default). See apps/opps/tenancy.py.
+    changes = workspace.tenancy_changes.select_related("changed_by").order_by(
+        "-created_at"
+    )[:100]
+    items += [
+        {
+            "action": "tenancy.changed",
+            "subject": c.opp_slug,
+            "scopes_used": [],
+            "context": {
+                "workspace_slug": workspace.slug,
+                "changed_by": c.changed_by.email if c.changed_by else None,
+                "before": c.before,
+                "after": c.after,
+            },
+            "created_at": c.created_at.isoformat(),
+        }
+        for c in changes
+    ]
+    items.sort(key=lambda i: i["created_at"], reverse=True)
+    return items[:100]
 
 
 @router.get("/{slug}/activity", summary="Workspace audit log (owner only)")

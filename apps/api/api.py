@@ -143,6 +143,7 @@ from apps.ingest.api import router as ingest_router  # noqa: E402
 from apps.mobile.api import router as mobile_router  # noqa: E402
 from apps.opps.api import public_summary_router as opps_public_router  # noqa: E402, I001
 from apps.opps.api import router as opps_router  # noqa: E402
+from apps.opps.tenancy_api import router as opp_tenancy_router  # noqa: E402
 from apps.presence.api import router as presence_router  # noqa: E402
 from apps.service_accounts.api import router as tokens_router  # noqa: E402
 from apps.sessions.api import router as sessions_router  # noqa: E402
@@ -155,6 +156,7 @@ from apps.workspaces.api import router as workspaces_router  # noqa: E402, I001
 
 # Workspace-scoped resources
 api.add_router("/w/{workspace_slug}/opps", opps_router)
+api.add_router("/w/{workspace_slug}/opps", opp_tenancy_router)
 api.add_router("/w/{workspace_slug}/sessions", sessions_router)
 api.add_router("/w/{workspace_slug}/activity", activity_router)
 api.add_router("/w/{workspace_slug}/videos", videos_router)
