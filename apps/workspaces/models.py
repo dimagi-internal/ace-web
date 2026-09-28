@@ -176,3 +176,38 @@ class RunClone(models.Model):
             models.Index(fields=["source_workspace", "opp_slug", "run_id"]),
             models.Index(fields=["target_workspace", "opp_slug", "run_id"]),
         ]
+
+
+class RunRelease(models.Model):
+    """A run released to outside reviewers (`/ace:release`).
+
+    One row per released run (workspace + opp + run), upserted as the release
+    proceeds: reviewers are added as they are invited, and `forwards_from`
+    names the clone whose SOURCE run's public summary link now 308-redirects
+    here — so a link already sent to reviewers lands on their copy.
+    Spec: docs/specs/2026-09-28-clone-and-release-design.md § E2.
+    """
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="releases")
+    opp_slug = models.CharField(max_length=64)
+    run_id = models.CharField(max_length=64)
+    reviewers = models.JSONField(default=list, blank=True)
+    forwards_from = models.ForeignKey(
+        RunClone, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    released_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "workspace_run_releases"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "opp_slug", "run_id"], name="uniq_run_release"
+            )
+        ]
