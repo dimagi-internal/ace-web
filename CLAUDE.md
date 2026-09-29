@@ -203,7 +203,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   workspace activity feed. ACE's `bin/ace-bind` reads it
   (`GET /api/w/{ws}/opps/{slug}/tenancy`) to lock a session to one opp's
   tenancy. `dimagi-team`'s opps were backfilled with the shared tenants;
-  `connect_pm_org` was deliberately left unset (no run surface records it).
+  `connect_pm_org` is `ace-pm-org` (0007, verified from Connect 2026-09-28).
   `POST /api/w/{ws}/opps/{slug}/runs/{run}/clone {to_workspace}`
   (`apps/opps/run_cloner.py`, owner of BOTH workspaces) copies one run whole
   — screenshots and videos included — into the target workspace's Drive root
