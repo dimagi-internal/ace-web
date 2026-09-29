@@ -164,7 +164,7 @@ class RunReleaseIn(StrictModel):
     # Added to the recorded reviewers (lower-cased, de-duplicated); never removes.
     reviewers: list[str] = []
     # True: the source run of this run's clone forwards its public summary
-    # here (308). False: stop forwarding. Absent: unchanged.
+    # here (307, no-store). False: stop forwarding. Absent: unchanged.
     forward_source: bool | None = None
 
 

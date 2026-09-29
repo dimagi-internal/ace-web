@@ -2234,7 +2234,7 @@ def public_opp_summary(
     from django.core.cache import cache as _cache
 
     # A released clone can take over this run's public link (release step 3):
-    # 308 to the clone's summary API. The page follows the redirect and moves
+    # 307 to the clone's summary API. The page follows the redirect and moves
     # its own address to the clone (OppSummaryPage), so the payload contract
     # is unchanged.
     from apps.opps.clone_api import forwarded_summary_target
@@ -2249,14 +2249,19 @@ def public_opp_summary(
         from urllib.parse import quote
 
         from django.conf import settings as dj_settings
-        from django.http import HttpResponsePermanentRedirect
+        from django.http import HttpResponseRedirect
 
         prefix = (getattr(dj_settings, "FORCE_SCRIPT_NAME", "") or "").rstrip("/")
         f_ws, f_slug, f_run = (quote(x, safe="") for x in forward)
-        resp = HttpResponsePermanentRedirect(
+        resp = HttpResponseRedirect(
             f"{prefix}/api/opps/public/{f_ws}/{f_slug}/runs/{f_run}/summary"
         )
-        resp.status_code = 308
+        # 307, uncacheable — NOT a permanent 308. Forwarding is switchable
+        # (`forward_source: false`), and a browser may cache a 308 with no
+        # expiry, so turning it off would never reach anyone who had already
+        # followed it.
+        resp.status_code = 307
+        resp["Cache-Control"] = "no-store"
         return resp
 
     is_member = bool(

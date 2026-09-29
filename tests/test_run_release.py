@@ -72,7 +72,9 @@ def test_forward_redirects_the_source_public_summary(clone, owner):
         "workspace": "dimagi-team", "opp_slug": "spark-facilitator", "run_id": RUN,
     }
     anon = Client().get(SOURCE_SUMMARY)
-    assert anon.status_code == 308
+    # Temporary + uncacheable, because forwarding can be turned off again.
+    assert anon.status_code == 307
+    assert anon["Cache-Control"] == "no-store"
     assert anon["Location"].endswith(
         f"/api/opps/public/spark/spark-facilitator/runs/{RUN}/summary"
     )

@@ -24,6 +24,11 @@ def _tree():
                 "opp.yaml": "slug: spark-facilitator\n",
                 "pdd.md": "# PDD\n",
                 "inputs": {"brief.md": "brief"},
+                # ACE's internal working state at the opp root — never cloned.
+                "open-questions.md": "internal",
+                "eval-calibration": {"known-issues.md": "internal"},
+                "inbox-triage_comms-log": "internal",
+                "Spark — parked outbound draft for Anne": "internal",
                 "runs": {
                     RUN: {
                         "run_state.yaml": "opportunity: spark-facilitator\n",
@@ -114,6 +119,17 @@ def test_records_clone_and_target_opp_takes_target_default(drive, source_ws, tar
     assert clone.run_id == RUN
     assert clone.status == "done"
     assert clone.created_by == owner
+
+
+def test_internal_opp_level_files_are_not_cloned(drive, source_ws, target_ws, owner):
+    # The live spark-facilitator root held exactly these: a reviewer-facing
+    # clone must not carry ACE's notes, comms-log, or an unsent draft to them.
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+    names = _names(drive, "SPARK/spark-facilitator")
+    for internal in ("open-questions.md", "eval-calibration", "inbox-triage_comms-log",
+                     "Spark — parked outbound draft for Anne"):
+        assert internal not in names
 
 
 def test_second_run_of_same_opp_reuses_the_opp_folder(drive, source_ws, target_ws, owner):

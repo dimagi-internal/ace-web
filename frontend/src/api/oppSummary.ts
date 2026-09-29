@@ -507,7 +507,7 @@ export async function getPublicOppSummary(
   if (!resp.ok) {
     throw new Error(`getPublicOppSummary: ${resp.status}`);
   }
-  // A released clone can take over this run's link: the API 308s to the
+  // A released clone can take over this run's link: the API 307s to the
   // clone's summary and fetch follows it. Move the page there too, so the
   // address, and every write the page makes, is the clone's.
   const moved = resp.redirected ? forwardedSummaryPath(resp.url, base) : null;

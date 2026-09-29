@@ -46,3 +46,22 @@ def admission_rule(email: str) -> str | None:
     if WorkspaceMembership.objects.filter(user__email__iexact=email).exists():
         return "membership"
     return None
+
+
+def is_internal(user) -> bool:
+    """True for Dimagi staff: ``is_staff``, or an email on the domain list.
+
+    Invite-only login (`admission_rule`'s "invite" / "membership" rules) lets
+    outside reviewers sign in, so "signed in" no longer means "Dimagi". Any
+    endpoint that was written assuming it did — plugin refresh, the system
+    overview, workspace creation — checks this instead.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_staff", False):
+        return True
+    allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
+    if not allowed_domains:
+        return True
+    _, _, domain = (getattr(user, "email", "") or "").strip().lower().rpartition("@")
+    return domain in allowed_domains
