@@ -3,6 +3,8 @@ workspace's Drive root, and record it.
 
 Spec: docs/specs/2026-09-28-clone-and-release-design.md § C.
 """
+import datetime as dt
+
 import pytest
 from django.test import Client
 
@@ -39,6 +41,12 @@ def _tree():
                             "guide.md": "guide",
                         },
                         "notes-unrecognised": {"x.md": "x"},
+                        # ACE's email records — never cloned, at any depth.
+                        "comms-log": {"llo-invite.md": "internal"},
+                        "8-solicitation-management": {
+                            "solicitation.md": "s",
+                            "llo-invite_comms-log": "internal",
+                        },
                     },
                     "20260920-0900": {"run_state.yaml": "old run\n"},
                 },
@@ -97,12 +105,18 @@ def test_copies_the_whole_run_and_the_opp_files(drive, source_ws, target_ws, own
     assert _names(drive, "SPARK/spark-facilitator/runs") == [RUN]
     # Whole run, verbatim — reviewers need the screenshots and videos.
     assert _names(drive, f"SPARK/spark-facilitator/runs/{RUN}") == [
-        "6-qa-and-training", "decisions.yaml", "notes-unrecognised", "run_state.yaml",
+        "6-qa-and-training", "8-solicitation-management", "decisions.yaml",
+        "notes-unrecognised", "run_state.yaml",
+    ]
+    # Comms-logs stay behind: internal, and ACE routes inbound mail by the
+    # thread ids in them — a clone carrying them would steal the source's threads.
+    assert _names(drive, f"SPARK/spark-facilitator/runs/{RUN}/8-solicitation-management") == [
+        "solicitation.md",
     ]
     assert _names(drive, f"SPARK/spark-facilitator/runs/{RUN}/6-qa-and-training") == [
         "guide.md", "screenshots", "videos",
     ]
-    assert result.files_copied == 9
+    assert result.files_copied == 10
     # The source is untouched.
     assert _names(drive, "DT/spark-facilitator/runs") == ["20260920-0900", RUN]
 
@@ -208,6 +222,8 @@ URL = f"/api/w/dimagi-team/opps/spark-facilitator/runs/{RUN}/clone"
 @pytest.fixture
 def patched_drive(monkeypatch, drive):
     monkeypatch.setattr("apps.opps.clone_api.get_drive_client", lambda workspace=None: drive)
+    # Run the background copy inline so endpoint tests see its result.
+    monkeypatch.setattr("apps.opps.clone_api._run_in_background", lambda fn: fn())
     return drive
 
 
@@ -219,7 +235,7 @@ def _client(user):
 
 def test_endpoint_clones_for_an_owner_of_both(patched_drive, source_ws, target_ws, owner):
     resp = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
-    assert resp.status_code == 201, resp.content
+    assert resp.status_code == 202, resp.content
     body = resp.json()
     assert body["target_workspace"] == "spark"
     assert body["run_id"] == RUN
@@ -255,5 +271,51 @@ def test_endpoint_requires_owner_of_the_source(patched_drive, source_ws, target_
 
 def test_endpoint_maps_already_cloned_to_409(patched_drive, source_ws, target_ws, owner):
     _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    again = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    assert again.status_code == 409
+
+
+def test_endpoint_returns_before_the_copy_runs(monkeypatch, drive, source_ws, target_ws, owner):
+    # ace-web#823: the first real clone (347 files, ~14 min) 504'd in-request.
+    monkeypatch.setattr("apps.opps.clone_api.get_drive_client", lambda workspace=None: drive)
+    pending = []
+    monkeypatch.setattr("apps.opps.clone_api._run_in_background", pending.append)
+    resp = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "copying"
+    assert len(pending) == 1
+    pending[0]()
+    assert RunClone.objects.get().status == "done"
+
+
+def _age(record, minutes):
+    RunClone.objects.filter(pk=record.pk).update(
+        updated_at=dt.datetime.now(dt.UTC) - dt.timedelta(minutes=minutes)
+    )
+
+
+def test_a_stale_copying_clone_is_replaced(patched_drive, source_ws, target_ws, owner):
+    _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    first = RunClone.objects.get()
+    RunClone.objects.filter(pk=first.pk).update(status="copying")
+    _age(first, 30)  # its worker died: no progress for 30 min
+    again = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    assert again.status_code == 202
+    first.refresh_from_db()
+    assert first.status == "error" and "abandoned" in first.error
+    assert RunClone.objects.order_by("-created_at").first().status == "done"
+    assert _names(patched_drive, "SPARK/spark-facilitator/runs") == [RUN]
+
+
+def test_an_errored_clone_is_replaced(patched_drive, source_ws, target_ws, owner):
+    _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    RunClone.objects.update(status="error", error="drive 500")
+    again = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    assert again.status_code == 202
+
+
+def test_a_live_copying_clone_is_not_replaced(patched_drive, source_ws, target_ws, owner):
+    _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    RunClone.objects.update(status="copying")  # fresh: still progressing
     again = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
     assert again.status_code == 409

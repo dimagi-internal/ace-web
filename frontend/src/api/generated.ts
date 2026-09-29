@@ -459,7 +459,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Clone a run into another workspace (blocking) */
+        /** Clone a run into another workspace (async — poll …/clones) */
         readonly post: operations["apps_opps_clone_api_clone_run_endpoint"];
         readonly delete?: never;
         readonly options?: never;
@@ -5940,8 +5940,8 @@ export interface operations {
             };
         };
         readonly responses: {
-            /** @description Created */
-            readonly 201: {
+            /** @description Accepted */
+            readonly 202: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
