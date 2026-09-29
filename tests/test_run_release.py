@@ -103,3 +103,10 @@ def test_release_is_owner_only(spaces, owner):
     outsider = User.objects.create(email="o@dimagi.com", display_name="O")
     assert _client(outsider).post(URL, {"reviewers": []},
                                   content_type="application/json").status_code == 404
+
+
+def test_source_clone_listing_says_the_link_forwards(clone, owner):
+    listing = f"/api/w/dimagi-team/opps/spark-facilitator/runs/{RUN}/clones"
+    assert _client(owner).get(listing).json()[0]["forwards_public_link"] is False
+    _client(owner).post(URL, {"forward_source": True}, content_type="application/json")
+    assert _client(owner).get(listing).json()[0]["forwards_public_link"] is True

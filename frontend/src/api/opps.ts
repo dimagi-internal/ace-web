@@ -435,3 +435,19 @@ export function runAction(
     new Error("runAction: no v2 endpoint — will be addressed in a future PR"),
   );
 }
+
+export type RunClone = components["schemas"]["RunCloneOut"];
+
+/** Where a run has been cloned (clone-to-new-workspace). Best-effort: [] on error. */
+export async function listRunClones(
+  workspaceSlug: string,
+  slug: string,
+  runId: string,
+): Promise<RunClone[]> {
+  const { data, response } = await apiClient.GET(
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/clones",
+    { params: { path: { workspace_slug: workspaceSlug, slug, run_id: runId } } },
+  );
+  if (!response.ok || !data) return [];
+  return data as RunClone[];
+}
