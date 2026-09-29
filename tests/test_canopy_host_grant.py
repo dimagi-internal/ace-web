@@ -395,15 +395,26 @@ async def test_a_delegated_session_sees_its_tools_and_runs_as_the_visitor(
 @pytest.mark.asyncio
 async def test_a_bound_token_is_useless_without_its_key(grant_on, canopy_redeem, workbench_user):
     """Copied out of a log and sent as a plain bearer, a delegated token is not a
-    credential — Django does not know it and the gate saw no proof."""
+    credential: the SDK's gate refuses it with a 401 before our app sees it
+    (dimagi-canopy 0.4.1, RFC 9449 §7.1). Until 0.4.1 it reached the tool layer
+    here and was refused only as a tool error — canopy's live probe caught it."""
     from asgiref.sync import sync_to_async
 
     token = (await sync_to_async(_redeem)(canopy_redeem)).json()["access_token"]
-    app, mcp_client = await _mcp_session(_BearerAuth(token))
-    async with app.lifespan(app), mcp_client:
-        result = await mcp_client.call_tool("apps_opps_api_list_opps",
-                                            {"workspace_slug": "team"}, raise_on_error=False)
-        assert result.is_error
+    inner = mock.AsyncMock()
+    app = grant.mcp_app(inner)
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "POST", "path": "/",
+             "headers": [(b"authorization", f"Bearer {token}".encode())]}
+    await app(scope, mock.AsyncMock(), send)
+    assert sent[0]["status"] == 401
+    headers = dict(sent[0].get("headers") or [])
+    assert b"invalid_token" in headers.get(b"www-authenticate", b"")
+    inner.assert_not_called()
 
 
 @pytest.mark.django_db(transaction=True)
