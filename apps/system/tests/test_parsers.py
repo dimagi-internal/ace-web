@@ -126,6 +126,44 @@ class TestParseArtifactManifest:
             entries = parse_artifact_manifest(template.format(phase=short))
             assert entries[0]["phase"] == expected, f"{short} should map to {expected}"
 
+    def test_a_description_that_looks_like_code_is_left_alone(self):
+        """Plugin 0.13.1610: a description quoting a YAML shape —
+        ``{schema_version: 1, phase: …}`` — had its "keys" quoted by the
+        bare-key rewrite, which put a ``"`` inside the string and emptied the
+        whole manifest on labs."""
+        ts = (
+            "export const ARTIFACT_MANIFEST = [\n"
+            "  {\n"
+            "    path: '3-commcare/previews/<slug>/_previews.yaml',\n"
+            "    producedBy: 'app-screenshot-capture',\n"
+            "    consumedBy: [],\n"
+            "    description:\n"
+            '      "Index: `{schema_version: 1, phase: commcare-setup, items[{file_id, '
+            "name, caption?}]}` — the app's frames.\",\n"
+            "  },\n"
+            "  { path: 'b.md', producedBy: 'b', consumedBy: ['c'] },\n"
+            "] as const;\n"
+        )
+        entries = parse_artifact_manifest(ts)
+        assert [e["path"] for e in entries] == [
+            "3-commcare/previews/<slug>/_previews.yaml",
+            "b.md",
+        ]
+        assert entries[0]["description"].startswith(
+            "Index: `{schema_version: 1, phase: commcare-setup, items[{file_id, name,"
+        )
+
+    def test_a_double_slash_inside_a_string_is_not_a_comment(self):
+        ts = (
+            "export const ARTIFACT_MANIFEST = [\n"
+            "  // a real comment: { broken: '\n"
+            "  { path: 'a.md', producedBy: 'a', consumedBy: [],"
+            " description: 'See https://labs.connect.dimagi.com/x' }, /* and { this */\n"
+            "] as const;\n"
+        )
+        [entry] = parse_artifact_manifest(ts)
+        assert entry["description"] == "See https://labs.connect.dimagi.com/x"
+
     def test_empty_manifest(self):
         ts = "export const ARTIFACT_MANIFEST = [] as const;"
         assert parse_artifact_manifest(ts) == []
