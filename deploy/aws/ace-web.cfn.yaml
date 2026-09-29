@@ -112,6 +112,39 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref TargetGroup
 
+  # Our OAuth discovery documents live at the HOST ROOT, not under /ace: RFC 8414
+  # §3.1 and RFC 9728 §3.1 insert the well-known segment between host and path,
+  # so issuer https://labs.connect.dimagi.com/ace is described at
+  # /.well-known/oauth-authorization-server/ace, and the MCP resource
+  # …/ace/api/mcp/ at /.well-known/oauth-protected-resource/ace/api/mcp/. canopy
+  # finds our token endpoint there when it redeems a host grant; without this
+  # rule the listener's default sent them to connect-labs, which 404s, and every
+  # grant was refused (2026-09-28). Exact segments, not `ace*`, so a future
+  # /ace-something app is never swallowed. canopy is at 28, this at 19.
+  #
+  # APPLIED WITH ADMIN CREDENTIALS, not by the pipeline: per-app deploy roles
+  # deliberately cannot write listener rules (canopy-web deploy/aws/deploy_roles.py)
+  # — a role that could add one could route another app's paths to itself. An
+  # unchanged rule costs the pipeline nothing, so only a CHANGE here needs an admin
+  # `aws cloudformation deploy`.
+  WellKnownListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ListenerArn: !Ref HttpsListenerArn
+      Priority: 19
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/.well-known/oauth-authorization-server/ace"
+            - "/.well-known/oauth-authorization-server/ace/*"
+            - "/.well-known/oauth-protected-resource/ace"
+            - "/.well-known/oauth-protected-resource/ace/*"
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
