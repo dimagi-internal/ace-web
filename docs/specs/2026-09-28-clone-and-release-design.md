@@ -221,17 +221,23 @@ account, and HQ sign-in then fails for them.
 
 - **Endpoint:** a new endpoint copies a run into another workspace. The caller
   must be an owner of both workspaces; to anyone else, either workspace returns
-  404.
-- **Not a fork:** it copies the run whole and verbatim — every phase folder,
-  including the Phase 6 screenshots and videos a reviewer needs (a fork skips
-  them). `run_state.yaml` is copied first, as in a fork (ace-web#734).
+  404. **It returns 202 and copies on a background thread** — callers poll
+  `…/clones`. The first real clone (347 files) took ~14 min at ~2.4 s per file;
+  in-request, it 504'd at the load balancer at 10 min (ace-web#823).
+- **Not a fork:** it copies the run whole — every phase folder, including the
+  Phase 6 screenshots and videos a reviewer needs (a fork skips them) — except
+  ACE's email records (`comms-log/`, `*_comms-log`): internal, and ACE routes
+  inbound mail by the thread ids in them. `run_state.yaml` is copied first, as
+  in a fork (ace-web#734).
 - **Destination:** the copy lands under the target workspace's Drive root as
   `<opp-slug>/runs/<run-id>/`, with the same run id. The first clone of an opp
-  into a workspace also copies its opp-level files (`opp.yaml`, `pdd.md`,
-  `inputs/` — everything above `runs/`); later runs reuse them. An
-  `OppWorkspace` row is created in the target if needed, with tenancy taken
-  from the **target workspace's default**. A run already in the target is a
-  409 (trash it there to re-clone).
+  into a workspace also copies its opp-level files — an allowlist (`opp.yaml`,
+  `idea.md`, `pdd.md`, `inputs/`), because the opp root also holds ACE's
+  working notes (ace-web#822); later runs reuse them. An `OppWorkspace` row is
+  created in the target if needed, with tenancy taken from the **target
+  workspace's default**. A run already in the target is a 409 — unless its
+  last clone record is `error`, or `copying` with no progress for 10 minutes
+  (its worker died): then the partial run is trashed and the clone restarts.
 - **Products:** the copied run's `products` blocks still point at the source
   tenancy's assets until the ACE command rewrites them system by system.
 - **Record:** a `RunClone` row (source, target, opp, run, status, files,

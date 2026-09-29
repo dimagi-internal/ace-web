@@ -1423,7 +1423,7 @@
     "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/clone": {
       "post": {
         "operationId": "apps_opps_clone_api_clone_run_endpoint",
-        "summary": "Clone a run into another workspace (blocking)",
+        "summary": "Clone a run into another workspace (async \u2014 poll \u2026/clones)",
         "parameters": [
           {
             "in": "path",
@@ -1454,8 +1454,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "Created",
+          "202": {
+            "description": "Accepted",
             "content": {
               "application/json": {
                 "schema": {
