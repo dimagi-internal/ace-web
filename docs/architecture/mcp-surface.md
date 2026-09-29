@@ -54,6 +54,18 @@ scopes map to (`grant.SCOPE_TOOLS`), and the tool's in-process request runs as
 the visitor, GET-only — it is NOT forwarded as a bearer. PAT callers are
 unaffected. See CLAUDE.md "ace-web is a canopy host through the canopy SDK".
 
+**canopy's live probe.** With `CANOPY_PROBE_ENABLED` (on in the deploy config),
+canopy exercises that same delegated path every 30 minutes with no visitor:
+`POST /api/canopy/oauth/probe` (the SDK's `probe_endpoint`; canopy's client
+only, `private_key_jwt` + DPoP) returns a real ID-JAG for ONE dedicated
+principal, `canopy-probe@probe.invalid` (migration `ace_workspaces.0010`: no
+password, no sign-in path, viewer of the empty `canopy-probe` workspace and
+nothing else). canopy redeems it, calls `apps_opps_api_list_opps`
+`{"workspace_slug": "canopy-probe"}` (must succeed, returning `[]`), and checks
+that `apps_videos_api_list_programs` (outside `opps:read`) is refused and that
+the token is useless without its DPoP key. Configuration: `apps/canopy/probe.py`
++ `config/canopy_host.py`. 404 until the principal exists.
+
 CSRF is not required for Bearer-authenticated requests (stateless tokens are
 not susceptible to cross-site forgery).
 

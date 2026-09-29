@@ -361,6 +361,20 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   does not match, and the CI role cannot write listener rules) and canopy's
   `ace-web` site row to name our issuer + MCP resource. Tests:
   `tests/test_canopy_host_grant.py`, using the SDK's conformance fixtures.
+  **canopy's live probe** (SDK 0.4.0, `apps/canopy/probe.py`,
+  `CANOPY_PROBE_ENABLED` — on in `ace-web.cfn.yaml`): canopy POSTs
+  `/api/canopy/oauth/probe` (SDK `probe_endpoint`, canopy's client only) for a
+  real ID-JAG for ONE dedicated principal and walks the whole grant chain every
+  30 min. The principal is `canopy-probe@probe.invalid` (migration
+  `ace_workspaces.0010` — deploy with `run_migrations: true`; it only acts on a
+  DB that has `dimagi-team`, so fresh/dev/test DBs skip it and use
+  `manage.py ensure_canopy_probe`; `.invalid` TLD so
+  no Connect login can carry it, unusable password), a VIEWER of only the
+  `canopy-probe` workspace, whose empty Drive root makes `list_opps` succeed
+  with `[]` and touch no Drive. Its `sub` is the email (ace-web's `sub` for
+  everyone), and `probe.subject()` answers `""` — probe 404, not in the
+  metadata — until that user exists. Never point the probe at a real person or
+  give it a real workspace. Tests: `tests/test_canopy_probe.py`.
 - **ace-web's view of canopy's API is GENERATED, not hand-written.**
   `frontend/src/api/canopy-generated.ts` comes from canopy-web's own OpenAPI
   schema via `npm run gen:canopy-api` (`frontend/scripts/gen-canopy-contract.mjs`).

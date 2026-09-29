@@ -327,6 +327,12 @@ CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
 CANOPY_GRANT_ISSUER = env("CANOPY_GRANT_ISSUER", default="")
 CANOPY_GRANT_RESOURCE = env("CANOPY_GRANT_RESOURCE", default="")
 CANOPY_GRANT_TOKEN_ENDPOINT = env("CANOPY_GRANT_TOKEN_ENDPOINT", default="")
+# canopy's LIVE PROBE (apps/canopy/probe.py): canopy asks /api/canopy/oauth/probe
+# for a real ID-JAG for ONE dedicated low-privilege principal and makes one real
+# MCP read with it, on a schedule. Non-secret. Off by default; on in the deploy
+# config (deploy/aws/ace-web.cfn.yaml). Even on, it stays 404 until the grant is
+# on AND the probe principal exists (migration ace_workspaces.0010).
+CANOPY_PROBE_ENABLED = env.bool("CANOPY_PROBE_ENABLED", default=False)
 # The SDK's own setting, computed from the flat CANOPY_* settings above on every
 # read (so override_settings on any of them reaches the SDK too).
 from config.canopy_host import CanopyHostSettings  # noqa: E402
