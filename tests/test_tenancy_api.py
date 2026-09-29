@@ -215,3 +215,23 @@ def test_backfill_fills_only_empty_fields(owner):
     assert team.default_tenancy == SHARED
     assert other.default_tenancy == {}
     assert "connect_pm_org" not in blank.tenancy
+
+
+def test_pm_org_backfill_fills_only_empty(owner):
+    team = Workspace.objects.create(
+        slug="dimagi-team", display_name="Dimagi", drive_root_folder_id="root-dt",
+        created_by=owner,
+    )
+    blank = OppWorkspace.objects.create(workspace=team, slug="a", display_name="A",
+                                        created_by=owner, tenancy={"hq_domain": "x"})
+    edited = OppWorkspace.objects.create(workspace=team, slug="b", display_name="B",
+                                         created_by=owner,
+                                         tenancy={"connect_pm_org": "ai-demo-space"})
+    migration = importlib.import_module("apps.opps.migrations.0007_backfill_connect_pm_org")
+    migration.backfill(django_apps, None)
+    blank.refresh_from_db()
+    edited.refresh_from_db()
+    team.refresh_from_db()
+    assert blank.tenancy == {"hq_domain": "x", "connect_pm_org": "ace-pm-org"}
+    assert edited.tenancy == {"connect_pm_org": "ai-demo-space"}
+    assert team.default_tenancy == {"connect_pm_org": "ace-pm-org"}
