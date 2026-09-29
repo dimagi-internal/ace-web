@@ -32,17 +32,20 @@ the delegated auth in ``apps/api/auth.py`` both look people up by email).
 """
 from __future__ import annotations
 
-import asyncio
-
 #: The probe principal. `.invalid` can never be a real mailbox or a Connect login.
 PROBE_EMAIL = "canopy-probe@probe.invalid"
 PROBE_DISPLAY_NAME = "canopy live probe (not a person)"
 #: The one workspace it is a viewer of. No Drive root: it holds nothing.
 PROBE_WORKSPACE_SLUG = "canopy-probe"
 PROBE_WORKSPACE_NAME = "canopy live probe"
-#: `drive_root_folder_id` is NOT NULL + unique; empty is what
-#: `access.resolve_ace_root_folder_id` treats as "no Drive root", so every opp
-#: read of this workspace answers empty without a Drive call.
+#: `drive_root_folder_id` is NOT NULL + unique. Empty is the codebase's existing
+#: "no Drive root" value — `access.resolve_ace_root_folder_id` and the opp
+#: routes check for it, so every opp read here answers empty without a Drive
+#: call — and it collides with nothing: the workspace API refuses a blank
+#: folder (`min_length=1` + `_parse_folder_id`), so no real workspace can hold
+#: it. A non-empty sentinel would instead be passed to Drive by every caller
+#: that reads the column raw. Commands that walk ALL workspaces skip it
+#: (`videos_seed_templates`).
 PROBE_DRIVE_ROOT = ""
 PROBE_ROLE = "viewer"
 
@@ -63,23 +66,15 @@ PROBE_PAGE = "opp-workbench"
 def subject() -> str:
     """The probe's ``sub`` — or ``""`` (probe off) while its user does not exist.
 
-    The SDK resolves this on EVERY ``get_host_config()``, including from the
-    MCP's DPoP gate, which builds its config on the event loop, where the ORM
-    may not be called. Nothing on that path reads the probe, so there it answers
-    the configured subject unchecked; the probe endpoint and the metadata are
-    sync views and always get the checked answer. The endpoint also re-checks
-    the account through ``SUBJECT_ACTIVE`` before it signs anything.
+    Sync only: the SDK never calls a ``SUBJECT_RESOLVER`` on an event loop (the
+    MCP's DPoP gate builds its config there and gets no probe), so this may use
+    the ORM. The endpoint also re-checks the account through ``SUBJECT_ACTIVE``
+    before it signs anything.
     """
+    from django.contrib.auth import get_user_model
+
     from apps.canopy.grant import subject_for
 
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        pass
-    else:
-        return subject_for(PROBE_EMAIL)
-
-    from django.contrib.auth import get_user_model
 
     exists = get_user_model().objects.filter(email__iexact=PROBE_EMAIL, is_active=True).exists()
     return subject_for(PROBE_EMAIL) if exists else ""

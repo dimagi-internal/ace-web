@@ -161,12 +161,21 @@ def test_the_probe_tool_is_in_its_scope_and_the_denied_tool_is_a_real_tool_outsi
     assert probe.PROBE_DENIED_TOOL in _EXPECTED_TOOL_NAMES
 
 
-def test_the_subject_resolver_never_touches_the_orm_on_the_event_loop():
-    """The DPoP gate builds its config on the event loop; the resolver runs there."""
-    async def resolve_it():
-        return probe.subject()
+def test_on_the_event_loop_the_sdk_never_calls_our_resolver(settings, host_key):  # noqa: F811
+    """The DPoP gate builds its config on the event loop, where the ORM may not
+    run; the SDK must not call `probe.subject()` there (and the grant config
+    must still build)."""
+    from canopy_sdk.django import conf
 
-    assert asyncio.run(resolve_it()) == probe.PROBE_EMAIL
+    settings.CANOPY_PROBE_ENABLED = True
+
+    async def build():
+        with mock.patch("apps.canopy.probe.subject",
+                        side_effect=AssertionError("resolver called on the loop")):
+            return conf.probe_identity(), conf.get_host_config()
+
+    identity, config = asyncio.run(build())
+    assert identity is None and config.probe is None
 
 
 @pytest.mark.django_db
