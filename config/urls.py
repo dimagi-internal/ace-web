@@ -1,3 +1,4 @@
+from canopy_sdk.django.views import probe_endpoint as canopy_grant_probe_endpoint
 from canopy_sdk.django.views import token_endpoint as canopy_grant_token_endpoint
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
@@ -14,6 +15,12 @@ urlpatterns = [
     # private_key_jwt + DPoP), straight from the canopy SDK. Refuses every
     # grant while CANOPY_CLIENT_ID is unset. Bare Django view, ahead of Ninja.
     path("api/canopy/oauth/token", canopy_grant_token_endpoint, name="canopy_grant_token"),
+    # canopy's live probe (apps/canopy/probe.py): a real ID-JAG for the one
+    # dedicated probe principal, for canopy's client only (private_key_jwt +
+    # DPoP, checked by the SDK; csrf_exempt, no login). 404 unless
+    # CANOPY_PROBE_ENABLED, the grant is on, and the principal exists. Its
+    # public URL is CANOPY_HOST["PROBE"]["ENDPOINT"] — keep the two in step.
+    path("api/canopy/oauth/probe", canopy_grant_probe_endpoint, name="canopy_grant_probe"),
     path("api/", api.urls),
     path("api/slack/", include("apps.slack.urls")),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),

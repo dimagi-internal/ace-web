@@ -41,7 +41,10 @@ class Command(BaseCommand):
                 raise CommandError(f"Unknown workspace: {workspace!r}") from e
             workspaces = [ws]
         else:
-            workspaces = list(Workspace.objects.all())
+            # A workspace with no Drive root (canopy's probe workspace,
+            # apps/canopy/probe.py) has nowhere to seed: skip it rather than
+            # fail the whole run on it.
+            workspaces = list(Workspace.objects.exclude(drive_root_folder_id=""))
             if not workspaces:
                 self.stdout.write(self.style.WARNING("No workspaces found."))
                 return

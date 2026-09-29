@@ -12,6 +12,7 @@ spec shape — see apps/videos/templates.py.)
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 from django.core.cache import cache as django_cache
@@ -148,6 +149,32 @@ def test_seed_templates_command(fake_drive_ws_db):
     from django.core.management import call_command
     from apps.videos import drive as _drive, service
     call_command("videos_seed_templates", "--workspace", fake_drive_ws_db.slug)
+    layout, client = service.layout_for(fake_drive_ws_db)
+    assert _drive.list_template_ids(layout, client)
+
+
+@pytest.mark.django_db
+def test_seed_templates_all_workspaces_skips_one_with_no_drive_root(fake_drive_ws_db):
+    """canopy's probe workspace has no Drive root; seeding ALL workspaces must
+    seed the real ones and not trip over it."""
+    from django.contrib.auth import get_user_model
+    from django.core.management import call_command
+
+    from apps.canopy import probe
+    from apps.videos import drive as _drive, service
+    from apps.workspaces.models import Workspace, WorkspaceMembership
+
+    probe.ensure_principal(get_user_model(), Workspace, WorkspaceMembership)
+    seeded = []
+    real_seed = templates.seed_templates
+
+    def spy(ws):
+        seeded.append(ws.slug)
+        return real_seed(ws)
+
+    with mock.patch.object(templates, "seed_templates", side_effect=spy):
+        call_command("videos_seed_templates")
+    assert seeded == [fake_drive_ws_db.slug]
     layout, client = service.layout_for(fake_drive_ws_db)
     assert _drive.list_template_ids(layout, client)
 

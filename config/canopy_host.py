@@ -70,6 +70,8 @@ class CanopyHostSettings(Mapping):
             # visitor assertion has always carried), so "is this subject still
             # live" is asked by email, not by primary key (the SDK default).
             "SUBJECT_ACTIVE": "apps.canopy.grant.subject_active",
+            # --- canopy's live probe: OFF unless CANOPY_PROBE_ENABLED --------------
+            **({"PROBE": _probe(public)} if s.CANOPY_PROBE_ENABLED else {}),
         }
 
     def __getitem__(self, key: str):
@@ -80,6 +82,25 @@ class CanopyHostSettings(Mapping):
 
     def __len__(self) -> int:
         return len(self._values())
+
+
+def _probe(public: str) -> dict:
+    # Everything but ENDPOINT is code (apps/canopy/probe.py). ENDPOINT is the
+    # probe view's PUBLIC URL — mounted beside the token endpoint in
+    # config/urls.py and derived the same way — and must match it exactly: a
+    # DPoP proof's `htu` names it. The subject resolves to "" (probe off) until
+    # the probe principal exists.
+    from apps.canopy import probe
+
+    return {
+        "ENDPOINT": f"{public}/api/canopy/oauth/probe" if public else "",
+        "SUBJECT_RESOLVER": "apps.canopy.probe.subject",
+        "SCOPE": probe.PROBE_SCOPE,
+        "TOOL": probe.PROBE_TOOL,
+        "ARGUMENTS": dict(probe.PROBE_ARGUMENTS),
+        "DENIED_TOOL": probe.PROBE_DENIED_TOOL,
+        "PAGE": probe.PROBE_PAGE,
+    }
 
 
 def _registry(name: str) -> dict:

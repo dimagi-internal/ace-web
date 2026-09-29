@@ -197,6 +197,13 @@ Resources:
             # name our issuer + MCP resource (both done 2026-09-27).
             - Name: CANOPY_CLIENT_ID
               Value: "https://labs.connect.dimagi.com/canopy/oauth/client.json"
+            # canopy's live probe (apps/canopy/probe.py): canopy fetches a real
+            # ID-JAG for the dedicated probe principal from
+            # /ace/api/canopy/oauth/probe and makes one MCP read with it, every
+            # 30 min. Non-secret. 404 until migration ace_workspaces.0010 has
+            # created the principal (deploy with run_migrations: true).
+            - Name: CANOPY_PROBE_ENABLED
+              Value: "true"
             - Name: CANOPY_PUBLIC_BASE_URL
               Value: "/canopy"
             # Programmatic runs enqueue a session-targeted canopy Turn instead of
