@@ -290,3 +290,49 @@ def test_cli_diag_admin_200(db, client, monkeypatch):
     resp = client.post("/api/system/cli-diag")
     assert resp.status_code == 200
     assert resp.json()["returncode"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Invited outside reviewers (invite-only login) are signed in but not Dimagi.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def outsider_client(db, client, settings):
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com", "dimagi-ai.com"]
+    user = User.objects.create_user(email="anne@sparkmicrogrants.org")
+    client.force_login(user)
+    return client
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("get", "/api/system/overview"),
+        ("get", "/api/system/skills"),
+        ("get", "/api/system/skills/app-summary"),
+        ("get", "/api/system/agents"),
+        ("get", "/api/system/agents/crispr-agent"),
+        ("post", "/api/system/refresh-plugin"),
+    ],
+)
+def test_system_surface_is_dimagi_only(outsider_client, monkeypatch, method, path):
+    monkeypatch.setattr("apps.system.api.run_plugin_refresh", lambda: pytest.fail("refresh ran"))
+    resp = getattr(outsider_client, method)(path)
+    assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+def test_staff_domain_still_sees_the_system_surface(client, settings, monkeypatch):
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com", "dimagi-ai.com"]
+    client.force_login(User.objects.create_user(email="ace@dimagi-ai.com"))
+    monkeypatch.setattr("apps.system.api.get_system_overview", lambda: _FAKE_OVERVIEW)
+    assert client.get("/api/system/overview").status_code == 200
+
+
+@pytest.mark.django_db
+def test_skill_products_stays_open_to_reviewers(outsider_client, monkeypatch):
+    # The workbench's decisions view reads it for every member.
+    monkeypatch.setattr("apps.system.api.get_skill_products_map", lambda *a, **k: {})
+    assert outsider_client.get("/api/system/skill-products").status_code == 200

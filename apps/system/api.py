@@ -25,6 +25,16 @@ from .schemas import (
 router = Router(auth=session_auth, tags=["system"])
 
 
+def _require_internal(request: HttpRequest) -> None:
+    """The system surface describes and operates ACE itself — Dimagi only.
+    `/version` and `/skill-products` stay open: the workbench reads them for
+    every member, outside reviewers included."""
+    from apps.auth.login_gate import is_internal
+
+    if not is_internal(request.user):
+        raise ProblemError(403, "Dimagi staff only", type_=TYPE_FORBIDDEN)
+
+
 def _plugin_path() -> str:
     return getattr(settings, "ACE_PLUGIN_PATH", "")
 
@@ -53,6 +63,7 @@ def get_system_overview() -> dict:
     summary="Full system overview",
 )
 def overview(request: HttpRequest) -> HttpResponse:
+    _require_internal(request)
     from django.http import JsonResponse
 
     data = get_system_overview()
@@ -78,6 +89,7 @@ def get_skills_list() -> list[dict]:
     summary="List skills",
 )
 def list_skills(request: HttpRequest) -> HttpResponse:
+    _require_internal(request)
     from django.http import JsonResponse
 
     skills = get_skills_list()
@@ -105,6 +117,7 @@ def skill_detail(
     request: HttpRequest,
     name: Annotated[str, Path()],
 ) -> HttpResponse:
+    _require_internal(request)
     from django.http import JsonResponse
 
     detail = get_skill_detail(name)
@@ -132,6 +145,7 @@ def get_agents_list() -> list[dict]:
     summary="List agents",
 )
 def list_agents(request: HttpRequest) -> HttpResponse:
+    _require_internal(request)
     from django.http import JsonResponse
 
     agents = get_agents_list()
@@ -159,6 +173,7 @@ def agent_detail(
     request: HttpRequest,
     name: Annotated[str, Path()],
 ) -> HttpResponse:
+    _require_internal(request)
     from django.http import JsonResponse
 
     detail = get_agent_detail(name)
@@ -269,6 +284,7 @@ def run_plugin_refresh() -> dict:
     summary="Refresh the vendored ACE plugin to latest main (no image rebuild)",
 )
 def refresh_plugin(request: HttpRequest) -> HttpResponse:
+    _require_internal(request)
     from django.http import JsonResponse
 
     data = run_plugin_refresh()

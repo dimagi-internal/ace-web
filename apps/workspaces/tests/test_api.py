@@ -440,3 +440,17 @@ def test_drive_config_not_shadowed_by_slug_route(owner_client, monkeypatch):
     # Before the fix this returned 404 because "drive-config" was routed
     # to workspace_detail which looked up a workspace with slug="drive-config".
     assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_create_workspace_outsider_403(client, settings, monkeypatch):
+    # Invite-only login admits outside reviewers; they must not create workspaces.
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com", "dimagi-ai.com"]
+    client.force_login(User.objects.create_user(email="anne@sparkmicrogrants.org"))
+    monkeypatch.setattr("apps.workspaces.api.create_workspace", lambda u, b: pytest.fail("created"))
+    resp = client.post(
+        "/api/workspaces",
+        {"slug": "x", "name": "X", "drive_root_folder_id": "folder-x"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 403

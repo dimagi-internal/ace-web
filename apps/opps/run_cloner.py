@@ -61,6 +61,12 @@ def _child(files: list[DriveFile], name: str, *, folder: bool) -> DriveFile | No
     return None
 
 
+# The opp-level files a clone carries: identity (opp.yaml), the idea and PDD,
+# and the inputs the PDD was built from. Anything else at the opp root is ACE's
+# internal working state and stays in the source workspace.
+_OPP_LEVEL_FILES = frozenset({"opp.yaml", "idea.md", "pdd.md", "inputs"})
+
+
 class _Copier:
     def __init__(self, drive: DriveClient, record):
         self.drive = drive
@@ -75,10 +81,15 @@ class _Copier:
             self.record.save(update_fields=["files_copied", "updated_at"])
 
     def tree(
-        self, source_folder_id: str, dest_folder_id: str, *, skip: frozenset[str] = frozenset()
+        self,
+        source_folder_id: str,
+        dest_folder_id: str,
+        *,
+        skip: frozenset[str] = frozenset(),
+        only: frozenset[str] | None = None,
     ) -> None:
         for child in self.drive.list_files(source_folder_id):
-            if child.name in skip:
+            if child.name in skip or (only is not None and child.name not in only):
                 continue
             if child.mime_type == _FOLDER_MIME:
                 sub = self.drive.create_folder(dest_folder_id, child.name)
@@ -129,9 +140,14 @@ def clone_run(
     try:
         if dst_opp is None:
             dst_opp_id = drive.create_folder(target.drive_root_folder_id, opp_slug)
-            # Opp-level files, once: everything above runs/. Other runs are not
-            # copied — a clone is one run.
-            copier.tree(src_opp.id, dst_opp_id, skip=frozenset({"runs"}))
+            # Opp-level files, once — an ALLOWLIST, not "everything above
+            # runs/". The opp root is where ACE keeps its own working notes
+            # (open-questions.md, eval-calibration/, the inbox-triage
+            # comms-log, parked email drafts), and a clone exists to be shown
+            # to outside reviewers. spark-facilitator's root held all four,
+            # including an unsent draft addressed to the reviewer. Other runs
+            # are not copied either — a clone is one run.
+            copier.tree(src_opp.id, dst_opp_id, only=_OPP_LEVEL_FILES)
         else:
             dst_opp_id = dst_opp.id
         dst_runs_id = dst_runs.id if dst_runs else drive.create_folder(dst_opp_id, "runs")

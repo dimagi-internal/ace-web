@@ -234,6 +234,13 @@ def create_workspace(user, body: WorkspaceCreateIn) -> dict:
 def post_workspace(request: HttpRequest, body: WorkspaceCreateIn) -> HttpResponse:
     from django.http import JsonResponse
 
+    from apps.auth.login_gate import is_internal
+
+    # Invite-only login admits outside reviewers; they may join a workspace
+    # they were invited to, not create new ones.
+    if not is_internal(request.user):
+        raise ProblemError(403, "Only Dimagi staff can create workspaces", type_=TYPE_FORBIDDEN)
+
     workspace = create_workspace(request.user, body)
     payload = WorkspaceOut.model_validate(workspace).model_dump(mode="json")
     return JsonResponse(payload, status=201)
