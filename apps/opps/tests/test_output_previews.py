@@ -342,3 +342,37 @@ def test_legacy_rows_citing_the_recipe_base_use_the_journeys_own_app():
     ]
     # "journey-x" says nothing by its name; the journey block's app decides.
     assert len(records["deliver"]["items"]) == 1
+
+
+def test_an_empty_index_is_final_and_blocks_the_legacy_fallback():
+    """The plugin writes ``items: []`` for a leg that did not pass. That is
+    "show nothing", not "no index" — the legacy manifest must not fill it."""
+    client = _indexed_client()
+    path = f"{RUN}/3-commcare/previews/apps-learn/_previews.yaml"
+    body = yaml.safe_load(client._nodes_by_id[client.file_id(path)].body)
+    body["items"] = []
+    _set_body(client, path, body)
+    indexed = _load(client)
+    assert indexed and indexed[0]["items"] == []
+    legacy = [{
+        "source": "legacy", "app": "learn", "captured_by": "app-screenshot-capture",
+        "items": [{"file_id": "old", "name": "a.png", "caption": None, "mime_type": "image/png"}],
+    }]
+    by_key = {p["key"]: p for p in attach_previews(_apps_products(), indexed + legacy)}
+    assert by_key["apps.learn"]["previews"] == []
+
+
+def test_legacy_frames_of_a_journey_that_did_not_pass_are_not_shown():
+    client = _legacy_client(
+        lambda ids: {
+            "journeys": [
+                {"journey_id": "journey-learn-pass", "app": "learn", "status": "fail"},
+                {"journey_id": "journey-deliver-submit", "app": "deliver", "status": "pass"},
+            ],
+            "captures": [
+                {"journey_id": "journey-learn-pass", "file_id": ids["home"]},
+                {"journey_id": "journey-deliver-submit", "file_id": ids["form"]},
+            ],
+        }
+    )
+    assert [r["app"] for r in _load(client)] == ["deliver"]

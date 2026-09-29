@@ -97,7 +97,11 @@ def load_output_previews(client: DriveClient, run_folder_id: str) -> list[dict]:
         record = _read_index(client, index, by_id) if index else None
         if record is None:
             record = _folder_record(slug, files)
-        if record is not None and record["items"]:
+        # An index with no items is kept: it is the writer saying "nothing to
+        # show" (a leg that did not pass), and it must stop the legacy
+        # fallback from showing that leg's frames. An index-less folder with
+        # no images says nothing and is dropped.
+        if record is not None and (record["items"] or record["source"] == "index"):
             record["slug"] = slug
             records.append(record)
 
@@ -173,9 +177,17 @@ def _read_legacy_manifest(
     # (``journeys[].app``), under both its id and its recipe base — rows cite
     # either (``journey_id: journey-learn-pass`` / ``journey: journey-learn``).
     app_by_journey: dict[str, str] = {}
+    failed: set[str] = set()
     for journey in data.get("journeys") or []:
         if not isinstance(journey, dict):
             continue
+        # Screenshots only ever come from a passing journey (the plugin's
+        # hard rule); a leg the manifest records as not passing shows nothing.
+        status = str(journey.get("status") or "").lower()
+        if status and status != "pass":
+            for ref in (journey.get("journey_id"), journey.get("id"), journey.get("recipe_base")):
+                if ref:
+                    failed.add(str(ref))
         app = str(journey.get("app") or "").lower()
         if app in {"learn", "deliver"}:
             for ref in (journey.get("journey_id"), journey.get("id"), journey.get("recipe_base")):
@@ -201,7 +213,7 @@ def _read_legacy_manifest(
     by_app: dict[str, list[dict]] = {}
     seen: set[str] = set()
     for jid, row in rows:
-        if row.get("duplicate_of"):
+        if row.get("duplicate_of") or jid in failed:
             continue
         app = app_by_journey.get(jid) or _legacy_app(jid, str(row.get("drive_path") or ""))
         if app is None:
@@ -296,8 +308,8 @@ def attach_previews(products: list[dict], records: list[dict]) -> list[dict]:
     Match order: an index record by ``phase`` + ``output_key`` (the key the
     product was listed under, or one it absorbed when de-duplicated); any
     current-layout record by folder slug; then — only for an app no current
-    record covered — the legacy Phase 6 manifest by app. A record feeds one
-    product at most.
+    record covered, even with an EMPTY index (the writer's "nothing to show")
+    — the legacy Phase 6 manifest by app. A record feeds one product at most.
     """
     out = [{**p, "previews": []} for p in products]
     used: set[int] = set()
@@ -305,8 +317,11 @@ def attach_previews(products: list[dict], records: list[dict]) -> list[dict]:
     def keys(p: dict) -> list[str]:
         return [str(p.get("key") or ""), *[str(a) for a in p.get("aliases") or []]]
 
+    covered: set[str] = set()  # product ids a current-layout record answered
+
     def give(p: dict, i: int, rec: dict) -> None:
         used.add(i)
+        covered.add(str(p.get("id")))
         p["previews"].extend(
             {**item, "captured_by": rec.get("captured_by")} for item in rec["items"]
         )
@@ -332,7 +347,11 @@ def attach_previews(products: list[dict], records: list[dict]) -> list[dict]:
         if rec["source"] != "legacy":
             continue
         for p in out:
-            if p.get("kind") == "commcare_app" and not p["previews"] and _app_of(p) == rec["app"]:
+            if (
+                p.get("kind") == "commcare_app"
+                and str(p.get("id")) not in covered
+                and _app_of(p) == rec["app"]
+            ):
                 give(p, i, rec)
                 break
     return out
