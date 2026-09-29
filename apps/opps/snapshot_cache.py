@@ -81,7 +81,11 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        strip and replay spotlights). Same failure as v10 without the bump:
 #        a warm v10 entry would serve a run with no products forever.
 #        Shipped 2026-09-26.
-_KEY_VERSION = "v11"
+#   v12 — RunDetail gained ``output_previews`` (screenshots of a run's
+#        outputs, docs/specs/2026-09-29-output-previews-design.md). A warm
+#        v11 entry would serve every app with no pictures until its Drive
+#        files next changed.
+_KEY_VERSION = "v12"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

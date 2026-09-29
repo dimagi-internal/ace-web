@@ -21,6 +21,9 @@ interface Props {
   items: readonly ViewerTarget[];
   replay: Replay;
   onClose: () => void;
+  /** Products this beat PHOTOGRAPHED rather than built — Phase 6's walk
+   *  through the Phase 3 apps pops them up again, with their screenshots. */
+  photographed?: ReadonlySet<string>;
 }
 
 /** Stable key for an item, for tabs and the progress bar's restart. */
@@ -34,7 +37,7 @@ export function itemKey(item: ViewerTarget): string {
  * When the cursor lands on the beat that brought products into being — or a
  * step finishes that wrote a document (an app's build summary, the chatbot's
  * QA transcript) — they pop up over the screen, one at a time, in the same
- * viewer the products strip opens. The point is the audience SEES the PDD,
+ * viewer the phase rail opens. The point is the audience SEES the PDD,
  * the app, the deck appear as the run makes them, instead of taking a
  * filename on faith.
  *
@@ -46,7 +49,7 @@ export function itemKey(item: ViewerTarget): string {
  * the replay bar's window-level shortcuts — Esc here closes the pop-up, it
  * doesn't leave the replay.
  */
-export function Spotlight({ items, replay, onClose }: Props) {
+export function Spotlight({ items, replay, onClose, photographed }: Props) {
   const viewer = useViewer();
   const [index, setIndex] = useState(0);
   // Counting down only when it opened during playback; any hand on the
@@ -104,12 +107,17 @@ export function Spotlight({ items, replay, onClose }: Props) {
 
   if (!item || !viewer) return null;
   const isDocument = item.type === "file";
+  const cue = isDocument
+    ? "Just written"
+    : photographed?.has(item.product.id)
+      ? "Just photographed"
+      : "Just built";
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`${isDocument ? "Just written" : "Just built"}: ${targetTitle(item)}`}
+      aria-label={`${cue}: ${targetTitle(item)}`}
       data-replay-spotlight
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200"
       onClick={onClose}
@@ -124,7 +132,7 @@ export function Spotlight({ items, replay, onClose }: Props) {
               target={item}
               eyebrow={
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
-                  <Sparkles className="h-3.5 w-3.5" /> {isDocument ? "Just written" : "Just built"}
+                  <Sparkles className="h-3.5 w-3.5" /> {cue}
                   {items.length > 1 && (
                     <span className="text-muted-foreground">
                       · {index + 1} of {items.length}

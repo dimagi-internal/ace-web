@@ -92,6 +92,10 @@ class RunDetail:
     # Phases screen and the replay. Empty for runs that predate the
     # products contract.
     phase_products: dict[str, dict] = field(default_factory=dict)
+    # Preview records (screenshots of outputs) read off the run tree by
+    # apps/opps/output_previews.py; attached to the products catalogue at
+    # serialize time. Empty for runs with no previews.
+    output_previews: list[dict] = field(default_factory=list)
     # Per-run decisions log (added with the decisions-log framework, May
     # 2026). Each row carries its own ``phase`` tag; the UI groups them
     # per phase. Empty list when the run predates the framework or hasn't

@@ -79,6 +79,17 @@ def test_product_file_id_is_allowed_and_looked_up():
     assert meta.mime_type == SLIDES
 
 
+def test_product_preview_is_allowed_without_a_drive_read():
+    """A preview was checked against the run tree when it was read, and it
+    carries its MIME — so no metadata call, and no folder scan."""
+    snap = _snapshot(products=[{
+        "file_id": None,
+        "previews": [{"file_id": "shot", "name": "01-home.png", "mime_type": "image/png"}],
+    }])
+    meta = artifact_view.resolve(_Drive(), snap, "shot")
+    assert (meta.name, meta.mime_type) == ("01-home.png", "image/png")
+
+
 def test_run_folder_file_is_allowed():
     drive = _Drive(files={"dec": ("decisions.yaml", DOC, 5)}, folder=["dec"])
     assert artifact_view.resolve(drive, _snapshot(), "dec").name == "decisions.yaml"

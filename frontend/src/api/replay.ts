@@ -11,7 +11,7 @@
  * Spec: docs/specs/2026-09-17-ace-demo-player-design.md
  */
 import { apiClient } from "./apiClient";
-import type { RunProduct } from "./types.ws";
+import type { ProductPreview, RunProduct } from "./types.ws";
 
 /** How a run's clock was established.
  *
@@ -94,12 +94,20 @@ export interface LadderPhase {
   readonly steps: readonly LadderStep[];
 }
 
+/** A screenshot plus the beat it was taken at. */
+export interface ReplayPreview extends ProductPreview {
+  /** The step_end of the skill that CAPTURED it (never before its product).
+   *  Null when no beat in this run places it (shown at the final beat). */
+  readonly reveal_seq: number | null;
+}
+
 /** A product plus the beat that made it. */
 export interface ReplayProduct extends RunProduct {
   /** Index into `events` of the beat that brought it into being — its
    *  producer's step_end, else its phase's last step_end. Null when no beat
    *  in this run places it (shown at the final beat). */
   readonly reveal_seq: number | null;
+  previews?: ReplayPreview[];
 }
 
 export interface FlowInput {
@@ -196,4 +204,21 @@ export function actOf(payload: ReplayPayload, id: ReplayActId): ReplayAct | null
 export function timelineOf(payload: ReplayPayload): DemoTimeline | null {
   const act = actOf(payload, "timeline");
   return act?.available ? (act.data as DemoTimeline) : null;
+}
+
+/** `GET …/runs/{run_id}/flow` — what each step declares it takes in and hands
+ *  on, without the replay's beat stream. The Phases screen's rail shows it on
+ *  every visit. */
+export async function fetchRunFlow(
+  workspaceSlug: string,
+  slug: string,
+  runId: string,
+): Promise<Readonly<Record<string, SkillFlow>>> {
+  const { data, response } = await apiClient.GET(
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/flow",
+    { params: { path: { workspace_slug: workspaceSlug, slug, run_id: runId } } },
+  );
+  if (!response.ok) throw new Error(`Couldn't load this run's flow (${response.status}).`);
+  const body = data as unknown as { flow?: Record<string, SkillFlow> };
+  return body.flow ?? {};
 }

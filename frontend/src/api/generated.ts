@@ -139,6 +139,28 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/flow": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * What each step of a run takes in and hands on
+         * @description ``{flow: {skill: {inputs, outputs}}}`` — the flow the plugin's artifact
+         *     manifest DECLARES (``producedBy`` / ``consumedBy``), not a trace of this
+         *     run's reads. Same shape as the replay payload's ``flow``.
+         */
+        readonly get: operations["apps_opps_api_get_run_flow"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
         readonly parameters: {
             readonly query?: never;
@@ -5497,6 +5519,32 @@ export interface operations {
         };
     };
     readonly apps_opps_api_get_run_replay: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readonly apps_opps_api_get_run_flow: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;

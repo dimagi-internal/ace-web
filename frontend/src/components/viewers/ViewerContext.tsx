@@ -52,7 +52,7 @@ interface ProviderProps {
  *
  * The Workbench's right rail was the original viewer and is a poor one for
  * most of what ACE produces now — decks, apps, dashboards. This is a dialog
- * sized for them, and a context so the products strip, a skill's artifact
+ * sized for them, and a context so the phase rail, a skill's artifact
  * list, the flow panel and the replay spotlight all open the same thing.
  * Nothing in it assumes the Phases screen, so a later page (the canopy chat
  * widget's host, say) can wrap itself in the same provider.

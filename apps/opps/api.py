@@ -1057,6 +1057,52 @@ def get_run_replay(
 
 
 # ---------------------------------------------------------------------------
+# Run flow — GET /w/{workspace_slug}/opps/{slug}/runs/{run_id}/flow
+# docs/specs/2026-09-29-output-previews-design.md
+# ---------------------------------------------------------------------------
+
+
+def load_flow_payload(workspace, slug: str, run_id: str) -> dict | None:
+    """What each step of one run takes in and hands on, or None when the run
+    doesn't exist. The replay's ``flow`` without the replay: the Phases
+    screen's rail shows it on every visit, and building the whole beat stream
+    for that would be wasted work."""
+    from apps.opps.replay import build_flow, build_ladder
+
+    snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    if snapshot is None:
+        return None
+    return {"flow": build_flow(build_ladder(snapshot))}
+
+
+@router.get(
+    "/{slug}/runs/{run_id}/flow",
+    response={200: dict},
+    summary="What each step of a run takes in and hands on",
+)
+def get_run_flow(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    """``{flow: {skill: {inputs, outputs}}}`` — the flow the plugin's artifact
+    manifest DECLARES (``producedBy`` / ``consumedBy``), not a trace of this
+    run's reads. Same shape as the replay payload's ``flow``."""
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    payload = load_flow_payload(workspace, slug, run_id)
+    if payload is None:
+        raise ProblemError(404, "Run not found", type_=TYPE_NOT_FOUND)
+    etag = compute_etag(payload)
+    not_modified = maybe_not_modified(request, etag)
+    if not_modified is not None:
+        return not_modified
+    response = JsonResponse(payload)
+    response["ETag"] = etag
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Task 2.1.9 helpers — delete run
 # ---------------------------------------------------------------------------
 

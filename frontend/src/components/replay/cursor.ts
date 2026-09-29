@@ -3,6 +3,7 @@ import type {
   DemoTimeline,
   LadderPhase,
   LadderStep,
+  ReplayPreview,
   ReplayProduct,
 } from "@/api/replay";
 import type { Artifact, Step } from "@/api/types.ws";
@@ -114,6 +115,35 @@ export function productsAtBeat(timeline: DemoTimeline, index: number): ReplayPro
   return (timeline.products ?? []).filter((p) => revealIndexOf(p, total) === index);
 }
 
+/** The beat at which a screenshot appears — the one that TOOK it. Same
+ *  fallback as a product: nothing places it → the final beat. */
+export function previewRevealIndexOf(preview: ReplayPreview, total: number): number {
+  return preview.reveal_seq ?? Math.max(0, total - 1);
+}
+
+/**
+ * The product as the run had it at `beatIndex`: only the screenshots already
+ * taken. The Learn app exists from Phase 3 but is photographed in Phase 6,
+ * and a Phase 3 viewer that already showed the photos would give away a walk
+ * the run hadn't done yet.
+ */
+export function productAsOf<P extends ReplayProduct>(product: P, beatIndex: number, total: number): P {
+  const previews = product.previews ?? [];
+  const shown = previews.filter((pv) => previewRevealIndexOf(pv, total) <= beatIndex);
+  return shown.length === previews.length ? product : { ...product, previews: shown };
+}
+
+/** Products that gained screenshots at exactly this beat (a product revealed
+ *  on this same beat is already in `productsAtBeat`). */
+export function productsPhotographedAt(timeline: DemoTimeline, index: number): ReplayProduct[] {
+  const total = timeline.events.length;
+  return (timeline.products ?? []).filter(
+    (p) =>
+      revealIndexOf(p, total) !== index &&
+      (p.previews ?? []).some((pv) => previewRevealIndexOf(pv, total) === index),
+  );
+}
+
 /** Phases whose last step has finished by `beatIndex`. A decision with no
  *  skill of its own lands when its phase does. */
 export function phasesFinishedAt(timeline: DemoTimeline, beatIndex: number): Set<string> {
@@ -175,7 +205,11 @@ export function highlightBeats(
   notableSkills: ReadonlySet<string> = new Set(),
 ): number[] {
   const total = timeline.events.length;
-  const revealing = new Set((timeline.products ?? []).map((p) => revealIndexOf(p, total)));
+  const revealing = new Set<number>();
+  for (const p of timeline.products ?? []) {
+    revealing.add(revealIndexOf(p, total));
+    for (const pv of p.previews ?? []) revealing.add(previewRevealIndexOf(pv, total));
+  }
   const out: number[] = [];
   timeline.events.forEach((e, i) => {
     if (e.kind === "phase_start") out.push(i);

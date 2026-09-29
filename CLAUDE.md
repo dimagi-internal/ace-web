@@ -543,17 +543,32 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   **What the run built** (spec `docs/specs/2026-09-26-replay-show-what-it-built-design.md`):
   the snapshot carries `current_run.products` — `run_state`'s
   `phases.<phase>.products.*` flattened by `apps/opps/run_products.py` (it
-  WALKS the blocks, so a new product shows up without code; snapshot cache
-  v11). The Phases screen shows them as a strip; in replay each carries
-  `reveal_seq` (its producer's step_end, else its phase's last) and pops up in
-  a **Spotlight** on that beat (along with any `.md` the finishing step wrote
-  that isn't already a product), stays a kind-only placeholder before it, and
-  a right-rail **Flow** chain grows a card per reached step — Inputs (↑ jumps
-  to the earlier card that made one) and Outputs (→ phases that use it) —
-  from the plugin manifest's `producedBy`/`consumedBy` (the declared flow, not
-  a trace). Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
+  WALKS the blocks, so a new product shows up without code). **The right rail
+  is always on** (`components/views/PhaseRail.tsx`, spec
+  `docs/specs/2026-09-29-output-previews-design.md`): the selected phase's
+  outputs, then each step's Inputs (↑ jumps to the phase + step that made one)
+  and Outputs (→ phases that use it), from `GET …/runs/{run}/flow` — the
+  plugin manifest's `producedBy`/`consumedBy` (the declared flow, not a trace);
+  no phase selected = everything the run built, by phase. The old top strip is
+  gone. In replay each product carries `reveal_seq` (its producer's step_end,
+  else its phase's last) and pops up in a **Spotlight** on that beat (along
+  with any `.md` the finishing step wrote that isn't already a product), and
+  the rail becomes the **Flow** chain — a card per reached step, with what it
+  built. **Output previews** (screenshots): a preview lives with the phase
+  that BUILT the output, whoever took it —
+  `<N>-<phase>/previews/<output-slug>/_previews.yaml` + PNGs (Phase 6 writes
+  the app walk into `3-commcare/`). `apps/opps/output_previews.py` reads them
+  off the run-tree listing the loader already made, keeps only ids IN the run
+  tree (the viewer serves any preview id, so that is the boundary), and falls
+  back to Phase 6's `app-screenshot-capture_manifest.yaml` for older runs
+  (`journeys[].app`, else the journey name). Each preview has its own
+  `reveal_seq` — `captured_by`'s beat, never before its product — so replay
+  shows the Learn app in Phase 3 and its screenshots only at Phase 6 ("Just
+  photographed"). `run_products` records de-duplicated keys as `aliases` so an
+  index can name either (`synthetic.workflows.<k>` vs
+  `synthetic.source.dashboards.N`). Snapshot cache v12. Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
   any run file in-page via `GET …/artifacts/{id}/view` — the id must belong to
-  the run (step artifact, product file id, or run-folder child); Slides come
+  the run (step artifact, product file id or preview, or run-folder child); Slides come
   back as PDF (drawn slide-by-slide with pdf.js — nginx serves its `.mjs`
   worker via a dedicated location, stock mime.types doesn't map `.mjs`),
   Sheets as CSV, prose Docs as markdown with Drive's escapes undone (ACE

@@ -372,6 +372,12 @@ def build_products(snapshot: dict, events: list[dict]) -> list[dict]:
     not show a product before the beat that brought it into being. ``None``
     means no beat in this run places it (its phase recorded no steps, as a
     fork's carried phases can); the player shows those at the final beat.
+
+    Each of a product's ``previews`` gets its own ``reveal_seq`` — the
+    ``step_end`` of the skill that CAPTURED it (``captured_by``), and never
+    before the product itself. The Learn app is built in Phase 3 but first
+    photographed in Phase 6, and its screenshots live with Phase 3; shown at
+    the app's own beat they would be pictures the run had not taken yet.
     """
     catalogue = (snapshot.get("current_run") or {}).get("products") or []
     by_skill: dict[str, int] = {}
@@ -391,8 +397,29 @@ def build_products(snapshot: dict, events: list[dict]) -> list[dict]:
         seq = by_skill.get(producer) if producer else None
         if seq is None:
             seq = by_phase.get(item.get("phase") or "")
-        out.append({**item, "reveal_seq": seq})
+        previews = [
+            {**p, "reveal_seq": _preview_seq(p, seq, by_skill)}
+            for p in item.get("previews") or []
+            if isinstance(p, dict)
+        ]
+        out.append({**item, "reveal_seq": seq, "previews": previews})
     return out
+
+
+def _preview_seq(preview: dict, product_seq: int | None, by_skill: dict[str, int]) -> int | None:
+    """The beat a preview may first be shown at (see :func:`build_products`).
+
+    A named capturer that has no ``step_end`` in this run — a fork whose
+    Phase 6 has not run again yet — has not taken these frames in this run,
+    so they wait for the final beat (``None``), like any unplaced product.
+    """
+    captured_by = preview.get("captured_by")
+    if not captured_by:
+        return product_seq
+    seq = by_skill.get(captured_by)
+    if seq is None:
+        return None
+    return seq if product_seq is None else max(seq, product_seq)
 
 
 # --------------------------------------------------------------------------- #

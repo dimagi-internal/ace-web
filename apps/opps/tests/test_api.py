@@ -2778,6 +2778,44 @@ def test_get_run_replay_404_unknown_run(member_client, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_get_run_flow_returns_the_declared_flow_without_the_timeline(member_client, monkeypatch):
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.load_rich_opp_snapshot",
+        lambda workspace, slug, run_id=None: _FAKE_REPLAY_SNAPSHOT,
+    )
+    monkeypatch.setattr(
+        "apps.opps.replay._manifest_artifacts",
+        lambda: [{"path": "1-design/pdd.md", "produced_by": "idea-to-pdd", "consumed_by": []}],
+    )
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/flow")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"flow"}
+    assert [o["path"] for o in body["flow"]["idea-to-pdd"]["outputs"]] == ["1-design/pdd.md"]
+    etag = response["ETag"]
+    again = client.get("/api/w/ws1/opps/opp-1/runs/run-001/flow", HTTP_IF_NONE_MATCH=etag)
+    assert again.status_code == 304
+
+
+@pytest.mark.django_db
+def test_get_run_flow_404_unknown_run(member_client, monkeypatch):
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.load_rich_opp_snapshot",
+        lambda workspace, slug, run_id=None: None,
+    )
+    assert client.get("/api/w/ws1/opps/opp-1/runs/nope/flow").status_code == 404
+
+
+@pytest.mark.django_db
+def test_get_run_flow_404_non_member(non_member_client):
+    """Non-members get 404, not 403 — existence isn't leaked."""
+    client, _, _ = non_member_client
+    assert client.get("/api/w/ws1/opps/opp-1/runs/run-001/flow").status_code == 404
+
+
+@pytest.mark.django_db
 def test_get_run_replay_404_non_member(non_member_client):
     """Non-members get 404, not 403 — existence isn't leaked."""
     client, _, _ = non_member_client

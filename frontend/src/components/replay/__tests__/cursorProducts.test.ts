@@ -5,7 +5,9 @@ import type { DemoEvent, DemoTimeline, ReplayProduct } from "@/api/replay";
 import {
   highlightBeats,
   phasesFinishedAt,
+  productAsOf,
   productsAtBeat,
+  productsPhotographedAt,
   documentTitle,
   revealIndexOf,
   stepDocuments,
@@ -128,5 +130,31 @@ describe("documents in the spotlight", () => {
     expect(documentTitle("3-ocs/ocs-chatbot-qa_transcript-deep.md")).toBe(
       "OCS chatbot QA transcript deep",
     );
+  });
+});
+
+describe("screenshots in the replay", () => {
+  const shot = (file_id: string, reveal_seq: number | null) => ({
+    file_id, name: `${file_id}.png`, caption: null, mime_type: "image/png",
+    captured_by: "cap", reveal_seq,
+  });
+  const app: ReplayProduct = { ...product("app", 4), previews: [shot("s1", 7), shot("s2", null)] };
+  const timeline: DemoTimeline = { ...TIMELINE, products: [app] };
+  const total = EVENTS.length;
+
+  it("a product carries only the screenshots already taken", () => {
+    expect(productAsOf(app, 4, total).previews).toEqual([]);
+    expect(productAsOf(app, 7, total).previews?.map((p) => p.file_id)).toEqual(["s1"]);
+    // Unplaced → the final beat, like an unplaced product.
+    expect(productAsOf(app, total - 1, total)).toBe(app);
+  });
+
+  it("a beat that photographs an earlier product is its own cue", () => {
+    expect(productsPhotographedAt(timeline, 7).map((p) => p.id)).toEqual(["app"]);
+    expect(productsPhotographedAt(timeline, 4)).toEqual([]);
+  });
+
+  it("the photographing beat is a highlight", () => {
+    expect(highlightBeats(timeline)).toContain(7);
   });
 });

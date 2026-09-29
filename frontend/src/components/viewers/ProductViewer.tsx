@@ -4,6 +4,7 @@ import type { Artifact, RunProduct, Step } from "@/api/types.ws";
 import { Glossed } from "@/components/glossary/Glossed";
 
 import { DriveFileViewer } from "./DriveFileViewer";
+import { ProductPreviews } from "./ProductPreviews";
 import { kindMeta } from "./productKinds";
 
 /** What a viewer needs to know about the run it is showing. */
@@ -29,7 +30,9 @@ interface Props {
  * The body of a product's viewer — what it is, drawn the way that makes sense
  * for its kind. A Drive file renders in place; a live thing in another system
  * (an app on HQ, an opportunity on Connect, a dashboard on Labs) renders as a
- * card with its facts, one line on what it is, and the link to the real one.
+ * card with its facts, one line on what it is, and the link to the real one —
+ * plus, when ACE photographed it (the apps on the emulator, a dashboard in the
+ * demo render), the screenshots.
  */
 export function ProductBody({ product, run, mediaHeight, onTalk }: Props) {
   const meta = kindMeta(product.kind);
@@ -88,6 +91,14 @@ export function ProductBody({ product, run, mediaHeight, onTalk }: Props) {
           )}
         </div>
       </div>
+      {(product.previews?.length ?? 0) > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            What it looks like
+          </h3>
+          <ProductPreviews previews={product.previews ?? []} of={product.title} />
+        </section>
+      )}
       {structure && (
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
