@@ -21,6 +21,7 @@ import { WorkbenchLayout, usePaneCollapsed } from "../components/workbench";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
+import { ClonedToBanner } from "@/components/opps/ClonedToBanner";
 
 // Per-opp view tabs. Phases is the default — it's the view that
 // answers "what's the state of this opp?" at a glance without
@@ -228,6 +229,11 @@ export default function OppWorkbenchPage() {
         onJumpToPhases={() => setView("phase")}
         costRollup={costRollup}
         workspaceSlug={workspaceSlug ?? ""}
+      />
+      <ClonedToBanner
+        workspaceSlug={workspaceSlug ?? ""}
+        slug={slug}
+        runId={snapshot.current_run.run_id}
       />
       <div className="flex items-center border-b border-border bg-background">
         <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />

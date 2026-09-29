@@ -2835,6 +2835,11 @@ export interface components {
              * Format: date-time
              */
             readonly created_at: string;
+            /**
+             * Forwards Public Link
+             * @default false
+             */
+            readonly forwards_public_link: boolean;
         };
         /** RunCloneIn */
         readonly RunCloneIn: {

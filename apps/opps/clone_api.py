@@ -49,6 +49,8 @@ class RunCloneOut(StrictModel):
     error: str
     created_by: str | None
     created_at: dt.datetime
+    # True once a release of the clone forwards THIS run's public summary to it.
+    forwards_public_link: bool = False
 
 
 def _out(c) -> dict:
@@ -64,8 +66,15 @@ def _out(c) -> dict:
             "error": c.error,
             "created_by": c.created_by.email if c.created_by else None,
             "created_at": c.created_at,
+            "forwards_public_link": _forwards(c),
         }
     ).model_dump(mode="json")
+
+
+def _forwards(clone) -> bool:
+    from apps.workspaces.models import RunRelease
+
+    return RunRelease.objects.filter(forwards_from=clone).exists()
 
 
 def _require_owner(request: HttpRequest, workspace) -> None:

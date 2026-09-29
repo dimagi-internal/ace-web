@@ -7200,6 +7200,11 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "forwards_public_link": {
+            "default": false,
+            "title": "Forwards Public Link",
+            "type": "boolean"
           }
         },
         "required": [
