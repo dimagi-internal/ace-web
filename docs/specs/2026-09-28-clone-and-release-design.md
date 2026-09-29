@@ -1,7 +1,7 @@
 # Per-opp tenancy, opp-bound ACE sessions, clone-to-new-workspace, and release
 
 **Date**: 2026-09-28
-**Status**: Approved in conversation (Jonathan, 2026-09-28), spec under review
+**Status**: Built and deployed 2026-09-28 (see "As built" at the end); open items listed there
 **Owner**: Jonathan Jackson
 **Commands**: `clone-to-new-workspace` (mechanical, generic) and `release`
 (external-facing steps on top); working names
@@ -126,11 +126,18 @@ Claude Code gives it the session id. So:
   install's `OCS_TEAM_SLUG`. Source arguments (`upstream_domain`) are not
   checked: reading from the shared space into a partner's is how a clone
   works. A tenancy field that is not set up refuses rather than guesses.
-- **Unbound sessions are allowed and logged** (`unbound-writes.log`) while
-  entry points are wired to bind; enforcement for unbound sessions comes after.
-- **Still to do:** Drive (a parent-chain walk to "inside the opp folder"),
-  defaults from tenancy instead of `.env` inside the servers, and scoped
-  credentials (per-team OCS token, domain-scoped HQ key).
+- **Unbound sessions are allowed and logged** (`unbound-writes.log`).
+- **Warn mode (rollout).** `/ace:run`, `/ace:step` and `/ace:turn` bind with
+  `--warn`: a would-be refusal is recorded in `bound-violations.log` and let
+  through, because older runs wrote to Connect orgs the backfill doesn't list
+  (the legacy PM org `ai-demo-space`). Clone and release bind in enforce mode.
+  Flip the run entry points to enforce after reading that log.
+- **Drive** is checked inside the ace-gdrive / ace-decisions servers
+  (`lib/drive-tenancy-guard.ts`): a bound session's Drive write must target
+  something inside the opp's folder (parent-chain walk from the workspace
+  Drive root `ace-bind` records). The hook can't: it is stdlib-only.
+- **Still to do:** in-server defaults from tenancy instead of `.env`, and
+  scoped credentials (domain-scoped HQ key).
 
 **Inbound turns (`/ace:turn`)** can touch several opps in one turn. The turn
 triages while unbound (read-only), then sends each act-tier action to a session
@@ -306,17 +313,21 @@ Each of the per-system steps below ships on its own.
 - **Preflight requires** both orgs to exist with ACE as admin, and the holding
   org to have an accepted program application. There is no create-org tool, so
   Connect staff set this up once per tenancy.
-- Recreate the program in `connect_pm_org` and the opportunity targeting
-  `connect_holding_org`. They point at the **new** HQ apps and reuse the source
-  run's payment units, verification flags and dates.
+- **As built:** the clone re-runs Phase 4 (`connect-setup`) against the
+  cloned run with `connect_orgs` from the tenancy, after clearing the copied
+  `opp.yaml` `connect:` block (it names the source program, which Phase 4
+  would otherwise reuse). The same skills that built the source build the
+  clone's program and opportunity, pointing at the rebuilt HQ apps.
 
 **Labs**
 
-- Clone each synthetic opp in `synthetic.cascade` with `allowed_domains =
-  labs_allowed_domains`. There is no tool to update the allowlist on an
-  existing opp.
-- Copy the run's workflows and dashboards onto the clones (`copy_workflow`) and
-  rewrite `synthetic.*`.
+- **As built:** a run's labs-only opps, program, registry and dashboards were
+  created for that run alone, so the clone does NOT rebuild them — it adds the
+  tenancy's domain to each opp's allowlist with the new connect-labs tool
+  `synthetic_set_allowed_domains` (connect-labs#2100; creator or Dimagi staff
+  only, refuses an empty list). Source and clone share the same labs assets.
+  Replaying the cascade would regenerate data, registry, reports and 13 weeks
+  of history from manifests ACE may not archive.
 
 **OCS — not rebuilt**
 
@@ -392,7 +403,7 @@ Each item is its own PR, merged when green.
 3. ACE **D**: opp binding and the tenancy guard, with `.env` defaults retired.
 4. ace-web **C**: copying a run into another workspace, and the redirect.
 5. ACE **E**: clone skeleton (preflight, `clone` block, report), then HQ.
-6. ACE **E**: Connect (waits on the program-manager org decision).
+6. ACE **E**: Connect (re-runs Phase 4 in the tenancy's orgs).
 7. ACE **E**: Labs.
 8. ~~ACE **E**: OCS~~ — dropped: reviewers use the public link.
 9. ACE **E2**: `release` (audit, invites, redirect, record), absorbing
@@ -401,7 +412,8 @@ Each item is its own PR, merged when green.
 **First use: Spark.**
 
 1. Create the `spark` workspace and set its default tenancy.
-2. Do the manual Connect-org setup (pending the program-manager decision).
+2. Create Spark's Connect program-manager and holding orgs with ace@ as
+   admin (how per-partner PM orgs get created is Jonathan's open decision).
 3. Clone `spark-facilitator/20260926-1413` into `spark`.
 4. Run `release` on the clone with Anne, Sasha, Rachel and Enock as reviewers.
    It audits, polishes and redirects the link they already have, then invites
@@ -442,3 +454,30 @@ Each item is its own PR, merged when green.
   stops being enough").
 - Keeping a clone in sync with later source runs. Cloning a newer run is
   another invocation.
+
+## As built (2026-09-28)
+
+| Piece | PR | Deployed |
+|---|---|---|
+| A. Invite-only login | ace-web#810 | yes |
+| B. Per-opp tenancy + backfill (`ace-pm-org`, `ace-nm-org`, `connect-ace-prod`) | ace-web#811, #818 | yes |
+| Default tenancy Settings panel | ace-web#815 | yes |
+| C. Clone a run into another workspace | ace-web#812 | yes |
+| Release record + source-link forwarding | ace-web#814 | yes |
+| Workbench "copied to" banner | ace-web#817 | yes |
+| D. `bin/ace-bind` + PreToolUse tenancy guard | ace#2530 | plugin (ace-web refreshes it on boot) |
+| D. Warn mode; `/ace:run`, `/ace:step`, `/ace:turn` bind | ace#2540 | plugin |
+| D. Drive guard in ace-gdrive / ace-decisions | ace (follow-up) | plugin |
+| E. `/ace:clone-to-new-workspace` (HQ, Labs, Connect; OCS kept) | ace#2531, #2533, #2542 | plugin |
+| E2. `/ace:release` | ace#2534 | plugin |
+| OCS: no reviewer accounts | ace#2532 | plugin |
+| Labs `synthetic_set_allowed_domains` | connect-labs#2100 | yes |
+
+**Open:**
+- How per-partner Connect program-manager orgs get created (Jonathan: a new
+  prod permission so ACE can create PM orgs without being a global admin).
+- Flip `/ace:run` / `/ace:turn` from warn to enforce after reviewing
+  `bound-violations.log`; correct any opp whose runs used `ai-demo-space`.
+- Not yet exercised end to end on a real partner: the first Spark clone is the
+  live test (cross-space HQ app copy has only been live-tested within one
+  project space).
