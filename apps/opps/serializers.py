@@ -265,17 +265,22 @@ def serialize_run_detail(run: RunDetail) -> dict:
 def _run_products(run: RunDetail) -> list[dict]:
     """The run's products catalogue (apps/opps/run_products.py).
 
+    Each product carries ``previews`` — screenshots of it
+    (apps/opps/output_previews.py).
+
     Guarded: the catalogue is a projection for display, and a run_state shape
     it has never seen must cost the products strip, never the snapshot.
     """
     from apps.opps import skills
+    from apps.opps.output_previews import attach_previews
     from apps.opps.run_products import build_products
 
     try:
-        return build_products(
+        products = build_products(
             getattr(run, "phase_products", None) or {},
             phase_order=skills.all_phases(),
         )
+        return attach_previews(products, list(getattr(run, "output_previews", None) or []))
     except Exception:  # noqa: BLE001
         log.warning("serialize_run_detail: products catalogue failed", exc_info=True)
         return []

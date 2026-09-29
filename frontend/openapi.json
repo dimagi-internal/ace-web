@@ -505,6 +505,64 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/flow": {
+      "get": {
+        "operationId": "apps_opps_api_get_run_flow",
+        "summary": "What each step of a run takes in and hands on",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "``{flow: {skill: {inputs, outputs}}}`` \u2014 the flow the plugin's artifact\nmanifest DECLARES (``producedBy`` / ``consumedBy``), not a trace of this\nrun's reads. Same shape as the replay payload's ``flow``.",
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
       "get": {
         "operationId": "apps_opps_api_get_step",

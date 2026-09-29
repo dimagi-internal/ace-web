@@ -88,10 +88,12 @@ def build_products(
 
     Each item::
 
-        {id, phase, key, kind, title, subtitle, url, file_id, facts,
+        {id, phase, key, aliases, kind, title, subtitle, url, file_id, facts,
          producer, chatbot}
 
     ``key`` is the dotted path under ``products`` (list indexes included);
+    ``aliases`` the keys of later entries that were the same thing (see
+    de-duplication below) — a preview index may name either;
     ``producer`` the skill that wrote it per the plugin, or ``None``;
     ``chatbot`` is ``{public_id, embed_key}`` for an OCS bot that can be
     embedded, else ``None``. Items are de-duplicated by Drive file id, then
@@ -107,7 +109,7 @@ def build_products(
     domain = _hq_domain(phase_products)
 
     out: list[dict] = []
-    seen: set[str] = set()
+    seen: dict[str, dict] = {}
     for phase in phases:
         block = phase_products.get(phase)
         if not isinstance(block, dict):
@@ -117,9 +119,12 @@ def build_products(
             if item is None:
                 continue
             ident = item["file_id"] or item["url"]
-            if ident in seen:
+            first = seen.get(ident)
+            if first is not None:
+                if first["phase"] == phase and item["key"] != first["key"]:
+                    first["aliases"].append(item["key"])
                 continue
-            seen.add(ident)
+            seen[ident] = item
             out.append(item)
     return out
 
@@ -218,6 +223,7 @@ def _item(
         "id": f"{phase}:{'.'.join(segments)}",
         "phase": phase,
         "key": ".".join(segments),
+        "aliases": [],
         "kind": kind,
         "title": title,
         "subtitle": subtitle,

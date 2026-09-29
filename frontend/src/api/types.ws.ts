@@ -368,6 +368,23 @@ export interface RunProduct {
   producer: string | null;
   /** OCS widget credentials, when the chatbot can be embedded. */
   chatbot: { public_id: string; embed_key: string } | null;
+  /** Keys of later `products` entries that were the same thing (de-duplicated). */
+  aliases?: string[];
+  /** Screenshots of it, in display order — `apps/opps/output_previews.py`.
+   *  Absent on a snapshot cached before previews existed. */
+  previews?: ProductPreview[];
+}
+
+/** One screenshot of a product. Lives with the phase that BUILT the product,
+ *  whoever took it (docs/specs/2026-09-29-output-previews-design.md). */
+export interface ProductPreview {
+  /** Drive file id — opens through the run's view endpoint. */
+  file_id: string;
+  name: string;
+  caption: string | null;
+  mime_type: string;
+  /** The skill that took it (Phase 6's app walk, say), or null if unknown. */
+  captured_by: string | null;
 }
 
 export interface RunSummary {

@@ -22,7 +22,8 @@ makes — a natively formatted Doc whose tables need their escaped pipes —
 and it is not what this viewer mostly opens.
 
 **Authorization.** The id must belong to the run: a step artifact, a product's
-``file_id`` (both off the cached rich snapshot), or a file directly in the run
+``file_id`` or one of its previews (all off the cached rich snapshot; previews
+are checked against the run tree when read), or a file directly in the run
 folder. That scan is the boundary — without it any workspace member could read
 any file the service account can see. It mirrors ``download_artifact_bytes``.
 """
@@ -92,6 +93,18 @@ def find_in_snapshot(snapshot: dict, file_id: str) -> FileMeta | None:
                     mime_type=str(art.get("mime_type") or ""),
                     web_link=art.get("drive_web_link") or None,
                     size_bytes=art.get("size_bytes"),
+                )
+    # A product's previews: already checked against the run's own tree when
+    # they were read (apps/opps/output_previews.py), and they carry a MIME.
+    for product in run.get("products") or []:
+        for preview in (product.get("previews") or []) if isinstance(product, dict) else []:
+            if isinstance(preview, dict) and preview.get("file_id") == file_id:
+                return FileMeta(
+                    file_id=file_id,
+                    name=str(preview.get("name") or file_id),
+                    mime_type=str(preview.get("mime_type") or ""),
+                    web_link=None,
+                    size_bytes=None,
                 )
     return None
 

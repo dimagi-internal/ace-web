@@ -109,3 +109,57 @@ def test_flow_outputs_list_downstream_skills_without_the_orchestrator_or_self():
 def test_flow_is_empty_not_an_error_without_a_manifest():
     flow = replay.build_flow(_ladder(), [])
     assert flow["idea-to-pdd"] == {"inputs": [], "outputs": []}
+
+
+# --------------------------------------------------------------------------- #
+# previews — shown at the beat that CAPTURED them
+# --------------------------------------------------------------------------- #
+def _with_capturer():
+    snap = _snapshot([])
+    snap["current_run"]["steps"].insert(4, _step("app-screenshot-capture", "qa-and-training", 5))
+    return snap
+
+
+def test_preview_appears_when_its_capturer_finishes_not_with_the_app():
+    """The Learn app is built in Phase 3 but photographed in Phase 6; its
+    screenshots live with Phase 3, and must still wait for Phase 6."""
+    snap = _with_capturer()
+    snap["current_run"]["products"] = [{
+        "id": "learn", "phase": "commcare-setup", "producer": "pdd-to-learn-app",
+        "previews": [{"file_id": "f1", "captured_by": "app-screenshot-capture"}],
+    }]
+    events = replay.build_timeline(snap)["events"]
+    [item] = replay.build_products(snap, events)
+    assert item["reveal_seq"] == _seq(events, "step_end", "pdd-to-learn-app")
+    assert item["previews"][0]["reveal_seq"] == _seq(events, "step_end", "app-screenshot-capture")
+
+
+def test_preview_without_a_capturer_rides_with_its_product():
+    snap = _snapshot([{
+        "id": "learn", "phase": "commcare-setup", "producer": "pdd-to-learn-app",
+        "previews": [{"file_id": "f1", "captured_by": None}],
+    }])
+    events = replay.build_timeline(snap)["events"]
+    [item] = replay.build_products(snap, events)
+    assert item["previews"][0]["reveal_seq"] == item["reveal_seq"]
+
+
+def test_preview_is_never_shown_before_its_product():
+    snap = _snapshot([{
+        "id": "learn", "phase": "commcare-setup", "producer": "app-deploy",
+        "previews": [{"file_id": "f1", "captured_by": "idea-to-pdd"}],
+    }])
+    events = replay.build_timeline(snap)["events"]
+    [item] = replay.build_products(snap, events)
+    assert item["previews"][0]["reveal_seq"] == item["reveal_seq"]
+
+
+def test_preview_whose_capturer_has_not_run_waits_for_the_end():
+    """A fork carries Phase 3's previews before its Phase 6 has run again."""
+    snap = _snapshot([{
+        "id": "learn", "phase": "commcare-setup", "producer": "pdd-to-learn-app",
+        "previews": [{"file_id": "f1", "captured_by": "app-screenshot-capture"}],
+    }])
+    events = replay.build_timeline(snap)["events"]
+    [item] = replay.build_products(snap, events)
+    assert item["previews"][0]["reveal_seq"] is None

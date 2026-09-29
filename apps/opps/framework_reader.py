@@ -53,6 +53,7 @@ from canopy_agent_runs.drive.store import DriveRunStore
 from apps.opps import framework_map as fm
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.drive_export import read_prose
+from apps.opps.output_previews import load_output_previews
 
 log = logging.getLogger(__name__)
 
@@ -394,6 +395,9 @@ def load_opp_run_via_store(
     rd = fm.map_run_detail(fw_run, folder_id=run_folder_id, run_state=state_data)
     # Framework canonicalizes mode to review|auto; ace keeps the literal.
     rd.mode = state_data.get("mode") or rd.mode
+    # Screenshots of the run's outputs. Reuses the recursive run-tree listing
+    # the store has just made (cached), plus one read per preview index.
+    rd.output_previews = load_output_previews(client, run_folder_id)
     # current_phase/current_step: mirror the legacy ``_load_opp_run`` exactly —
     # take them from the matching run-summary row (which already applied the
     # ``phase``/``step`` → ``current_*`` precedence).

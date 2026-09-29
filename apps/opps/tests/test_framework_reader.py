@@ -175,3 +175,54 @@ def test_list_opp_runs_through_cached_client_tracks_run_folder():
     state_id = inner.file_id("ACE/demo/runs/20260601-0900/run_state.yaml")
     assert run_folder_id in tracker.file_ids
     assert state_id in tracker.file_ids
+
+
+# --------------------------------------------------------------------------- #
+# output previews ride the snapshot, and edits to an index invalidate it
+# --------------------------------------------------------------------------- #
+def _tree_with_learn_app_previews() -> tuple[FakeDriveClient, str]:
+    tree = _demo_multi_run_tree()
+    run = tree["ACE"]["demo"]["runs"]["20260601-0900"]
+    run["run_state.yaml"] += (
+        "  commcare-setup:\n"
+        "    status: complete\n"
+        "    products:\n"
+        "      apps:\n"
+        "        domain: ace-demo\n"
+        "        learn: {hq_app_id: L1}\n"
+    )
+    run["3-commcare"] = {"previews": {"apps-learn": {"_previews.yaml": "", "01-home.png": ""}}}
+    client = FakeDriveClient.from_tree(tree)
+    folder = "ACE/demo/runs/20260601-0900/3-commcare/previews/apps-learn"
+    index = client.file_id(f"{folder}/_previews.yaml")
+    client._nodes_by_id[index].body = (
+        "schema_version: 1\n"
+        "phase: commcare-setup\n"
+        "output_key: apps.learn\n"
+        "captured_by: app-screenshot-capture\n"
+        f"items:\n  - file_id: {client.file_id(f'{folder}/01-home.png')}\n"
+        "    caption: Home\n"
+    )
+    return client, index
+
+
+def test_load_opp_reads_output_previews_onto_the_serialized_products():
+    from apps.opps.serializers import serialize_run_detail
+
+    client, _ = _tree_with_learn_app_previews()
+    snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
+    products = serialize_run_detail(snap.current_run)["products"]
+    learn = next(p for p in products if p["key"] == "apps.learn")
+    assert [(p["caption"], p["captured_by"]) for p in learn["previews"]] == [
+        ("Home", "app-screenshot-capture")
+    ]
+
+
+def test_a_preview_index_is_a_tracked_file():
+    """Editing an index must invalidate the cached snapshot like any other
+    run file — it rides the same reverse index."""
+    inner, index = _tree_with_learn_app_previews()
+    client = CachedDriveClient(inner, bypass=False)
+    with TouchedFileTracker() as tracker:
+        load_opp(client, ace_folder_id=inner.folder_id("ACE"), slug="demo")
+    assert index in tracker.file_ids

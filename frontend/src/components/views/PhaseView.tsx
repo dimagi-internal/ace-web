@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 import { toast } from "sonner";
@@ -30,11 +30,14 @@ import { useAffectedDocs } from "@/components/views/decisions/useAffectedDocs";
 import { computeForkPoint } from "@/components/views/decisions/forkPoint";
 import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
 import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
+import { PhaseRail } from "@/components/views/PhaseRail";
 import { PresenceStrip } from "@/components/views/PresenceStrip";
 import { Glossed } from "@/components/glossary/Glossed";
 import {
   phasesFinishedAt,
+  productAsOf,
   productsAtBeat,
+  productsPhotographedAt,
   documentTitle,
   revealIndexOf,
   stepDocuments,
@@ -43,7 +46,6 @@ import { FlowPanel } from "@/components/replay/FlowPanel";
 import { ReplayBar } from "@/components/replay/ReplayBar";
 import { itemKey, Spotlight } from "@/components/replay/Spotlight";
 import type { Replay } from "@/components/replay/useReplay";
-import { ProductsStrip } from "@/components/viewers/ProductsStrip";
 import { appStructureArtifact } from "@/components/viewers/ProductViewer";
 import { prefetchViews } from "@/components/viewers/viewCache";
 import { ViewerProvider, type ViewerTarget } from "@/components/viewers/ViewerContext";
@@ -396,19 +398,40 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
   }, [shownDecisions]);
 
   // What the run built. In a replay each product carries the beat that made
-  // it, and stays a placeholder until the cursor gets there.
-  const replayProducts: readonly ReplayProduct[] | null =
-    replay.active && replay.timeline ? (replay.timeline.products ?? []) : null;
-  const products: readonly RunProduct[] = replayProducts ?? snapshot.current_run.products ?? [];
-  const isRevealed = replayProducts
-    ? (p: RunProduct) => revealIndexOf(p as ReplayProduct, replay.total) <= replay.beat.index
-    : undefined;
-  const beatProducts = useMemo(
+  // it, and stays a placeholder until the cursor gets there; its screenshots
+  // are cut to the ones already taken (Phase 6 photographs the Phase 3 apps).
+  const replayProducts = useMemo<readonly ReplayProduct[] | null>(
     () =>
-      replay.active && replay.timeline ? productsAtBeat(replay.timeline, replay.beat.index) : [],
-    [replay.active, replay.timeline, replay.beat.index],
+      replay.active && replay.timeline
+        ? (replay.timeline.products ?? []).map((p) =>
+            productAsOf(p, replay.beat.index, replay.total),
+          )
+        : null,
+    [replay.active, replay.timeline, replay.beat.index, replay.total],
   );
-  const justRevealed = useMemo(() => new Set(beatProducts.map((p) => p.id)), [beatProducts]);
+  const products: readonly RunProduct[] = replayProducts ?? snapshot.current_run.products ?? [];
+  const isRevealed = useCallback(
+    (p: ReplayProduct) => revealIndexOf(p, replay.total) <= replay.beat.index,
+    [replay.total, replay.beat.index],
+  );
+  const beatProducts = useMemo(() => {
+    if (!replay.active || !replay.timeline || !replayProducts) return [];
+    const ids = new Set(productsAtBeat(replay.timeline, replay.beat.index).map((p) => p.id));
+    return replayProducts.filter((p) => ids.has(p.id));
+  }, [replay.active, replay.timeline, replay.beat.index, replayProducts]);
+  const photographedProducts = useMemo(() => {
+    if (!replay.active || !replay.timeline || !replayProducts) return [];
+    const ids = new Set(productsPhotographedAt(replay.timeline, replay.beat.index).map((p) => p.id));
+    return replayProducts.filter((p) => ids.has(p.id));
+  }, [replay.active, replay.timeline, replay.beat.index, replayProducts]);
+  const photographedIds = useMemo(
+    () => new Set(photographedProducts.map((p) => p.id)),
+    [photographedProducts],
+  );
+  const justRevealed = useMemo(
+    () => new Set([...beatProducts, ...photographedProducts].map((p) => p.id)),
+    [beatProducts, photographedProducts],
+  );
 
   // The spotlight: pop up what this beat just built — its products, then any
   // markdown the step wrote that isn't already one of them.
@@ -417,7 +440,10 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
     [products],
   );
   const beatItems = useMemo<ViewerTarget[]>(() => {
-    const items: ViewerTarget[] = beatProducts.map((p) => ({ type: "product", product: p }));
+    const items: ViewerTarget[] = [...beatProducts, ...photographedProducts].map((p) => ({
+      type: "product",
+      product: p,
+    }));
     const e = replay.beat.event;
     if (replay.active && e?.kind === "step_end" && e.skill) {
       const step = snapshot.current_run.steps.find((st) => st.skill_name === e.skill);
@@ -433,7 +459,14 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
       }
     }
     return items;
-  }, [beatProducts, replay.active, replay.beat.event, snapshot.current_run.steps, productFileIds]);
+  }, [
+    beatProducts,
+    photographedProducts,
+    replay.active,
+    replay.beat.event,
+    snapshot.current_run.steps,
+    productFileIds,
+  ]);
   const [spotlight, setSpotlight] = useState<ViewerTarget[] | null>(null);
   useEffect(() => {
     setSpotlight(replay.spotlights && beatItems.length > 0 ? beatItems : null);
@@ -446,6 +479,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
     const ids = new Set<string>();
     for (const p of replay.timeline.products ?? []) {
       if (p.file_id) ids.add(p.file_id);
+      for (const pv of p.previews ?? []) ids.add(pv.file_id);
       const structure =
         p.kind === "commcare_app" ? appStructureArtifact(p, snapshot.current_run.steps) : null;
       if (structure) ids.add(structure.drive_file_id);
@@ -476,15 +510,6 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
       {replay.active && (
         <div className="px-4 pt-3">
           <ReplayBar replay={replay} />
-        </div>
-      )}
-      {products.length > 0 && (
-        <div className={cn("px-4", replay.active ? "pb-3" : "border-b border-border py-2.5")}>
-          <ProductsStrip
-            products={products}
-            isRevealed={isRevealed}
-            justRevealed={replay.active ? justRevealed : undefined}
-          />
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
@@ -630,12 +655,35 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
             </div>
           )}
         </section>
-        {replay.active && replay.timeline && (
+        {replay.active && replay.timeline && replayProducts ? (
           <aside
             aria-label="Flow"
-            className="w-[300px] shrink-0 border-l border-border bg-background"
+            className="w-[320px] shrink-0 border-l border-border bg-background"
           >
-            <FlowPanel replay={replay} steps={snapshot.current_run.steps} phases={phases} />
+            <FlowPanel
+              replay={replay}
+              steps={snapshot.current_run.steps}
+              phases={phases}
+              products={replayProducts}
+              isRevealed={isRevealed}
+              justRevealed={justRevealed}
+            />
+          </aside>
+        ) : (
+          <aside
+            aria-label="Inputs and outputs"
+            className="w-[320px] shrink-0 border-l border-border bg-background"
+          >
+            <PhaseRail
+              workspaceSlug={workspaceSlug}
+              oppSlug={oppSlug}
+              runId={runId}
+              phases={phases}
+              steps={snapshot.current_run.steps}
+              products={products}
+              selectedPhase={selectedPhase}
+              onSelectPhase={setSelectedPhase}
+            />
           </aside>
         )}
       </div>
@@ -682,6 +730,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
           items={spotlight}
           replay={replay}
           onClose={() => setSpotlight(null)}
+          photographed={photographedIds}
         />
       )}
     </div>
