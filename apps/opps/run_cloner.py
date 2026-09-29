@@ -26,7 +26,9 @@ Spec: docs/specs/2026-09-28-clone-and-release-design.md § C.
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from apps.opps.drive_client import DriveClient, DriveFile
@@ -87,26 +89,43 @@ class _Copier:
         *,
         skip: frozenset[str] = frozenset(),
         only: frozenset[str] | None = None,
+        skip_if: Callable[[str], bool] | None = None,
     ) -> None:
         for child in self.drive.list_files(source_folder_id):
             if child.name in skip or (only is not None and child.name not in only):
                 continue
+            if skip_if is not None and skip_if(child.name):
+                continue
             if child.mime_type == _FOLDER_MIME:
                 sub = self.drive.create_folder(dest_folder_id, child.name)
-                self.tree(child.id, sub)
+                self.tree(child.id, sub, skip_if=skip_if)
             else:
                 self.file(child, dest_folder_id)
 
 
-def clone_run(
+# How long a `copying` record may go without progress before a new POST may
+# replace it: the copy writes progress every _PROGRESS_EVERY files (~2.4 s per
+# file live), so 10 minutes of silence means its worker died.
+_STALE_AFTER = dt.timedelta(minutes=10)
+
+# Never cloned, at any depth: ACE's email records. They are internal (drafts,
+# cc lines, thread ids), and ACE routes inbound mail by the thread ids in a
+# run's comms-log — a clone carrying them would steal the source's threads.
+_RUN_SKIP = frozenset({"comms-log"})
+
+
+def _skip_run_child(name: str) -> bool:
+    return name in _RUN_SKIP or name.endswith("_comms-log")
+
+
+def start_clone(
     *, drive: DriveClient, source, target, opp_slug: str, run_id: str, owner
-) -> CloneResult:
-    """Copy ``source``'s ``opp_slug/runs/run_id`` into ``target``. Blocking:
-    one Drive copy per file. Raises ``CloneError`` for caller-facing
-    validation failures; a Drive failure mid-copy marks the record ``error``
-    and re-raises, leaving a partial run with its ``run_state.yaml``."""
-    from apps.opps import tenancy as tenancy_mod
-    from apps.opps.models import OppWorkspace
+) -> tuple[object, Callable[[], CloneResult]]:
+    """Validate, create the ``RunClone`` record, and return ``(record, copy)``.
+
+    Fast: only listings. ``copy()`` does the Drive copy (one call per file —
+    ~14 min for a 347-file run) and is what the API runs on a background
+    thread. Raises ``CloneError`` for caller-facing validation failures."""
     from apps.workspaces.models import RunClone
 
     if source.pk == target.pk:
@@ -121,21 +140,55 @@ def clone_run(
     if src_run is None:
         raise CloneError("source-run-not-found", f"opp {opp_slug!r} has no run {run_id!r}")
 
-    dst_root_children = drive.list_files(target.drive_root_folder_id)
-    dst_opp = _child(dst_root_children, opp_slug, folder=True)
+    dst_opp = _child(drive.list_files(target.drive_root_folder_id), opp_slug, folder=True)
     dst_runs = None
     if dst_opp is not None:
         dst_runs = _child(drive.list_files(dst_opp.id), "runs", folder=True)
-        if dst_runs is not None and _child(drive.list_files(dst_runs.id), run_id, folder=True):
-            raise CloneError(
-                "already-cloned",
-                f"{target.slug} already has {opp_slug}/runs/{run_id}; trash it there to re-clone",
+        existing = (
+            _child(drive.list_files(dst_runs.id), run_id, folder=True) if dst_runs else None
+        )
+        if existing is not None:
+            last = (
+                RunClone.objects.filter(target_workspace=target, opp_slug=opp_slug, run_id=run_id)
+                .order_by("-created_at")
+                .first()
             )
+            now = dt.datetime.now(dt.UTC)
+            replaceable = last is not None and (
+                last.status == "error"
+                or (last.status == "copying" and now - last.updated_at > _STALE_AFTER)
+            )
+            if not replaceable:
+                raise CloneError(
+                    "already-cloned",
+                    f"{target.slug} already has {opp_slug}/runs/{run_id}; "
+                    "trash it there to re-clone",
+                )
+            # A clone that failed, or whose worker died mid-copy, left a partial
+            # run. Replace it rather than making someone trash it by hand.
+            drive.trash_folder(existing.id)
+            if last.status == "copying":
+                last.status = "error"
+                last.error = "abandoned: no progress; replaced by a new clone"
+                last.save(update_fields=["status", "error", "updated_at"])
 
     record = RunClone.objects.create(
         source_workspace=source, target_workspace=target, opp_slug=opp_slug,
         run_id=run_id, created_by=owner,
     )
+
+    def copy() -> CloneResult:
+        return _copy(drive, record, source, target, opp_slug, run_id, owner,
+                     src_opp, src_run, dst_opp, dst_runs)
+
+    return record, copy
+
+
+def _copy(drive, record, source, target, opp_slug, run_id, owner,
+          src_opp, src_run, dst_opp, dst_runs) -> CloneResult:
+    from apps.opps import tenancy as tenancy_mod
+    from apps.opps.models import OppWorkspace
+
     copier = _Copier(drive, record)
     try:
         if dst_opp is None:
@@ -150,14 +203,16 @@ def clone_run(
             copier.tree(src_opp.id, dst_opp_id, only=_OPP_LEVEL_FILES)
         else:
             dst_opp_id = dst_opp.id
-        dst_runs_id = dst_runs.id if dst_runs else drive.create_folder(dst_opp_id, "runs")
+        existing_runs = dst_runs or _child(drive.list_files(dst_opp_id), "runs", folder=True)
+        dst_runs_id = existing_runs.id if existing_runs else drive.create_folder(dst_opp_id, "runs")
         dst_run_id = drive.create_folder(dst_runs_id, run_id)
 
         run_children = drive.list_files(src_run.id)
         state = _child(run_children, _RUN_STATE, folder=False)
         if state is not None:
             copier.file(state, dst_run_id)
-        copier.tree(src_run.id, dst_run_id, skip=frozenset({_RUN_STATE}))
+        copier.tree(src_run.id, dst_run_id, skip=frozenset({_RUN_STATE}),
+                    skip_if=_skip_run_child)
     except Exception as exc:
         record.status = "error"
         record.error = f"{type(exc).__name__}: {exc}"[:2000]
@@ -186,3 +241,13 @@ def clone_run(
         clone_id=record.pk, opp_slug=opp_slug, run_id=run_id,
         target_run_folder_id=dst_run_id, files_copied=copier.copied,
     )
+
+
+def clone_run(
+    *, drive: DriveClient, source, target, opp_slug: str, run_id: str, owner
+) -> CloneResult:
+    """Copy ``source``'s ``opp_slug/runs/run_id`` into ``target``, blocking.
+    The API runs the same two halves with the copy on a thread."""
+    _, copy = start_clone(drive=drive, source=source, target=target, opp_slug=opp_slug,
+                          run_id=run_id, owner=owner)
+    return copy()

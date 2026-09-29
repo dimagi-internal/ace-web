@@ -6,12 +6,18 @@ workspace whose members will see it, and it is the first step before its
 assets are rebuilt in that workspace's tenancy. A target the caller is not a
 member of is a 404 (workspace existence is never leaked).
 
-**The POST blocks for the whole Drive copy** (~150 ms per file), like the
-fork endpoint. Spec: docs/specs/2026-09-28-clone-and-release-design.md § C.
+**The POST validates, records the clone and returns 202; the Drive copy runs
+on a background thread.** It is one Drive call per file — the first real clone
+(347 files) took ~14 min, and the in-request version 504'd at the load
+balancer at 10 min (ace-web#823). Callers poll ``GET …/clones`` until the
+record is ``done`` or ``error``. Spec:
+docs/specs/2026-09-28-clone-and-release-design.md § C.
 """
 from __future__ import annotations
 
 import datetime as dt
+import logging
+import threading
 from typing import Annotated
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -29,7 +35,9 @@ from apps.api.errors import (
 from apps.common.schemas import StrictModel
 
 from .drive_client import get_drive_client
-from .run_cloner import CloneError, clone_run
+from .run_cloner import CloneError, start_clone
+
+log = logging.getLogger(__name__)
 
 router = Router(auth=session_auth, tags=["opps"])
 
@@ -92,10 +100,26 @@ _CLONE_ERROR_STATUS = {
 }
 
 
+def _run_in_background(fn) -> None:
+    """Run ``fn`` on a daemon thread (tests replace this to run inline)."""
+
+    def _runner():
+        from django.db import close_old_connections
+
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 — the RunClone row already carries the error
+            log.exception("background clone failed")
+        finally:
+            close_old_connections()
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
 @router.post(
     "/{slug}/runs/{run_id}/clone",
-    response={201: RunCloneOut},
-    summary="Clone a run into another workspace (blocking)",
+    response={202: RunCloneOut},
+    summary="Clone a run into another workspace (async — poll …/clones)",
 )
 def clone_run_endpoint(
     request: HttpRequest,
@@ -118,19 +142,25 @@ def clone_run_endpoint(
         raise ProblemError(404, "Drive not configured", type_=TYPE_NOT_FOUND,
                            detail=str(exc)) from exc
     try:
-        result = clone_run(drive=drive, source=source, target=target, opp_slug=slug,
-                           run_id=run_id, owner=request.user)
+        record, copy = start_clone(drive=drive, source=source, target=target, opp_slug=slug,
+                                   run_id=run_id, owner=request.user)
     except CloneError as exc:
         status = _CLONE_ERROR_STATUS.get(exc.code, 400)
         type_ = {404: TYPE_NOT_FOUND, 409: TYPE_CONFLICT}.get(status, TYPE_VALIDATION)
         raise ProblemError(status, str(exc), type_=type_, detail=exc.code) from exc
 
-    # The new opp folder is a new child of the target root — a listing the
-    # Drive Changes feed does not reliably report (see
-    # drive-changes-api-parent-folder-blind-spot.md).
-    snapshot_cache.clear_workspace(target.pk)
-    record = RunClone.objects.select_related("created_by").get(pk=result.clone_id)
-    return JsonResponse(_out(record), status=201)
+    target_pk = target.pk
+
+    def _copy_then_refresh():
+        copy()
+        # The new opp folder is a new child of the target root — a listing the
+        # Drive Changes feed does not reliably report (see
+        # drive-changes-api-parent-folder-blind-spot.md).
+        snapshot_cache.clear_workspace(target_pk)
+
+    _run_in_background(_copy_then_refresh)
+    record = RunClone.objects.select_related("created_by").get(pk=record.pk)
+    return JsonResponse(_out(record), status=202)
 
 
 @router.get(
