@@ -90,7 +90,13 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        `teamDriveMembershipRequired` — see apps/opps/drive_changes.py), so
 #        every v12 entry may predate edits it never heard about. The bump
 #        starts every opp from a fresh read once the feed works again.
-_KEY_VERSION = "v13"
+#   v14 — output_previews follow a FORK back to its source run: a fork's
+#        Phase 6 manifest names emulator frames that stay in the source
+#        (ace-web#758), and v13 entries dropped them as foreign — so
+#        spark-facilitator/20260926-1800's apps showed the HQ fallback
+#        instead of 96 real phone screenshots. The Drive files never
+#        changed; the reader did.
+_KEY_VERSION = "v14"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

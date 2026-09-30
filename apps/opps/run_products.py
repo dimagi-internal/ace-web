@@ -89,7 +89,7 @@ def build_products(
     Each item::
 
         {id, phase, key, aliases, kind, title, subtitle, url, file_id, facts,
-         producer, chatbot, public_url}
+         producer, chatbot, public_url, featured}
 
     ``key`` is the dotted path under ``products`` (list indexes included);
     ``aliases`` the keys of later entries that were the same thing (see
@@ -97,7 +97,9 @@ def build_products(
     ``producer`` the skill that wrote it per the plugin, or ``None``;
     ``chatbot`` is ``{public_id, embed_key}`` for an OCS bot that can be
     embedded, else ``None``; ``public_url`` the page anyone can open without
-    signing in (a chatbot's chat, a solicitation), else ``None``. Items are
+    signing in (a chatbot's chat, a solicitation), else ``None``;
+    ``featured`` whether the public run summary puts it in front of a reader
+    (:func:`_featured`). Items are
     de-duplicated by Drive file id, then by URL, first seen wins.
     """
     if not isinstance(phase_products, dict):
@@ -248,6 +250,7 @@ def _item(
         "producer": _producer(phase, names),
         "chatbot": chatbot,
         "public_url": public_url,
+        "featured": _featured(phase, names, kind),
     }
 
 
@@ -294,6 +297,35 @@ def _kind(last: str, parent_name: str, node: dict) -> str:
         # says otherwise (docs/learnings/drive-prose-export.md).
         return "document"
     return "link"
+
+
+#: Training documents the public summary lists (``summary._read_training``).
+_FEATURED_TRAINING = frozenset(
+    {"deck", "llo_guide", "flw_guide", "quick_reference", "faq", "onboarding_email"}
+)
+
+
+def _featured(phase: str, names: list[str], kind: str) -> bool:
+    """Is this one of the things the public run summary puts in front of a
+    reader? Mirrors the sections of ``summary.build_summary_payload``: the
+    PDD and work order, the build memo, the apps, the Connect OPPORTUNITY
+    (the summary omits the program — Connect serves it no page), the
+    training pack, the chatbot, the demo dashboards and walkthroughs, and the
+    solicitation. The replay pops these up; the rest only sit in the rail.
+    """
+    last = names[-1] if names else ""
+    if phase in {"idea-to-design", "design"}:
+        return last in {"pdd", "work_order"}
+    if kind in {"commcare_app", "connect_opportunity", "chatbot", "dashboard", "walkthrough",
+                "solicitation"}:
+        return True
+    if kind == "connect_program":
+        return False
+    if phase == "connect-setup":
+        return last == "build_memo"
+    if phase == "qa-and-training":
+        return last in _FEATURED_TRAINING
+    return False
 
 
 def _program_list_url(url: str | None) -> str | None:

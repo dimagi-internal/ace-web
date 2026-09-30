@@ -397,7 +397,11 @@ def load_opp_run_via_store(
     rd.mode = state_data.get("mode") or rd.mode
     # Screenshots of the run's outputs. Reuses the recursive run-tree listing
     # the store has just made (cached), plus one read per preview index.
-    rd.output_previews = load_output_previews(client, run_folder_id)
+    rd.output_previews = load_output_previews(
+        client,
+        run_folder_id,
+        lineage_folder_ids=_fork_lineage(client, state_data, runs_summary),
+    )
     # current_phase/current_step: mirror the legacy ``_load_opp_run`` exactly —
     # take them from the matching run-summary row (which already applied the
     # ``phase``/``step`` → ``current_*`` precedence).
@@ -423,6 +427,32 @@ def load_opp_run_via_store(
         current_run=rd,
         runs_summary=runs_summary,
     )
+
+
+#: How far back a fork chain is followed for its screenshots.
+_MAX_FORK_HOPS = 3
+
+
+def _fork_lineage(client: DriveClient, state: dict, runs_summary: list) -> tuple[str, ...]:
+    """Folder ids of the runs this run was forked from, nearest first
+    (``forked_from`` in run_state, followed up to ``_MAX_FORK_HOPS``). Only
+    runs of the same opp — ``runs_summary`` is this opp's run list."""
+    folder_of = {r.run_id: r.folder_id for r in runs_summary}
+    out: list[str] = []
+    seen: set[str] = set()
+    source = state.get("forked_from")
+    while source and len(out) < _MAX_FORK_HOPS:
+        source = str(source)
+        folder_id = folder_of.get(source)
+        if not folder_id or source in seen:
+            break
+        seen.add(source)
+        out.append(folder_id)
+        try:
+            source = _read_state(client, client.list_folder(folder_id)).get("forked_from")
+        except Exception:  # noqa: BLE001 — lineage is best effort
+            break
+    return tuple(out)
 
 
 # --------------------------------------------------------------------------- #

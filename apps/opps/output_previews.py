@@ -67,7 +67,12 @@ def output_slug(key: str) -> str:
 # --------------------------------------------------------------------------- #
 # load (Drive)
 # --------------------------------------------------------------------------- #
-def load_output_previews(client: DriveClient, run_folder_id: str) -> list[dict]:
+def load_output_previews(
+    client: DriveClient,
+    run_folder_id: str,
+    *,
+    lineage_folder_ids: tuple[str, ...] = (),
+) -> list[dict]:
     """Every preview record in one run, from Drive. Never raises.
 
     Each record::
@@ -84,6 +89,19 @@ def load_output_previews(client: DriveClient, run_folder_id: str) -> list[dict]:
         log.warning("output_previews: run tree listing failed", exc_info=True)
         return []
     by_id = {f.id: f for f in tree if f.mime_type != _FOLDER_MIME}
+    # A FORK's screenshots may live in the run it was forked from: the forker
+    # does not copy a phase's screenshots/ (ace-web#758) while the manifest it
+    # copies still names them. Those runs are the same opp, so their files may
+    # be shown — but only frames are looked up there; previews folders and
+    # manifests are this run's own.
+    shown_ids = dict(by_id)
+    for folder_id in lineage_folder_ids:
+        try:
+            for f in client.list_files(folder_id, recursive=True):
+                if f.mime_type != _FOLDER_MIME:
+                    shown_ids.setdefault(f.id, f)
+        except Exception:  # noqa: BLE001
+            log.warning("output_previews: fork source listing failed", exc_info=True)
 
     records: list[dict] = []
     folders: dict[tuple[str, str], list[DriveFile]] = {}
@@ -94,7 +112,7 @@ def load_output_previews(client: DriveClient, run_folder_id: str) -> list[dict]:
 
     for (_phase_folder, slug), files in sorted(folders.items()):
         index = next((f for f in files if f.name in INDEX_NAMES), None)
-        record = _read_index(client, index, by_id) if index else None
+        record = _read_index(client, index, shown_ids) if index else None
         if record is None:
             record = _folder_record(slug, files)
         # An index with no items is kept: it is the writer saying "nothing to
@@ -114,7 +132,7 @@ def load_output_previews(client: DriveClient, run_folder_id: str) -> list[dict]:
         None,
     )
     if manifest is not None:
-        records.extend(_read_legacy_manifest(client, manifest, by_id))
+        records.extend(_read_legacy_manifest(client, manifest, shown_ids))
     return records
 
 
@@ -365,17 +383,32 @@ def attach_previews(products: list[dict], records: list[dict]) -> list[dict]:
                 break
 
     for i, rec in enumerate(records):
-        if rec["source"] != "legacy":
+        if rec["source"] != "legacy" or not rec["items"]:
             continue
         for p in out:
-            if (
-                p.get("kind") == "commcare_app"
-                and str(p.get("id")) not in covered
-                and _app_of(p) == rec["app"]
-            ):
-                give(p, i, rec)
-                break
+            if p.get("kind") != "commcare_app" or _app_of(p) != rec["app"]:
+                continue
+            if str(p.get("id")) in covered and not _only_fallback(p):
+                continue
+            # Phase 6's walk of the real app beats the capture skill's HQ
+            # form-summary fallback — the fallback exists for an app nothing
+            # photographed, and a fork's walk frames sit in its source run.
+            p["previews"] = [
+                pv for pv in p["previews"] if pv.get("captured_by") != FALLBACK_CAPTURER
+            ]
+            give(p, i, rec)
+            break
     return out
+
+
+#: The utility that photographs whatever has no picture. For an app its frame
+#: is the HQ form summary — a fallback, never preferred over the emulator walk.
+FALLBACK_CAPTURER = "output-preview-capture"
+
+
+def _only_fallback(product: dict) -> bool:
+    previews = product.get("previews") or []
+    return bool(previews) and all(pv.get("captured_by") == FALLBACK_CAPTURER for pv in previews)
 
 
 def _app_of(product: dict) -> str | None:

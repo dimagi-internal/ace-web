@@ -39,13 +39,13 @@ function step(skill: string, phase: string, ordinal: number): Step {
 const PDD: RunProduct = {
   id: "idea-to-design:pdd", phase: "idea-to-design", key: "pdd", kind: "document",
   title: "Turmeric Market Survey", subtitle: null, url: "https://drive/pdd", file_id: "f-pdd",
-  facts: [], producer: "idea-to-pdd", chatbot: null,
+  facts: [], producer: "idea-to-pdd", chatbot: null, featured: true,
 };
 const APP: RunProduct = {
   id: "commcare-setup:apps.learn", phase: "commcare-setup", key: "apps.learn",
   kind: "commcare_app", title: "Turmeric — FLW Training", subtitle: null,
   url: "https://www.commcarehq.org/a/x/apps/view/1/", file_id: null, facts: [],
-  producer: "pdd-to-learn-app", chatbot: null,
+  producer: "pdd-to-learn-app", chatbot: null, featured: true,
 };
 const SHOT: ProductPreview = {
   file_id: "f-shot", name: "01-home.png", caption: "Learn app home",
@@ -134,7 +134,7 @@ function replayAt(index: number, over: Partial<Replay> = {}): Replay {
     beat: beatAtIndex(TIMELINE, index), reveal: index < 0 ? EMPTY_REVEAL : revealAt(TIMELINE, index),
     total: TIMELINE.events.length, playing: false,
     start: noop, stop: noop, toggle: noop, next: noop, prev: noop, restart: noop, goTo: noop,
-    goToSkill: noop,
+    goToSkill: noop, hold: noop,
     ...over,
   };
 }
@@ -168,9 +168,30 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PhaseView in replay", () => {
-  it("shows what the beat just built on the card of the step that built it — no pop-up", () => {
+  it("pops up a featured output as it is built", async () => {
     renderAt(replayAt(2));
+    const spotlight = screen.getByRole("dialog", { name: /Just built: Turmeric Market Survey/ });
+    expect(await within(spotlight).findByText("The PDD")).toBeInTheDocument();
+  });
+
+  it("does not pop up an output the summary doesn't feature", () => {
+    const timeline = {
+      ...TIMELINE,
+      products: TIMELINE.products?.map((p) => ({ ...p, featured: false })),
+    } as DemoTimeline;
+    renderAt(replayAt(2, { timeline, beat: beatAtIndex(timeline, 2) }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("pops the apps up again when Phase 6 photographs them", () => {
+    renderAt(replayAt(8));
+    expect(
+      screen.getByRole("dialog", { name: /Just photographed: Turmeric — FLW Training/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows what the beat just built on the card of the step that built it", () => {
+    renderAt(replayAt(2));
     const flow = screen.getByRole("complementary", { name: "Flow" });
     expect(within(flow).getByText("Built so far · 1/2")).toBeInTheDocument();
     expect(within(flow).getByText("Built")).toBeInTheDocument();
@@ -189,7 +210,6 @@ describe("PhaseView in replay", () => {
 
   it("shows the app under Photographed when Phase 6 photographs it", async () => {
     renderAt(replayAt(8));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const flow = screen.getByRole("complementary", { name: "Flow" });
     expect(within(flow).getByText("Photographed")).toBeInTheDocument();
     expect((await within(flow).findAllByAltText("Learn app home")).length).toBeGreaterThan(0);

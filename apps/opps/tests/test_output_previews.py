@@ -399,3 +399,39 @@ def test_attached_captions_are_plain_text():
     }
     by_key = {p["key"]: p for p in attach_previews(_apps_products(), [record])}
     assert by_key["apps.learn"]["previews"][0]["caption"] == "The In Progress list"
+
+
+def test_a_forks_walk_frames_are_read_from_the_run_it_was_forked_from():
+    """spark-facilitator/20260926-1800 is a fork: its Phase 6 manifest names
+    112 emulator frames that live in the source run (a fork copies no
+    screenshots/, ace-web#758). They must be shown, not dropped as foreign."""
+    tree = {"ACE": {"opp": {"runs": {
+        "src": {"6-qa-and-training": {"screenshots": {"journey-learn": {"home.png": ""}}}},
+        "r1": {"6-qa-and-training": {"app-screenshot-capture_manifest.yaml": ""}},
+    }}}}
+    client = FakeDriveClient.from_tree(tree)
+    frame = client.file_id("ACE/opp/runs/src/6-qa-and-training/screenshots/journey-learn/home.png")
+    _set_body(client, "ACE/opp/runs/r1/6-qa-and-training/app-screenshot-capture_manifest.yaml",
+              {"captures": [{"journey_id": "journey-learn-pass", "file_id": frame}]})
+    run = client.folder_id("ACE/opp/runs/r1")
+    assert load_output_previews(client, run) == []
+    [rec] = load_output_previews(
+        client, run, lineage_folder_ids=(client.folder_id("ACE/opp/runs/src"),),
+    )
+    assert rec["app"] == "learn" and rec["items"][0]["file_id"] == frame
+
+
+def test_the_emulator_walk_beats_the_capture_skills_hq_fallback():
+    fallback = {
+        "source": "index", "phase": "commcare-setup", "output_key": "apps.learn",
+        "slug": "apps-learn", "captured_by": "output-preview-capture",
+        "items": [{"file_id": "hq", "name": "01-form-summary.png", "caption": None,
+                   "mime_type": "image/png"}],
+    }
+    walk = {
+        "source": "legacy", "app": "learn", "captured_by": "app-screenshot-capture",
+        "items": [{"file_id": "phone", "name": "home.png", "caption": None,
+                   "mime_type": "image/png"}],
+    }
+    by_key = {p["key"]: p for p in attach_previews(_apps_products(), [fallback, walk])}
+    assert [p["file_id"] for p in by_key["apps.learn"]["previews"]] == ["phone"]
