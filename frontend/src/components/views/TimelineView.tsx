@@ -300,16 +300,13 @@ function EventTitle({
       </Link>
     );
   }
-  if (event.opp_slug) {
+  // An opp link must name its workspace; without one, the title stays text.
+  if (event.opp_slug && workspaceSlug) {
     const encOpp = encodeURIComponent(event.opp_slug);
     const encStep = event.step_skill ? encodeURIComponent(event.step_skill) : "";
     return (
       <Link
-        to={
-          workspaceSlug
-            ? `/w/${workspaceSlug}/opps/${encOpp}${encStep ? `/runs/r1/steps/${encStep}` : ""}`
-            : `/opps/${encOpp}`
-        }
+        to={`/w/${workspaceSlug}/opps/${encOpp}${encStep ? `/runs/r1/steps/${encStep}` : ""}`}
         className="text-sm text-foreground hover:text-primary hover:underline"
       >
         {event.title}
