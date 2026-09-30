@@ -96,7 +96,12 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        spark-facilitator/20260926-1800's apps showed the HQ fallback
 #        instead of 96 real phone screenshots. The Drive files never
 #        changed; the reader did.
-_KEY_VERSION = "v14"
+#   v15 — the step judge now prefers a skill's FULL verdict over its
+#        `-shallow` / `-quick` smoke (ace-web#838, canopy-agent-runs 0.1.4).
+#        The Drive files never changed, so warm v14 entries kept serving the
+#        smoke: spark-facilitator/20260926-1800's App Screenshot Capture read
+#        25 after the deploy, 92 on a refresh.
+_KEY_VERSION = "v15"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:
