@@ -160,10 +160,19 @@ labs reports and any Drive file the viewer cannot draw had nothing.
 * `output_key` is exactly the key ace-web matches an index on, so a writer
   never re-derives ace-web's product walk.
 * `auth` says which signed-in session can open `url`: `connect`
-  (connect.dimagi.com), `labs` (labs.connect.dimagi.com, including canopy's
-  `/canopy/` pages), `hq` (commcarehq.org), `ocs` (openchatstudio.com),
-  `google` (a Drive file — use the Drive thumbnail/export, not a browser), or
-  `public`.
+  (connect.dimagi.com), `labs` (labs.connect.dimagi.com), `canopy`
+  (`labs.connect.dimagi.com/canopy/…` — same host, but its own sign-in: a
+  labs session is sent to Google sign-in there), `hq` (commcarehq.org), `ocs`
+  (openchatstudio.com), `google` (a Drive file — use the Drive
+  thumbnail/export, not a browser), or `public`.
+* `public_url`: the page anyone can open without signing in, when the output
+  has one — a chatbot's anonymous chat (recorded, or built from `team_slug` +
+  `public_id`), a solicitation. Screenshot that rather than an admin page.
+* Links ace-web now corrects (found by the capture skill's live test): a
+  Connect program links to `/a/<org>/program/` (Connect serves no program
+  detail page; `/program/<uuid>/` is a 404), and a labs solicitation carries
+  `?program_id=<labs_program_id>` (bare, labs answers "Solicitation not
+  found").
 * Empty `outputs` ⇒ the run meets the rule.
 
 ### Plugin: one capture skill, run at every phase end

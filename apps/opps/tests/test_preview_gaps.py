@@ -64,7 +64,9 @@ def test_a_file_whose_metadata_cannot_be_read_is_a_gap_not_covered():
 
 def test_auth_by_host():
     assert auth_for("https://connect.dimagi.com/a/x/") == "connect"
-    assert auth_for("https://labs.connect.dimagi.com/canopy/ddd/a/b") == "labs"
+    assert auth_for("https://labs.connect.dimagi.com/solicitations/9/") == "labs"
+    # canopy lives under the labs host but a labs session is sent to sign-in.
+    assert auth_for("https://labs.connect.dimagi.com/canopy/ddd/a/b") == "canopy"
     assert auth_for("https://www.commcarehq.org/a/d/") == "hq"
     assert auth_for("https://www.openchatstudio.com/a/t/") == "ocs"
     assert auth_for("https://docs.google.com/document/d/1") == "google"
