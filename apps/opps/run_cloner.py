@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -74,9 +75,16 @@ class _Copier:
         self.drive = drive
         self.record = record
         self.copied = 0
+        # source id -> copy id, for every file and folder copied. The copied
+        # run_state still names the SOURCE's files (it is copied verbatim), so
+        # this map is what points the clone at its own copies afterwards.
+        self.ids: dict[str, str] = {}
+        self.file_ids: dict[str, str] = {}
 
     def file(self, f: DriveFile, dest_folder_id: str) -> None:
-        self.drive.copy_file(f.id, dest_folder_id, f.name)
+        new_id = self.drive.copy_file(f.id, dest_folder_id, f.name)
+        self.ids[f.id] = new_id
+        self.file_ids[f.id] = new_id
         self.copied += 1
         if self.copied % _PROGRESS_EVERY == 0:
             self.record.files_copied = self.copied
@@ -98,6 +106,7 @@ class _Copier:
                 continue
             if child.mime_type == _FOLDER_MIME:
                 sub = self.drive.create_folder(dest_folder_id, child.name)
+                self.ids[child.id] = sub
                 self.tree(child.id, sub, skip_if=skip_if)
             else:
                 self.file(child, dest_folder_id)
@@ -213,6 +222,10 @@ def _copy(drive, record, source, target, opp_slug, run_id, owner,
             copier.file(state, dst_run_id)
         copier.tree(src_run.id, dst_run_id, skip=frozenset({_RUN_STATE}),
                     skip_if=_skip_run_child)
+        copier.ids[src_run.id] = dst_run_id
+        copier.ids.setdefault(src_opp.id, dst_opp_id)
+        _carry_link_sharing(drive, copier.file_ids)
+        _point_state_at_copies(drive, dst_run_id, copier.ids)
     except Exception as exc:
         record.status = "error"
         record.error = f"{type(exc).__name__}: {exc}"[:2000]
@@ -251,3 +264,54 @@ def clone_run(
     _, copy = start_clone(drive=drive, source=source, target=target, opp_slug=opp_slug,
                           run_id=run_id, owner=owner)
     return copy()
+
+
+# The run's YAML state files, rewritten to name the clone's own copies.
+_STATE_FILES = (_RUN_STATE, "decisions.yaml")
+
+
+def _carry_link_sharing(drive: DriveClient, file_ids: dict[str, str]) -> int:
+    """Give each copy its original's anyone-with-link role. ``files.copy``
+    does not carry permissions, so without this every document the source
+    run shared (the PDD, the training guides, the screenshots the page
+    embeds) is a "You need access" wall on the clone. Measured on the first
+    Spark clone: 26 of its files had link sharing to carry."""
+    roles = drive.anyone_roles(list(file_ids))
+    carried = 0
+    for src_id, role in roles.items():
+        if role:
+            drive.set_anyone_role(file_ids[src_id], role)
+            carried += 1
+    return carried
+
+
+def _point_state_at_copies(drive: DriveClient, dst_run_id: str, ids: dict[str, str]) -> int:
+    """Replace every source Drive id in the copied state files with its copy.
+
+    The state is copied verbatim, so it names the SOURCE run's files: on the
+    first Spark clone all eight documents on the reviewer-facing summary
+    (PDD, work order, build memo, five training docs) opened the source
+    workspace's Docs — reviewers would have read and commented on another
+    workspace's files. 99 ids / 125 occurrences in that run_state. Ids of
+    files the clone deliberately leaves behind (comms-logs) stay pointing at
+    the source, which is Dimagi-only."""
+    if not ids:
+        return 0
+    # Whole ids only, in ONE pass: a plain per-id str.replace rewrites an id
+    # that is a prefix of another (and can re-rewrite an id it just wrote).
+    pattern = re.compile(
+        r"(?<![\w-])(" + "|".join(re.escape(i) for i in sorted(ids, key=len, reverse=True))
+        + r")(?![\w-])"
+    )
+    replaced = 0
+    children = {f.name: f for f in drive.list_files(dst_run_id)}
+    for name in _STATE_FILES:
+        f = children.get(name)
+        if f is None or f.mime_type == _FOLDER_MIME:
+            continue
+        text = drive.get_content(f.id, f.mime_type).content
+        new, n = pattern.subn(lambda m: ids[m.group(1)], text)
+        if n:
+            drive.update_file(f.id, new, "text/yaml")
+            replaced += n
+    return replaced

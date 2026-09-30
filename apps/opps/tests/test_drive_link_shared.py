@@ -191,3 +191,48 @@ def test_bypass_skips_the_cache():
     wrapped.link_shared(["a"])
     wrapped.link_shared(["a"])
     assert inner._service._permissions.calls == ["a", "a"]  # type: ignore[attr-defined]
+
+
+# --- anyone_roles / set_anyone_role: the clone's link-sharing carry-over ---
+
+
+def test_anyone_roles_reads_the_role_off_the_same_acl():
+    """The clone gives each copy its original's link role (files.copy does
+    not carry permissions). Same `permissions.list` read as link_shared,
+    so the live commenter grant reads back as commenter."""
+    client = _client({
+        "llo-guide": [*_INHERITED_DIMAGI_ENTRIES, _ANYONE_WITH_LINK],
+        "pdd": list(_INHERITED_DIMAGI_ENTRIES),
+        "boom": RuntimeError("Drive said no"),
+    })
+    assert client.anyone_roles(["llo-guide", "pdd", "boom"]) == {
+        "llo-guide": "commenter",
+        "pdd": None,  # read fine, no link sharing
+        # "boom" absent: could not tell — never guessed either way
+    }
+
+
+def test_set_anyone_role_creates_an_anyone_permission():
+    created = []
+
+    class _Perms(_FakePermissions):
+        def create(self, *, fileId, body, supportsAllDrives, fields):  # noqa: N803
+            created.append((fileId, body, supportsAllDrives))
+
+            class _Req:
+                def execute(_self, http=None):
+                    return {"id": "anyoneWithLink"}
+
+            return _Req()
+
+    client = _client({})
+    client._service._permissions = _Perms({})  # type: ignore[attr-defined]
+    client.set_anyone_role("copy-1", "reader")
+    assert created == [("copy-1", {"type": "anyone", "role": "reader"}, True)]
+
+
+def test_the_cached_client_passes_the_role_methods_through():
+    """It forwards method by method; a missing pass-through would fall back
+    to the base no-op and the clone would silently share nothing."""
+    inner = _client({"f": [_ANYONE_WITH_LINK]})
+    assert CachedDriveClient(inner).anyone_roles(["f"]) == {"f": "commenter"}

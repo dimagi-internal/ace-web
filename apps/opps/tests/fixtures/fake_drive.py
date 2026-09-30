@@ -62,6 +62,8 @@ class FakeDriveClient(DriveClient):
         # file_id -> anyone-with-link?, for link_shared. Absent = unknown.
         self._link_shared: dict[str, bool] = {}
         self._link_unreadable: set[str] = set()
+        # file_id -> role of its anyone-with-link permission (anyone_roles).
+        self._anyone_role: dict[str, str] = {}
         # Every batch link_shared was asked for, so a test can assert the
         # reader batches rather than fanning out one call per link.
         self.link_shared_calls: list[list[str]] = []
@@ -203,6 +205,17 @@ class FakeDriveClient(DriveClient):
         does — the id is then omitted from `link_shared`'s result."""
         self._link_shared.pop(file_id, None)
         self._link_unreadable.add(file_id)
+
+    def anyone_roles(self, file_ids: list[str]) -> dict[str, str | None]:
+        return {
+            fid: self._anyone_role.get(fid)
+            for fid in file_ids
+            if fid in self._nodes_by_id and fid not in self._link_unreadable
+        }
+
+    def set_anyone_role(self, file_id: str, role: str) -> None:
+        self._anyone_role[file_id] = role
+        self._link_shared[file_id] = True
 
     def link_shared(self, file_ids: list[str]) -> dict[str, bool]:
         self.link_shared_calls.append(list(file_ids))
