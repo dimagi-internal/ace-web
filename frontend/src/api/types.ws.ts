@@ -349,6 +349,7 @@ export type RunProductKind =
   | "chatbot"
   | "dashboard"
   | "solicitation"
+  | "walkthrough"
   | "link";
 
 export interface RunProduct {

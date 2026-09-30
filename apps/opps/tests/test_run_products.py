@@ -193,3 +193,26 @@ def test_producer_comes_from_plugin_attribution(monkeypatch):
 def test_garbage_input_is_empty_not_an_error():
     assert run_products.build_products(None) == []
     assert run_products.build_products({"x": "not-a-dict", "y": {"z": [1, "a"]}}) == []
+
+
+def test_labs_reports_under_a_plain_url_are_dashboards_and_ddd_packages_are_walkthroughs():
+    """Seen on spark-facilitator: the cascade's ``opp_reports`` carry ``url``
+    (not ``par_url``/``run_url``) and read as bare links; the canopy DDD
+    package did too."""
+    items = _by_key(run_products.build_products({
+        "synthetic-data-and-workflows": {
+            "synthetic": {
+                "cascade": {"opp_reports": [{
+                    "partner": "A",
+                    "url": "https://labs.connect.dimagi.com/labs/workflow/6376/run/?run_id=1",
+                }]},
+                "walkthroughs": [{
+                    "web_view_link": "https://labs.connect.dimagi.com/canopy/ddd/spark/spark-001",
+                }],
+            }
+        }
+    }))
+    assert items["synthetic.cascade.opp_reports.0"]["kind"] == "dashboard"
+    walkthrough = items["synthetic.walkthroughs.0"]
+    assert walkthrough["kind"] == "walkthrough"
+    assert walkthrough["title"] == "Demo walkthrough"

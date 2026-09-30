@@ -140,6 +140,49 @@ def resolve(drive: DriveClient, snapshot: dict, file_id: str) -> FileMeta:
     )
 
 
+def representation(mime: str, name: str) -> str | None:
+    """How the viewer draws a file of this type, or None when it can't.
+
+    ``markdown`` / ``doc-text`` (a Google Doc read as prose or as plain text),
+    ``pdf`` (Slides, exported), ``csv`` (a Sheet), ``media`` (image, video,
+    PDF bytes), ``text`` (a text file). The one classifier :func:`render`
+    dispatches on, and what ``preview_gaps`` asks — so "the page can show
+    this file" means one thing everywhere.
+    """
+    lowered = (name or "").lower()
+    if mime == GOOGLE_DOC_MIME:
+        if prose_export_mime(name, mime) == MARKDOWN_EXPORT or not lowered.endswith(
+            _TEXT_SUFFIXES
+        ):
+            # A Doc with a prose name, or no extension at all (a PDD titled
+            # "Turmeric Market Survey"), reads as a document.
+            return "markdown"
+        return "doc-text"
+    if mime == SLIDES_MIME:
+        return "pdf"
+    if mime == SHEET_MIME:
+        return "csv"
+    if mime.startswith(("image/", "video/")) or mime == PDF_MIME:
+        return "media"
+    if mime.startswith("text/") or mime in {
+        "application/json",
+        "application/x-yaml",
+        "application/yaml",
+    } or lowered.endswith(_TEXT_SUFFIXES):
+        return "text"
+    return None
+
+
+def is_viewable(meta: FileMeta) -> bool:
+    """Can the page show this file (type AND size)?"""
+    kind = representation(meta.mime_type, meta.name)
+    if kind is None:
+        return False
+    if kind in {"media", "text"} and meta.size_bytes is not None:
+        return meta.size_bytes <= MAX_VIEW_BYTES
+    return True
+
+
 def render(drive: DriveClient, meta: FileMeta) -> ArtifactView:
     """Fetch ``meta``'s file in its viewable representation."""
     mime = meta.mime_type
@@ -149,35 +192,28 @@ def render(drive: DriveClient, meta: FileMeta) -> ArtifactView:
     def view(body: bytes, content_type: str) -> ArtifactView:
         return ArtifactView(body=body, content_type=content_type, name=name, web_link=meta.web_link)
 
-    if mime == GOOGLE_DOC_MIME:
-        if prose_export_mime(name, mime) == MARKDOWN_EXPORT or not lowered.endswith(
-            _TEXT_SUFFIXES
-        ):
-            # A Doc with a prose name, or no extension at all (a PDD titled
-            # "Turmeric Market Survey"), reads as a document.
-            content = drive.get_content(meta.file_id, mime, export_as=MARKDOWN_EXPORT)
-            body = unescape_markdown(str(content.content or ""))
-            return view(_utf8(body), "text/markdown; charset=utf-8")
+    kind = representation(mime, name)
+    if kind == "markdown":
+        content = drive.get_content(meta.file_id, mime, export_as=MARKDOWN_EXPORT)
+        body = unescape_markdown(str(content.content or ""))
+        return view(_utf8(body), "text/markdown; charset=utf-8")
+    if kind == "doc-text":
         content = drive.get_content(meta.file_id, mime)
         return view(_utf8(content.content), "text/plain; charset=utf-8")
-    if mime == SLIDES_MIME:
+    if kind == "pdf":
         return view(drive.export_bytes(meta.file_id, PDF_MIME), PDF_MIME)
-    if mime == SHEET_MIME:
+    if kind == "csv":
         content = drive.get_content(meta.file_id, mime)
         return view(_utf8(content.content), "text/csv; charset=utf-8")
 
     if meta.size_bytes is not None and meta.size_bytes > MAX_VIEW_BYTES:
         raise ArtifactTooLarge(name)
-    if mime.startswith(("image/", "video/")) or mime == PDF_MIME:
+    if kind == "media":
         body = drive.get_binary(meta.file_id)
         if len(body) > MAX_VIEW_BYTES:
             raise ArtifactTooLarge(name)
         return view(body, mime)
-    if mime.startswith("text/") or mime in {
-        "application/json",
-        "application/x-yaml",
-        "application/yaml",
-    } or lowered.endswith(_TEXT_SUFFIXES):
+    if kind == "text":
         body = drive.get_binary(meta.file_id)
         if lowered.endswith((".md", ".markdown")):
             return view(body, "text/markdown; charset=utf-8")
