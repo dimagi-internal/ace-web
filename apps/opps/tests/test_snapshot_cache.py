@@ -169,3 +169,28 @@ def test_read_through_is_invalidated_with_the_latest_run_entry():
     )
     snapshot_cache.invalidate({"f1"})
     assert snapshot_cache.get(workspace_id=1, slug="alpha", run_id="r1") is None
+
+
+def test_drop_by_run_id_also_forgets_the_latest_run_entry_holding_it():
+    """Refresh on ?run_id=X must rebuild X, not read through to a stale
+    latest-run copy of the same run."""
+    snap = _MockRunSnapshot("alpha", _MockRun("r1"))
+    snapshot_cache.set(workspace_id=1, slug="alpha", run_id=None, snap=snap, file_ids={"f1"})
+    snapshot_cache.drop(workspace_id=1, slug="alpha", run_id="r1")
+    assert snapshot_cache.get(workspace_id=1, slug="alpha", run_id="r1") is None
+    assert snapshot_cache.get(workspace_id=1, slug="alpha", run_id=None) is None
+
+
+def test_drop_latest_also_forgets_the_explicit_entry_for_that_run():
+    snap = _MockRunSnapshot("alpha", _MockRun("r1"))
+    snapshot_cache.set(workspace_id=1, slug="alpha", run_id=None, snap=snap, file_ids={"f1"})
+    snapshot_cache.set(workspace_id=1, slug="alpha", run_id="r1", snap=snap, file_ids={"f1"})
+    snapshot_cache.drop(workspace_id=1, slug="alpha", run_id=None)
+    assert snapshot_cache.get(workspace_id=1, slug="alpha", run_id="r1") is None
+
+
+def test_drop_leaves_a_different_latest_run_alone():
+    latest = _MockRunSnapshot("alpha", _MockRun("r2"))
+    snapshot_cache.set(workspace_id=1, slug="alpha", run_id=None, snap=latest, file_ids={"f1"})
+    snapshot_cache.drop(workspace_id=1, slug="alpha", run_id="r1")
+    assert snapshot_cache.get(workspace_id=1, slug="alpha", run_id=None) == latest

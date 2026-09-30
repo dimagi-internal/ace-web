@@ -217,10 +217,16 @@ def list_opps(
 # ---------------------------------------------------------------------------
 
 
-def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -> dict | None:
+def load_rich_opp_snapshot(
+    workspace, slug: str, *, run_id: str | None = None, refresh: bool = False,
+) -> dict | None:
     """Like load_opp_snapshot but returns the full legacy serializer shape
     (opp + current_run with steps + decisions + phases + pdd_body) the
     frontend's OppSnapshot type expects.
+
+    ``refresh`` drops the cached snapshot first, so this read rebuilds it
+    from Drive — for a caller that knows the run moved in a way the changes
+    feed could not attribute.
 
     Returns None when the opp slug doesn't exist in Drive.
     """
@@ -244,6 +250,8 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
     changed = drive_changes.observe(workspace, client)
     if changed:
         snapshot_cache.invalidate(changed)
+    if refresh:
+        snapshot_cache.drop(workspace_id=workspace.pk, slug=slug, run_id=run_id)
     cached = snapshot_cache.get(workspace_id=workspace.pk, slug=slug, run_id=run_id)
     if cached is not None:
         access.overlay_workspace_display_name(cached.opp, slug, workspace=workspace)
@@ -500,13 +508,15 @@ def get_opp(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     run_id: str | None = None,
+    refresh: bool = False,
 ) -> HttpResponse:
     """Return the full Workbench payload — opp + current_run with steps +
     decisions + phases + pdd_body. Uses the legacy serializer which
     matches the frontend's OppSnapshot shape (the v2 minimal
-    OppSnapshotOut schema was a Phase 1 over-simplification)."""
+    OppSnapshotOut schema was a Phase 1 over-simplification).
+    ``refresh=true`` rebuilds it from Drive (the Workbench's Refresh)."""
     workspace = resolve_workspace_for_member(request, workspace_slug)
-    payload = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    payload = load_rich_opp_snapshot(workspace, slug, run_id=run_id, refresh=refresh)
     if payload is None:
         raise ProblemError(404, "Opp not found", type_=TYPE_NOT_FOUND)
     etag = compute_etag(payload)
@@ -1108,13 +1118,15 @@ def get_run_flow(
 # ---------------------------------------------------------------------------
 
 
-def load_preview_gaps(workspace, slug: str, run_id: str) -> dict | None:
+def load_preview_gaps(
+    workspace, slug: str, run_id: str, *, refresh: bool = False,
+) -> dict | None:
     """The run's outputs the page can neither show as a file nor picture, or
     None when the run doesn't exist. The monkeypatch target for tests."""
     from apps.opps.drive_client import get_drive_client
     from apps.opps.preview_gaps import build_preview_gaps
 
-    snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id, refresh=refresh)
     if snapshot is None or (snapshot.get("current_run") or {}).get("run_id") != run_id:
         # The loader falls back to the latest run for an unknown id; a work
         # list for the wrong run would send the capturer to photograph it.
@@ -1132,9 +1144,12 @@ def get_run_preview_gaps(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     run_id: Annotated[str, Path()],
+    refresh: bool = False,
 ) -> HttpResponse:
     """``{run_id, outputs: [{id, phase, output_key, kind, title, url, file_id,
-    reason, auth}], covered}``. Every output ace-web lists should be a file the
+    reason, auth}], covered}``. ``refresh=true`` rebuilds the run from Drive
+    first — what the capture skill asks after writing, so its report sees its
+    own screenshots. Every output ace-web lists should be a file the
     page draws or have a screenshot; ``outputs`` is what isn't yet, and it is
     the ACE plugin's ``output-preview-capture`` work list. ``output_key`` is the
     key a ``_previews.yaml`` must name; ``auth`` which signed-in session opens
@@ -1143,7 +1158,7 @@ def get_run_preview_gaps(
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
-        payload = load_preview_gaps(workspace, slug, run_id)
+        payload = load_preview_gaps(workspace, slug, run_id, refresh=refresh)
     except ServiceAccountNotFound as exc:
         raise ProblemError(
             503, "This workspace has no Drive access", type_=TYPE_VALIDATION, detail=str(exc),

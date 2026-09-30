@@ -180,3 +180,31 @@ def test_real_client_never_scopes_the_feed_to_a_shared_drive():
         assert "driveId" not in call.kwargs
         assert call.kwargs["supportsAllDrives"] is True
     assert changes.list.call_args.kwargs["includeItemsFromAllDrives"] is True
+
+
+def test_a_new_file_reports_its_parent_folder(workspace, client):
+    """A cached snapshot tracks the folders it listed, never a file created
+    after it — so a new file must surface through its parent, or a screenshot
+    written into a new previews/ folder stays invisible (the blind spot in
+    docs/learnings/drive-changes-api-parent-folder-blind-spot.md)."""
+    observe(workspace, client)  # seed
+    alpha = client.folder_id("ACE/alpha")
+    previews = client.create_folder(alpha, "previews")
+    changed = observe(workspace, client)
+    assert previews in changed
+    assert alpha in changed
+
+
+def test_a_cached_snapshot_is_dropped_when_a_file_appears_in_a_folder_it_listed(
+    workspace, client,
+):
+    from apps.opps import snapshot_cache
+
+    alpha = client.folder_id("ACE/alpha")
+    snapshot_cache.set(
+        workspace_id="1", slug="alpha", run_id=None, snap={"any": "thing"}, file_ids={alpha},
+    )
+    observe(workspace, client)  # seed
+    client.create_folder(alpha, "previews")
+    snapshot_cache.invalidate(observe(workspace, client))
+    assert snapshot_cache.get(workspace_id="1", slug="alpha", run_id=None) is None

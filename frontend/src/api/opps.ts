@@ -158,7 +158,9 @@ export async function getOpp(
   const { data: responseData, response } = await apiClient.GET("/api/w/{workspace_slug}/opps/{slug}", {
     params: {
       path: { workspace_slug: workspaceSlug, slug },
-      query: runId ? { run_id: runId } : {},
+      // `force` also asks the server to rebuild from Drive: its cache follows
+      // Drive's changes feed, which cannot see every new file.
+      query: { ...(runId ? { run_id: runId } : {}), ...(opts?.force ? { refresh: true } : {}) },
     },
     headers: cached ? { "If-None-Match": cached.etag } : {},
   });

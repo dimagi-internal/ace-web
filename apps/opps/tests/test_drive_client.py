@@ -153,3 +153,22 @@ def test_fake_drive_trash_folder_removes_from_listings():
     fake.trash_folder(doomed_id)
     names = {f.name for f in fake.list_files(fake.folder_id("ACE"))}
     assert names == {"alive"}
+
+
+def test_list_changes_reports_each_changed_files_parent_folder():
+    """A new file must surface through its parent folder — the folder is what
+    a cached snapshot tracks (docs/learnings/drive-changes-api-parent-folder-
+    blind-spot.md). A removed file carries no ``file`` and adds nothing."""
+    with patch("googleapiclient.discovery.build", return_value=MagicMock()):
+        client = GoogleDriveClient(MagicMock())
+    changes = client._service.changes.return_value.list
+    changes.return_value.execute.return_value = {
+        "newStartPageToken": "t2",
+        "changes": [
+            {"fileId": "png", "file": {"parents": ["previews-folder"]}},
+            {"fileId": "gone", "removed": True},
+        ],
+    }
+    page = client.list_changes("t1")
+    assert page.changed_file_ids == {"png", "previews-folder", "gone"}
+    assert "file(parents)" in changes.call_args.kwargs["fields"]
