@@ -146,7 +146,7 @@ export function ReplayBar({ replay }: { replay: Replay }) {
             onClick={replay.toggleSpotlights}
             icon={<Sparkles className="size-3.5" />}
             label="Pop-ups"
-            title="Pop each product up on screen as the step that made it finishes (P)"
+            title="Also pop each output up full-screen as the step that made it finishes (P). Off by default — the right rail shows them."
           />
         </div>
 

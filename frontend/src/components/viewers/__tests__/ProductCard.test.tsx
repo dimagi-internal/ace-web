@@ -22,3 +22,10 @@ describe("ProductCard", () => {
     expect(screen.queryByText(/no screenshot yet/)).not.toBeInTheDocument();
   });
 });
+
+describe("ProductCard in a replay", () => {
+  it("does not flag a missing screenshot when quiet", () => {
+    render(<ProductCard product={base} quiet />);
+    expect(screen.queryByText(/no screenshot yet/)).not.toBeInTheDocument();
+  });
+});

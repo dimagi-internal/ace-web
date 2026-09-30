@@ -15,6 +15,10 @@ interface Props {
   unbuilt?: boolean;
   /** Replay: it appeared (or gained screenshots) on this very beat. */
   fresh?: boolean;
+  /** Don't flag a missing screenshot. A replay shows the run AS IT WAS, when
+   *  screenshots routinely came later (a phase-end or run-end capture), so
+   *  "no screenshot yet" there reads as a defect rather than as the timeline. */
+  quiet?: boolean;
 }
 
 /**
@@ -24,7 +28,7 @@ interface Props {
  * Not built yet (replay) it is just its kind, dashed: its real name is
  * content the run hadn't produced yet.
  */
-export function ProductCard({ product, unbuilt = false, fresh = false }: Props) {
+export function ProductCard({ product, unbuilt = false, fresh = false, quiet = false }: Props) {
   const viewer = useViewer();
   const meta = kindMeta(product.kind);
 
@@ -47,7 +51,7 @@ export function ProductCard({ product, unbuilt = false, fresh = false }: Props) 
   // shows, or has screenshots. Say so quietly when one is neither, rather than
   // leaving a reader to wonder whether the pictures failed to load.
   const shownAsFile = !!product.file_id && FILE_KINDS.has(product.kind);
-  const unpictured = !shownAsFile && previews.length === 0;
+  const unpictured = !quiet && !shownAsFile && previews.length === 0;
   return (
     <div
       className={cn(

@@ -73,7 +73,10 @@ export function useReplay(
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [highlightsOnly, setHighlightsOnly] = useState(false);
-  const [spotlights, setSpotlights] = useState(true);
+  // Off by default: the right rail now shows each step's outputs as the
+  // replay reaches them, and a full-screen pop-up on every other beat hid the
+  // run it was meant to explain. One key (P) brings them back for a demo.
+  const [spotlights, setSpotlights] = useState(false);
   const held = useRef(false);
   const warmed = useRef<string | null>(null);
 

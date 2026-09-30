@@ -38,7 +38,8 @@ const FLASH_MS = 1400;
  * The current step's card is open — what it **built** (with its screenshots,
  * as they are taken), its **Inputs** (and which earlier step made each) and
  * its **Outputs** (and which later phases use each). Earlier cards fold to one
- * line so the chain stays readable. An input made by an earlier step carries
+ * line plus what they built, so the chain stays readable and every output the
+ * run has made so far stays on screen. An input made by an earlier step carries
  * ↑: click it and the panel scrolls back to the card that made it and flashes
  * it, so "the PDD from Phase 1 is what Phase 3 builds the apps from" is
  * something you can watch, not something the presenter has to assert.
@@ -216,7 +217,9 @@ export function FlowPanel({ replay, steps, phases, products, isRevealed, justRev
                     </span>
                   )}
                 </button>
-                {open && (made.length > 0 || photographed.length > 0) && (
+                {/* What a step built stays on its card when the card folds —
+                    it is what the rail is for; only the inputs/outputs fold. */}
+                {(made.length > 0 || photographed.length > 0) && (
                   <div className="flex flex-col gap-2 border-t border-border/60 px-2 py-2">
                     {made.length > 0 && <BuiltList title="Built" products={made} fresh={justRevealed} />}
                     {photographed.length > 0 && (
@@ -270,7 +273,7 @@ function BuiltList({
       <ul className="flex flex-col gap-1">
         {products.map((p) => (
           <li key={p.id}>
-            <ProductCard product={p} fresh={fresh.has(p.id)} />
+            <ProductCard product={p} fresh={fresh.has(p.id)} quiet />
           </li>
         ))}
       </ul>

@@ -225,6 +225,8 @@ describe("PhaseView in replay", () => {
     const earlier = within(flow).getByRole("button", { name: /^idea-to-pdd/ });
     expect(earlier).toHaveAttribute("aria-expanded", "false");
     expect(within(earlier).getByText("1 in · 1 out")).toBeInTheDocument();
+    // …but what it built stays on screen: the rail is where outputs live.
+    expect(within(flow).getByRole("button", { name: /Turmeric Market Survey/ })).toBeInTheDocument();
     expect(within(flow).getByRole("button", { name: /pdd-to-learn-app/ })).toHaveAttribute(
       "aria-expanded",
       "true",
