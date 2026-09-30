@@ -319,3 +319,51 @@ def test_a_live_copying_clone_is_not_replaced(patched_drive, source_ws, target_w
     RunClone.objects.update(status="copying")  # fresh: still progressing
     again = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
     assert again.status_code == 409
+
+
+# --- the clone points at its own copies ------------------------------------
+
+SRC_RUN = f"DT/spark-facilitator/runs/{RUN}"
+
+
+def _state_naming(drive, *paths):
+    """Make the SOURCE run_state name files by id, as ACE's does."""
+    ids = {p: drive.file_id(f"{SRC_RUN}/{p}") for p in paths}
+    body = "".join(f"{p}: https://docs.google.com/document/d/{i}/edit\n" for p, i in ids.items())
+    drive.update_file(drive.file_id(f"{SRC_RUN}/run_state.yaml"), body, "text/yaml")
+    return ids
+
+
+def test_state_names_the_copies_not_the_source(drive, source_ws, target_ws, owner):
+    # First Spark clone: every doc on the reviewer-facing page opened the
+    # SOURCE workspace's file (99 ids / 125 occurrences in run_state).
+    src = _state_naming(drive, "6-qa-and-training/guide.md", "decisions.yaml",
+                        "comms-log/llo-invite.md")
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+    dst_state = drive.file_id(f"SPARK/spark-facilitator/runs/{RUN}/run_state.yaml")
+    text = drive.get_content(dst_state, "text/yaml").content
+    guide_copy = drive.file_id(f"SPARK/spark-facilitator/runs/{RUN}/6-qa-and-training/guide.md")
+    assert guide_copy in text and src["6-qa-and-training/guide.md"] not in text
+    assert src["decisions.yaml"] not in text
+    # Not cloned (comms-log), so nothing to point at: left as the source id.
+    assert src["comms-log/llo-invite.md"] in text
+    # The source run is never written to.
+    src_text = drive.get_content(drive.file_id(f"{SRC_RUN}/run_state.yaml"), "text/yaml").content
+    assert src["6-qa-and-training/guide.md"] in src_text
+
+
+def test_copies_keep_their_originals_link_sharing(drive, source_ws, target_ws, owner):
+    guide = drive.file_id(f"{SRC_RUN}/6-qa-and-training/guide.md")
+    shot = drive.file_id(f"{SRC_RUN}/6-qa-and-training/screenshots/s1.png")
+    drive.set_anyone_role(guide, "commenter")
+    drive.set_anyone_role(shot, "reader")
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+    base = f"SPARK/spark-facilitator/runs/{RUN}/6-qa-and-training"
+    roles = drive.anyone_roles([
+        drive.file_id(f"{base}/guide.md"),
+        drive.file_id(f"{base}/screenshots/s1.png"),
+        drive.file_id(f"{base}/videos/v1.mp4"),
+    ])
+    assert list(roles.values()) == ["commenter", "reader", None]
