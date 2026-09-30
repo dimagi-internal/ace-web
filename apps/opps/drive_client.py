@@ -289,18 +289,23 @@ class DriveClient(ABC):
     # --- Changes feed (for cache invalidation) ---
 
     @abstractmethod
-    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+    def get_changes_start_page_token(self) -> str:
         """Return a fresh `pageToken` for `list_changes` from this point in time.
 
         Used when no token is stored yet, or after a 410 Gone reply forces a
-        full re-seed. Pass `drive_id` for a shared drive; pass None for the
-        SA's My Drive (the `corpora=user` scope).
+        full re-seed.
+
+        The feed is the service account's whole corpus — every file it can
+        see, shared-drive files included — never one shared drive's. Scoping
+        to a drive (`driveId=`) requires MEMBERSHIP of that drive, and the SA
+        is deliberately shared on the ACE folder only: membership would hand
+        it every other folder on the drive. Scoped, every seed 403'd with
+        `teamDriveMembershipRequired` (labs, 2026-09-16 → 09-29) and no cache
+        entry was ever invalidated by a Drive edit.
         """
 
     @abstractmethod
-    def list_changes(
-        self, page_token: str, *, drive_id: str | None = None
-    ) -> ChangesPage:
+    def list_changes(self, page_token: str) -> ChangesPage:
         """Return one page of changes since `page_token`.
 
         On 410 Gone (token expired), returns a `ChangesPage` with
@@ -685,17 +690,12 @@ class GoogleDriveClient(DriveClient):
         ).execute()
 
     @_drive_retry
-    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
-        kwargs: dict = {"supportsAllDrives": True}
-        if drive_id:
-            kwargs["driveId"] = drive_id
-        resp = self._service.changes().getStartPageToken(**kwargs).execute()
+    def get_changes_start_page_token(self) -> str:
+        resp = self._service.changes().getStartPageToken(supportsAllDrives=True).execute()
         return resp["startPageToken"]
 
     @_drive_retry
-    def list_changes(
-        self, page_token: str, *, drive_id: str | None = None
-    ) -> ChangesPage:
+    def list_changes(self, page_token: str) -> ChangesPage:
         from googleapiclient.errors import HttpError  # noqa: PLC0415
 
         changed: set[str] = set()
@@ -710,8 +710,6 @@ class GoogleDriveClient(DriveClient):
                     "pageSize": 1000,
                     "spaces": "drive",
                 }
-                if drive_id:
-                    kwargs["driveId"] = drive_id
                 resp = self._service.changes().list(**kwargs).execute()
                 for c in resp.get("changes", []):
                     fid = c.get("fileId")

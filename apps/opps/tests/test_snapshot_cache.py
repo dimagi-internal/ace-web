@@ -127,3 +127,45 @@ def test_invalidate_falls_back_when_reverse_index_missing():
 
     snapshot_cache.invalidate({"f1"})
     assert snapshot_cache.get(workspace_id=1, slug="alpha", run_id="r1") is None
+
+
+@dataclass
+class _MockRun:
+    run_id: str
+
+
+@dataclass
+class _MockRunSnapshot:
+    slug: str
+    current_run: _MockRun
+
+
+def test_explicit_run_id_reads_through_the_latest_run_entry():
+    """Opening an opp caches it as "latest"; the Workbench then re-requests
+    the same run by id. That must be a hit, not a second cold Drive load."""
+    snap = _MockRunSnapshot("alpha", _MockRun("20260926-1413"))
+    snapshot_cache.set(
+        workspace_id=1, slug="alpha", run_id=None, snap=snap, file_ids={"f1"},
+    )
+    assert snapshot_cache.get(
+        workspace_id=1, slug="alpha", run_id="20260926-1413",
+    ) == snap
+
+
+def test_explicit_run_id_does_not_read_a_different_latest_run():
+    snap = _MockRunSnapshot("alpha", _MockRun("20260926-1413"))
+    snapshot_cache.set(
+        workspace_id=1, slug="alpha", run_id=None, snap=snap, file_ids={"f1"},
+    )
+    assert snapshot_cache.get(
+        workspace_id=1, slug="alpha", run_id="20260901-0900",
+    ) is None
+
+
+def test_read_through_is_invalidated_with_the_latest_run_entry():
+    snap = _MockRunSnapshot("alpha", _MockRun("r1"))
+    snapshot_cache.set(
+        workspace_id=1, slug="alpha", run_id=None, snap=snap, file_ids={"f1"},
+    )
+    snapshot_cache.invalidate({"f1"})
+    assert snapshot_cache.get(workspace_id=1, slug="alpha", run_id="r1") is None

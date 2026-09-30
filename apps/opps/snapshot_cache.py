@@ -85,7 +85,12 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        outputs, docs/specs/2026-09-29-output-previews-design.md). A warm
 #        v11 entry would serve every app with no pictures until its Drive
 #        files next changed.
-_KEY_VERSION = "v12"
+#   v13 — no shape change: the changes feed that invalidates these entries
+#        was dead on labs from at least 2026-09-16 (drive-scoped seed, 403
+#        `teamDriveMembershipRequired` — see apps/opps/drive_changes.py), so
+#        every v12 entry may predate edits it never heard about. The bump
+#        starts every opp from a fresh read once the feed works again.
+_KEY_VERSION = "v13"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:
@@ -132,10 +137,29 @@ def _remove_set_entries(cache_key: str, members_to_remove: _set[str]) -> None:
 
 
 def get(*, workspace_id: str, slug: str, run_id: str | None) -> Any | None:
+    """Return the cached snapshot for (slug, run_id), or None.
+
+    A miss on an explicit ``run_id`` falls back to the latest-run entry
+    (``run_id=None``) when that entry IS this run. The Workbench opens an
+    opp without ``?run_id=`` and then re-requests with the run it landed
+    on, so without this the same run was cold-loaded from Drive twice —
+    ~50s each for spark-facilitator/20260926-1413 on labs, 2026-09-29.
+    Reading through (rather than writing a second copy) keeps ONE entry
+    per run, so invalidation needs nothing new.
+    """
     env = cache.get(_snap_key(workspace_id, slug, run_id))
-    if not env:
+    if env:
+        return env.get("value")
+    if run_id is None:
         return None
-    return env.get("value")
+    latest = cache.get(_snap_key(workspace_id, slug, None))
+    if not latest:
+        return None
+    snap = latest.get("value")
+    current_run = getattr(snap, "current_run", None)
+    if getattr(current_run, "run_id", None) != run_id:
+        return None
+    return snap
 
 
 def set(  # noqa: A001  (shadows builtin; namespace via module is fine)
