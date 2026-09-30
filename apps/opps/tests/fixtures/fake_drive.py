@@ -371,6 +371,10 @@ class FakeDriveClient(DriveClient):
         for seq, fid in self._mutation_log:
             if seq >= since:
                 changed.add(fid)
+                # Like the real client: a change also names its parent folder.
+                node = self._nodes_by_id.get(fid)
+                if node is not None and node.parent_id:
+                    changed.add(node.parent_id)
                 max_seen = max(max_seen, seq)
         return ChangesPage(
             changed_file_ids=changed,

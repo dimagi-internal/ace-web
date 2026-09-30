@@ -61,6 +61,7 @@ export interface paths {
          *     decisions + phases + pdd_body. Uses the legacy serializer which
          *     matches the frontend's OppSnapshot shape (the v2 minimal
          *     OppSnapshotOut schema was a Phase 1 over-simplification).
+         *     ``refresh=true`` rebuilds it from Drive (the Workbench's Refresh).
          */
         readonly get: operations["apps_opps_api_get_opp"];
         readonly put?: never;
@@ -171,7 +172,9 @@ export interface paths {
         /**
          * Outputs of a run with neither an in-page view nor a screenshot
          * @description ``{run_id, outputs: [{id, phase, output_key, kind, title, url, file_id,
-         *     reason, auth}], covered}``. Every output ace-web lists should be a file the
+         *     reason, auth}], covered}``. ``refresh=true`` rebuilds the run from Drive
+         *     first — what the capture skill asks after writing, so its report sees its
+         *     own screenshots. Every output ace-web lists should be a file the
          *     page draws or have a screenshot; ``outputs`` is what isn't yet, and it is
          *     the ACE plugin's ``output-preview-capture`` work list. ``output_key`` is the
          *     key a ``_previews.yaml`` must name; ``auth`` which signed-in session opens
@@ -5402,6 +5405,7 @@ export interface operations {
         readonly parameters: {
             readonly query?: {
                 readonly run_id?: string | null;
+                readonly refresh?: boolean;
             };
             readonly header?: never;
             readonly path: {
@@ -5597,7 +5601,9 @@ export interface operations {
     };
     readonly apps_opps_api_get_run_preview_gaps: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly refresh?: boolean;
+            };
             readonly header?: never;
             readonly path: {
                 readonly workspace_slug: string;

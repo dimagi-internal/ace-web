@@ -158,3 +158,28 @@ Two details that are load-bearing:
 Generalised rule: an overlay's job is to decide **cheaply** whether the
 expensive loader needs to run at all. If computing the fresh value needs a
 loader, the overlay is not "one listing" no matter how it reads.
+
+## 2026-09-30: the changes feed now names each change's parent folder
+
+Found by the first real output-preview capture (spark-facilitator/20260926-1800):
+screenshots written into NEW `previews/<output>/` folders after the run
+finished never appeared. None of their file ids were tracked by the cached
+snapshot, the capture does not touch `run_state.yaml`, and the phase folder
+above them was not reported as modified — this blind spot exactly.
+
+`GoogleDriveClient.list_changes` now asks for `changes(fileId,removed,file(parents))`
+and reports each changed file's **parent folders** alongside its id. A
+snapshot tracks every folder it listed (`CachedDriveClient.list_files` records
+the listed folder and its children), so a file created anywhere inside a
+tracked folder now invalidates the snapshot that listed it — on the next poll,
+with no overlay and no extra Drive call. The overlays above still earn their
+keep for listings a snapshot does NOT track.
+
+Two limits, both deliberate:
+
+- A change the feed already delivered before this shipped is gone; nothing
+  replays it. That is what the explicit refresh is for: `GET …/opps/{slug}?refresh=true`
+  (the Workbench's Refresh button) and `…/preview-gaps?refresh=true` drop the
+  cached snapshot and rebuild from Drive.
+- A new file whose parent is itself new (a PNG in a just-created folder) is
+  caught through the new folder's own change, whose parent IS tracked.
