@@ -563,9 +563,10 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   tree (the viewer serves any preview id, so that is the boundary), and falls
   back to Phase 6's `app-screenshot-capture_manifest.yaml` for older runs
   (`journeys[].app`, else the journey name). Each preview has its own
-  `reveal_seq` — `captured_by`'s beat, never before its product — so replay
-  shows the Learn app in Phase 3 and its screenshots only at Phase 6 ("Just
-  photographed"). `run_products` records de-duplicated keys as `aliases` so an
+  `reveal_seq`: WITH its product, unless a STEP of the run took it (Phase 6's
+  emulator walk → shown at that step, "Photographed") — a screenshot from the
+  `output-preview-capture` utility (every phase end + run end) is a picture of
+  the output, so where it was captured never delays it. `run_products` records de-duplicated keys as `aliases` so an
   index can name either (`synthetic.workflows.<k>` vs
   `synthetic.source.dashboards.N`). Snapshot cache v12. **Every output is a
   doc the page shows or has screenshots** (spec addendum):
@@ -575,7 +576,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   URL — and is the ACE plugin's `output-preview-capture` work list, run at
   every phase end. "Shows" is `artifact_view.is_viewable`, the same
   classifier `render` dispatches on. A utility capturer has no step, so its
-  frames reveal at the end of `captured_phase`. Cards say "no screenshot yet"
+  frames reveal with their output. Cards say "no screenshot yet"
   for a gap. Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
   any run file in-page via `GET …/artifacts/{id}/view` — the id must belong to
   the run (step artifact, product file id or preview, or run-folder child); Slides come
