@@ -354,14 +354,12 @@ class FakeDriveClient(DriveClient):
 
     # --- Changes feed (for cache invalidation; matches DriveClient ABC) ---
 
-    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+    def get_changes_start_page_token(self) -> str:
         # Return a token that says "consider only mutations after this one".
         # We peek without advancing the counter so observers race-free.
         return str(self._peek_seq())
 
-    def list_changes(
-        self, page_token: str, *, drive_id: str | None = None
-    ) -> ChangesPage:
+    def list_changes(self, page_token: str) -> ChangesPage:
         try:
             since = int(page_token)
         except ValueError:

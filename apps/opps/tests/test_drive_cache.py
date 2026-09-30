@@ -103,10 +103,10 @@ class _FakeDriveClient(DriveClient):
         pass
 
     # Changes feed stubs — implemented properly in the real client; not needed here.
-    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+    def get_changes_start_page_token(self) -> str:
         raise NotImplementedError
 
-    def list_changes(self, page_token: str, *, drive_id: str | None = None) -> ChangesPage:
+    def list_changes(self, page_token: str) -> ChangesPage:
         raise NotImplementedError
 
 

@@ -88,11 +88,11 @@ def test_410_expired_token_reseeds_and_returns_empty(workspace, client, monkeypa
     observe(workspace, client)
     calls: list[str] = []
 
-    def _list_changes(token, *, drive_id=None):
+    def _list_changes(token):
         calls.append(token)
         return ChangesPage(set(), "", expired=True)
 
-    def _start(drive_id=None):
+    def _start():
         return "fresh-token"
 
     monkeypatch.setattr(client, "list_changes", _list_changes)
@@ -111,7 +111,7 @@ def test_failed_seed_is_not_retried_on_every_call(workspace, client, monkeypatch
     """
     attempts: list[int] = []
 
-    def _boom(drive_id=None):
+    def _boom():
         attempts.append(1)
         raise RuntimeError("teamDriveMembershipRequired")
 
@@ -130,11 +130,11 @@ def test_seed_retried_once_the_backoff_expires(workspace, client, monkeypatch):
     calls: list[int] = []
     real_start = client.get_changes_start_page_token
 
-    def _fail_first(drive_id=None):
+    def _fail_first():
         calls.append(1)
         if len(calls) == 1:
             raise RuntimeError("teamDriveMembershipRequired")
-        return real_start(drive_id=drive_id)
+        return real_start()
 
     monkeypatch.setattr(client, "get_changes_start_page_token", _fail_first)
 
@@ -147,6 +147,39 @@ def test_seed_retried_once_the_backoff_expires(workspace, client, monkeypatch):
     state_id = client.file_id("ACE/alpha/run_state.yaml")
     client.update_file(state_id, "step: b\n", "application/x-yaml")
     assert state_id in observe(workspace, client)
+
+
+def test_real_client_never_scopes_the_feed_to_a_shared_drive():
+    """The changes feed must be the SA's whole corpus, never `driveId=`-scoped.
+
+    A drive-scoped call needs shared-drive MEMBERSHIP. The SA is shared on
+    the ACE folder only — deliberately, since membership would grant it the
+    rest of the drive — so on labs every scoped seed 403'd
+    (`teamDriveMembershipRequired`, 2026-09-16 → 09-29) and no Drive edit
+    ever invalidated a cached snapshot. The unscoped feed reports the same
+    shared-drive files without membership.
+    """
+    from unittest.mock import MagicMock
+
+    from apps.opps.drive_client import GoogleDriveClient
+
+    drive = GoogleDriveClient.__new__(GoogleDriveClient)
+    drive._service = MagicMock()
+    changes = drive._service.changes.return_value
+    changes.getStartPageToken.return_value.execute.return_value = {"startPageToken": "7"}
+    changes.list.return_value.execute.return_value = {
+        "changes": [{"fileId": "f1"}], "newStartPageToken": "8",
+    }
+
+    assert drive.get_changes_start_page_token() == "7"
+    page = drive.list_changes("7")
+
+    assert page.changed_file_ids == {"f1"}
+    assert page.next_page_token == "8"
+    for call in (changes.getStartPageToken.call_args, changes.list.call_args):
+        assert "driveId" not in call.kwargs
+        assert call.kwargs["supportsAllDrives"] is True
+    assert changes.list.call_args.kwargs["includeItemsFromAllDrives"] is True
 
 
 def test_a_new_file_reports_its_parent_folder(workspace, client):

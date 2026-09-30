@@ -356,10 +356,8 @@ class CachedDriveClient(DriveClient):
 
     # --- Changes feed (pass-through; caching layer doesn't buffer these) ---
 
-    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
-        return self._inner.get_changes_start_page_token(drive_id)
+    def get_changes_start_page_token(self) -> str:
+        return self._inner.get_changes_start_page_token()
 
-    def list_changes(
-        self, page_token: str, *, drive_id: str | None = None
-    ) -> ChangesPage:
-        return self._inner.list_changes(page_token, drive_id=drive_id)
+    def list_changes(self, page_token: str) -> ChangesPage:
+        return self._inner.list_changes(page_token)
