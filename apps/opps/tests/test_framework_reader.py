@@ -226,3 +226,13 @@ def test_a_preview_index_is_a_tracked_file():
     with TouchedFileTracker() as tracker:
         load_opp(client, ace_folder_id=inner.folder_id("ACE"), slug="demo")
     assert index in tracker.file_ids
+
+
+def test_snapshot_cache_drop_forgets_one_run_only():
+    from apps.opps import snapshot_cache
+
+    snapshot_cache.set(workspace_id="w", slug="a", run_id="r1", snap={"n": 1}, file_ids={"f"})
+    snapshot_cache.set(workspace_id="w", slug="a", run_id="r2", snap={"n": 2}, file_ids={"f"})
+    snapshot_cache.drop(workspace_id="w", slug="a", run_id="r1")
+    assert snapshot_cache.get(workspace_id="w", slug="a", run_id="r1") is None
+    assert snapshot_cache.get(workspace_id="w", slug="a", run_id="r2") == {"n": 2}

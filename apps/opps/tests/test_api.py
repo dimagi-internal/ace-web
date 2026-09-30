@@ -221,7 +221,7 @@ def test_get_opp_returns_snapshot_with_etag(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
-        lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
+        lambda workspace, slug, run_id=None, refresh=False: _FAKE_SNAPSHOT,
     )
     response = client.get("/api/w/ws1/opps/opp-1")
     assert response.status_code == 200
@@ -236,7 +236,7 @@ def test_get_opp_304_on_matching_etag(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
-        lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
+        lambda workspace, slug, run_id=None, refresh=False: _FAKE_SNAPSHOT,
     )
     # First request — get the ETag.
     r1 = client.get("/api/w/ws1/opps/opp-1")
@@ -270,7 +270,7 @@ def test_get_opp_404_unknown_slug(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
-        lambda workspace, slug, run_id=None: None,
+        lambda workspace, slug, run_id=None, refresh=False: None,
     )
     response = client.get("/api/w/ws1/opps/no-such-opp")
     assert response.status_code == 404
@@ -2839,7 +2839,8 @@ def test_get_run_preview_gaps_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     payload = {"run_id": "run-001", "outputs": [], "covered": 3}
     monkeypatch.setattr(
-        "apps.opps.api.load_preview_gaps", lambda workspace, slug, run_id: payload,
+        "apps.opps.api.load_preview_gaps",
+        lambda workspace, slug, run_id, refresh=False: payload,
     )
     response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/preview-gaps")
     assert response.status_code == 200
@@ -2853,7 +2854,7 @@ def test_get_run_preview_gaps_404_for_a_run_the_loader_fell_back_from(member_cli
     client, _, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
-        lambda workspace, slug, run_id=None: _FAKE_REPLAY_SNAPSHOT,  # run-001
+        lambda workspace, slug, run_id=None, refresh=False: _FAKE_REPLAY_SNAPSHOT,  # run-001
     )
     response = client.get("/api/w/ws1/opps/opp-1/runs/some-other-run/preview-gaps")
     assert response.status_code == 404
@@ -2863,3 +2864,22 @@ def test_get_run_preview_gaps_404_for_a_run_the_loader_fell_back_from(member_cli
 def test_get_run_preview_gaps_404_non_member(non_member_client):
     client, _, _ = non_member_client
     assert client.get("/api/w/ws1/opps/opp-1/runs/run-001/preview-gaps").status_code == 404
+
+
+@pytest.mark.django_db
+def test_get_opp_passes_refresh_through(member_client, monkeypatch):
+    """The Workbench's Refresh must rebuild from Drive, not re-serve the
+    cached snapshot (a file the changes feed could not attribute is
+    otherwise invisible until something else in the run changes)."""
+    client, _, _ = member_client
+    seen = {}
+
+    def fake(workspace, slug, run_id=None, refresh=False):
+        seen["refresh"] = refresh
+        return _FAKE_SNAPSHOT
+
+    monkeypatch.setattr("apps.opps.api.load_rich_opp_snapshot", fake)
+    client.get("/api/w/ws1/opps/opp-1?refresh=true")
+    assert seen["refresh"] is True
+    client.get("/api/w/ws1/opps/opp-1")
+    assert seen["refresh"] is False

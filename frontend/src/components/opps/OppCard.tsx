@@ -39,7 +39,11 @@ export function OppCardItem({
   onRequestCompare,
 }: OppCardProps) {
   const navigate = useNavigate();
-  const goToWorkbench = () => navigate(`/opps/${encodeURIComponent(opp.slug)}`);
+  // Always the card's OWN workspace. The bare /opps/<slug> form resolves
+  // to whichever workspace the user joined most recently, so a card in
+  // `spark` could open `dimagi-team`'s opp of the same slug.
+  const goToWorkbench = () =>
+    navigate(`/w/${workspaceSlug}/opps/${encodeURIComponent(opp.slug)}`);
   const scorePct = opp.eval_score_pct ?? toPct(opp.eval_score);
 
   // The slug is the canonical identifier — it's what appears in URLs,

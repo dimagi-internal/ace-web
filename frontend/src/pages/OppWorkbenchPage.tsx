@@ -137,7 +137,18 @@ export default function OppWorkbenchPage() {
     [slug, runId, workspaceSlug],
   );
 
+  // The run id the pin effect below wrote into the URL. That changes
+  // `runId`, and with it `load` — but the snapshot on screen already IS
+  // that run, so refetching would only put the spinner back up for a
+  // second round-trip (measured 2026-09-29: ~48s on a cold opp, after the
+  // ~50s first load).
+  const pinnedRunId = useRef<string | null>(null);
+
   useEffect(() => {
+    if (runId && runId === pinnedRunId.current) {
+      pinnedRunId.current = null;
+      return;
+    }
     load();
   }, [load]);
 
@@ -179,6 +190,7 @@ export default function OppWorkbenchPage() {
     const resolved =
       state.snapshot.selected_run_id ?? state.snapshot.current_run.run_id;
     if (resolved) {
+      pinnedRunId.current = resolved;
       // Merge, never replace: a bare object drops every other param, so a
       // shared link like ?view=runs or ?phase=... silently landed on the
       // default view the moment this effect pinned the run id.
@@ -211,7 +223,7 @@ export default function OppWorkbenchPage() {
         runs={snapshot.runs ?? []}
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
-        onRefresh={() => load()}
+        onRefresh={() => load({ force: true })}
         onRunDeleted={(deletedRunId) => {
           // The just-trashed run is gone from Drive. If the URL pins it
           // (either as ?run_id= or as a /runs/<id> path segment), the next

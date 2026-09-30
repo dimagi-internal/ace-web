@@ -254,3 +254,13 @@ def test_a_recorded_chatbot_public_url_wins():
         "public_url": "https://www.openchatstudio.com/a/t/chatbots/p/start/?x=1",
     }}}))
     assert items["ocs_chatbot"]["public_url"].endswith("?x=1")
+
+
+def test_per_partner_reports_are_titled_by_partner():
+    items = run_products.build_products({"synthetic-data-and-workflows": {"synthetic": {
+        "cascade": {"opp_reports": [
+            {"partner": "Partner A", "url": "https://labs.connect.dimagi.com/labs/workflow/1/run/"},
+            {"partner": "Partner B", "url": "https://labs.connect.dimagi.com/labs/workflow/2/run/"},
+        ]},
+    }}})
+    assert [i["title"] for i in items] == ["Opp reports — Partner A", "Opp reports — Partner B"]

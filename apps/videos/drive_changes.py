@@ -29,40 +29,21 @@ from apps.opps.drive_client import DriveClient
 
 log = logging.getLogger(__name__)
 
-_KEY_VERSION = "v1"
+# v2 — the feed is the SA's whole corpus, not one shared drive's (see
+#      DriveClient.get_changes_start_page_token); v1 tokens are drive-scoped.
+_KEY_VERSION = "v2"
 
 
 def _token_key(workspace_id: str) -> str:
     return f"drive:changes:videos:{_KEY_VERSION}:token:ws:{workspace_id}"
 
 
-def _drive_id_key(workspace_id: str) -> str:
-    return f"drive:changes:videos:{_KEY_VERSION}:driveid:ws:{workspace_id}"
-
-
-def _resolve_drive_id(workspace, client: DriveClient) -> str | None:
-    """Resolve the workspace's containing shared-drive id (None for My Drive).
-    Cached forever — the answer doesn't change for a given folder id."""
-    key = _drive_id_key(workspace.pk)
-    sentinel = object()
-    cached = cache.get(key, sentinel)
-    if cached is not sentinel:
-        return cached or None  # "" sentinel for "we resolved it as My Drive"
-    try:
-        f = client.get_file(workspace.drive_root_folder_id)
-        drive_id = getattr(f, "drive_id", None) or None
-    except Exception as exc:  # noqa: BLE001
-        log.warning(
-            "videos.drive_changes: failed to resolve drive_id for ws=%s: %s",
-            workspace.pk, exc,
-        )
-        return None
-    cache.set(key, drive_id or "", timeout=None)
-    return drive_id
-
-
 def observe(workspace, client: DriveClient) -> set[str]:
-    """Return file_ids changed in `workspace`'s drive since the last call.
+    """Return file_ids changed since `workspace`'s last call.
+
+    The feed is everything the service account can see, never one shared
+    drive (see ``apps.opps.drive_changes``); ids outside the workspace are
+    harmless to ``file_cache.invalidate``.
 
     First call seeds the token + returns empty (treats existing caches
     as valid — the alternative is purging all caches on cold-start,
@@ -71,12 +52,11 @@ def observe(workspace, client: DriveClient) -> set[str]:
     from apps.videos import file_cache  # avoid circular import
 
     token_key = _token_key(workspace.pk)
-    drive_id = _resolve_drive_id(workspace, client)
 
     token = cache.get(token_key)
     if not token:
         try:
-            new_token = client.get_changes_start_page_token(drive_id=drive_id)
+            new_token = client.get_changes_start_page_token()
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "videos.drive_changes: failed to seed start page token for ws=%s: %s",
@@ -87,7 +67,7 @@ def observe(workspace, client: DriveClient) -> set[str]:
         return set()
 
     try:
-        page = client.list_changes(token, drive_id=drive_id)
+        page = client.list_changes(token)
     except Exception as exc:  # noqa: BLE001
         log.warning(
             "videos.drive_changes: list_changes failed for ws=%s: %s",
@@ -101,7 +81,7 @@ def observe(workspace, client: DriveClient) -> set[str]:
             workspace.pk,
         )
         try:
-            new_token = client.get_changes_start_page_token(drive_id=drive_id)
+            new_token = client.get_changes_start_page_token()
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "videos.drive_changes: failed to re-seed for ws=%s: %s",
