@@ -163,3 +163,16 @@ def test_preview_whose_capturer_has_not_run_waits_for_the_end():
     events = replay.build_timeline(snap)["events"]
     [item] = replay.build_products(snap, events)
     assert item["previews"][0]["reveal_seq"] is None
+
+
+def test_preview_from_a_utility_capturer_appears_when_its_phase_ends():
+    """``output-preview-capture`` is called at a phase's end with no step of
+    its own; its frames land at that phase's last step_end."""
+    snap = _snapshot([{
+        "id": "opp", "phase": "idea-to-design", "producer": "idea-to-pdd",
+        "previews": [{"file_id": "f1", "captured_by": "output-preview-capture",
+                      "captured_phase": "commcare-setup"}],
+    }])
+    events = replay.build_timeline(snap)["events"]
+    [item] = replay.build_products(snap, events)
+    assert item["previews"][0]["reveal_seq"] == _seq(events, "step_end", "app-deploy")

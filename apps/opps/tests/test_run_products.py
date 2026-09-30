@@ -193,3 +193,64 @@ def test_producer_comes_from_plugin_attribution(monkeypatch):
 def test_garbage_input_is_empty_not_an_error():
     assert run_products.build_products(None) == []
     assert run_products.build_products({"x": "not-a-dict", "y": {"z": [1, "a"]}}) == []
+
+
+def test_labs_reports_under_a_plain_url_are_dashboards_and_ddd_packages_are_walkthroughs():
+    """Seen on spark-facilitator: the cascade's ``opp_reports`` carry ``url``
+    (not ``par_url``/``run_url``) and read as bare links; the canopy DDD
+    package did too."""
+    items = _by_key(run_products.build_products({
+        "synthetic-data-and-workflows": {
+            "synthetic": {
+                "cascade": {"opp_reports": [{
+                    "partner": "A",
+                    "url": "https://labs.connect.dimagi.com/labs/workflow/6376/run/?run_id=1",
+                }]},
+                "walkthroughs": [{
+                    "web_view_link": "https://labs.connect.dimagi.com/canopy/ddd/spark/spark-001",
+                }],
+            }
+        }
+    }))
+    assert items["synthetic.cascade.opp_reports.0"]["kind"] == "dashboard"
+    walkthrough = items["synthetic.walkthroughs.0"]
+    assert walkthrough["kind"] == "walkthrough"
+    assert walkthrough["title"] == "Demo walkthrough"
+
+
+def test_links_open_real_pages():
+    """Seen live by the capture skill: Connect serves no program detail page,
+    a labs solicitation opened without its program answers "not found", and
+    the chatbot's picture belongs on its anonymous chat, not its admin page."""
+    items = _by_key(run_products.build_products({
+        "connect-setup": {"connect": {"program": {
+            "id": "u1", "url": "https://connect.dimagi.com/a/ai-demo-space/program/u1/",
+        }}},
+        "ocs-setup": {"ocs_chatbot": {
+            "public_id": "pub-1", "team_slug": "connect-ace",
+            "admin_url": "https://www.openchatstudio.com/a/connect-ace/chatbots/12295/",
+        }},
+        "solicitation-management": {"solicitation": {
+            "url": "https://labs.connect.dimagi.com/solicitations/3289/",
+            "public_url": "https://labs.connect.dimagi.com/solicitations/3289/",
+            "labs_program_id": 138,
+        }},
+    }))
+    assert items["connect.program"]["url"] == "https://connect.dimagi.com/a/ai-demo-space/program/"
+    bot = items["ocs_chatbot"]
+    assert bot["url"].endswith("/chatbots/12295/")
+    assert bot["public_url"] == (
+        "https://www.openchatstudio.com/a/connect-ace/chatbots/pub-1/start/"
+    )
+    sol = items["solicitation"]
+    assert sol["url"] == "https://labs.connect.dimagi.com/solicitations/3289/?program_id=138"
+    assert sol["public_url"] == sol["url"]
+
+
+def test_a_recorded_chatbot_public_url_wins():
+    items = _by_key(run_products.build_products({"ocs-setup": {"ocs_chatbot": {
+        "public_id": "p", "team_slug": "t",
+        "admin_url": "https://www.openchatstudio.com/a/t/chatbots/1/",
+        "public_url": "https://www.openchatstudio.com/a/t/chatbots/p/start/?x=1",
+    }}}))
+    assert items["ocs_chatbot"]["public_url"].endswith("?x=1")

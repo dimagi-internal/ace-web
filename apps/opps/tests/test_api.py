@@ -2827,3 +2827,39 @@ def test_get_run_replay_404_non_member(non_member_client):
 def test_get_run_replay_401_anonymous(db, client):
     response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/replay")
     assert response.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# Preview gaps — GET /w/{ws}/opps/{slug}/runs/{run_id}/preview-gaps
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_get_run_preview_gaps_happy_path(member_client, monkeypatch):
+    client, _, _ = member_client
+    payload = {"run_id": "run-001", "outputs": [], "covered": 3}
+    monkeypatch.setattr(
+        "apps.opps.api.load_preview_gaps", lambda workspace, slug, run_id: payload,
+    )
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/preview-gaps")
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
+@pytest.mark.django_db
+def test_get_run_preview_gaps_404_for_a_run_the_loader_fell_back_from(member_client, monkeypatch):
+    """The snapshot loader answers an unknown run id with the latest run; the
+    gap list must not — a capturer would photograph the wrong run."""
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.load_rich_opp_snapshot",
+        lambda workspace, slug, run_id=None: _FAKE_REPLAY_SNAPSHOT,  # run-001
+    )
+    response = client.get("/api/w/ws1/opps/opp-1/runs/some-other-run/preview-gaps")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_get_run_preview_gaps_404_non_member(non_member_client):
+    client, _, _ = non_member_client
+    assert client.get("/api/w/ws1/opps/opp-1/runs/run-001/preview-gaps").status_code == 404

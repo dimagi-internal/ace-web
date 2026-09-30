@@ -299,6 +299,15 @@ class CachedDriveClient(DriveClient):
         _invalidate_folder_listings(parent_id)
         return result
 
+    def anyone_roles(self, file_ids: list[str]) -> dict[str, str | None]:
+        # Uncached: only the clone reads it, once per file.
+        return self._inner.anyone_roles(file_ids)
+
+    def set_anyone_role(self, file_id: str, role: str) -> None:
+        self._inner.set_anyone_role(file_id, role)
+        # The cached link_shared answer for this file is now stale.
+        cache.delete(_link_shared_key(file_id))
+
     def update_file(self, file_id: str, content: str, mime_type: str) -> None:
         self._inner.update_file(file_id, content, mime_type)
         _invalidate_file(file_id, mime_types=(mime_type,))

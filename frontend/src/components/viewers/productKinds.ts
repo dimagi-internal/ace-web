@@ -1,5 +1,6 @@
 import {
   Bot,
+  Clapperboard,
   FileText,
   Handshake,
   LayoutDashboard,
@@ -83,6 +84,13 @@ export const KIND_META: Record<RunProductKind, KindMeta> = {
     label: "Solicitation",
     blurb: "The public call for partner organizations to apply to run this program.",
     openLabel: "Open solicitation",
+  },
+  walkthrough: {
+    icon: Clapperboard,
+    label: "Demo walkthrough",
+    blurb:
+      "The narrated walkthrough of the demo dashboards — a video and deck built by canopy's demo loop.",
+    openLabel: "Open walkthrough",
   },
   link: {
     icon: Link2,

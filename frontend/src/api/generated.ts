@@ -161,6 +161,31 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/preview-gaps": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Outputs of a run with neither an in-page view nor a screenshot
+         * @description ``{run_id, outputs: [{id, phase, output_key, kind, title, url, file_id,
+         *     reason, auth}], covered}``. Every output ace-web lists should be a file the
+         *     page draws or have a screenshot; ``outputs`` is what isn't yet, and it is
+         *     the ACE plugin's ``output-preview-capture`` work list. ``output_key`` is the
+         *     key a ``_previews.yaml`` must name; ``auth`` which signed-in session opens
+         *     ``url``.
+         */
+        readonly get: operations["apps_opps_api_get_run_preview_gaps"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
         readonly parameters: {
             readonly query?: never;
@@ -5545,6 +5570,32 @@ export interface operations {
         };
     };
     readonly apps_opps_api_get_run_flow: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readonly apps_opps_api_get_run_preview_gaps: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;

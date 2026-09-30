@@ -6,6 +6,9 @@ import { ProductPreviews } from "./ProductPreviews";
 import { kindMeta } from "./productKinds";
 import { useViewer } from "./ViewerContext";
 
+/** Kinds whose Drive file the viewer draws in the page. */
+const FILE_KINDS: ReadonlySet<string> = new Set(["document", "deck", "sheet"]);
+
 interface Props {
   product: RunProduct;
   /** Replay: the cursor hasn't reached the beat that made it. */
@@ -40,6 +43,11 @@ export function ProductCard({ product, unbuilt = false, fresh = false }: Props) 
   }
 
   const previews = product.previews ?? [];
+  // The rule (output-previews spec, addendum): every output is a file the page
+  // shows, or has screenshots. Say so quietly when one is neither, rather than
+  // leaving a reader to wonder whether the pictures failed to load.
+  const shownAsFile = !!product.file_id && FILE_KINDS.has(product.kind);
+  const unpictured = !shownAsFile && previews.length === 0;
   return (
     <div
       className={cn(
@@ -58,7 +66,10 @@ export function ProductCard({ product, unbuilt = false, fresh = false }: Props) 
           <span className="block truncate text-xs font-medium text-foreground">
             <Glossed text={product.title} />
           </span>
-          <span className="block truncate text-[10px] text-muted-foreground">{meta.label}</span>
+          <span className="block truncate text-[10px] text-muted-foreground">
+            {meta.label}
+            {unpictured && <span className="text-muted-foreground/60"> · no screenshot yet</span>}
+          </span>
         </span>
       </button>
       {previews.length > 0 && (

@@ -314,7 +314,8 @@ def _read_yaml(client: DriveClient, f: DriveFile) -> Any:
 def attach_previews(products: list[dict], records: list[dict]) -> list[dict]:
     """Give each product a ``previews`` list, from the records that name it.
 
-    Each preview: ``{file_id, name, caption, mime_type, captured_by}``.
+    Each preview: ``{file_id, name, caption, mime_type, captured_by,
+    captured_phase}``.
 
     Match order: an index record by ``phase`` + ``output_key`` (the key the
     product was listed under, or one it absorbed when de-duplicated); any
@@ -341,6 +342,7 @@ def attach_previews(products: list[dict], records: list[dict]) -> list[dict]:
                 **item,
                 "caption": _plain_caption(item.get("caption")),
                 "captured_by": rec.get("captured_by"),
+                "captured_phase": rec.get("captured_phase"),
             }
             for item in rec["items"]
         )

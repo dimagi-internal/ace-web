@@ -1103,6 +1103,57 @@ def get_run_flow(
 
 
 # ---------------------------------------------------------------------------
+# Preview gaps — GET /w/{workspace_slug}/opps/{slug}/runs/{run_id}/preview-gaps
+# docs/specs/2026-09-29-output-previews-design.md (addendum)
+# ---------------------------------------------------------------------------
+
+
+def load_preview_gaps(workspace, slug: str, run_id: str) -> dict | None:
+    """The run's outputs the page can neither show as a file nor picture, or
+    None when the run doesn't exist. The monkeypatch target for tests."""
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.preview_gaps import build_preview_gaps
+
+    snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    if snapshot is None or (snapshot.get("current_run") or {}).get("run_id") != run_id:
+        # The loader falls back to the latest run for an unknown id; a work
+        # list for the wrong run would send the capturer to photograph it.
+        return None
+    return build_preview_gaps(snapshot, get_drive_client(workspace=workspace))
+
+
+@router.get(
+    "/{slug}/runs/{run_id}/preview-gaps",
+    response={200: dict},
+    summary="Outputs of a run with neither an in-page view nor a screenshot",
+)
+def get_run_preview_gaps(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    """``{run_id, outputs: [{id, phase, output_key, kind, title, url, file_id,
+    reason, auth}], covered}``. Every output ace-web lists should be a file the
+    page draws or have a screenshot; ``outputs`` is what isn't yet, and it is
+    the ACE plugin's ``output-preview-capture`` work list. ``output_key`` is the
+    key a ``_previews.yaml`` must name; ``auth`` which signed-in session opens
+    ``url``."""
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        payload = load_preview_gaps(workspace, slug, run_id)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(
+            503, "This workspace has no Drive access", type_=TYPE_VALIDATION, detail=str(exc),
+        ) from exc
+    if payload is None:
+        raise ProblemError(404, "Run not found", type_=TYPE_NOT_FOUND)
+    return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
 # Task 2.1.9 helpers — delete run
 # ---------------------------------------------------------------------------
 

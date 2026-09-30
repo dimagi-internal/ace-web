@@ -221,6 +221,19 @@ class DriveClient(ABC):
         """
         return {}
 
+    def anyone_roles(self, file_ids: list[str]) -> dict[str, str | None]:
+        """``{file_id: role}`` of each file's ``anyone`` (link) permission —
+        ``"reader"`` / ``"commenter"`` / ``"writer"``, or None when the file
+        has no link permission. An id ABSENT from the result means the ACL
+        could not be read (same contract as ``link_shared``). Used by the
+        clone to give each copy its original's link sharing: ``files.copy``
+        does not carry permissions."""
+        return {}
+
+    def set_anyone_role(self, file_id: str, role: str) -> None:
+        """Grant anyone-with-the-link ``role`` on ``file_id``."""
+        raise NotImplementedError
+
     @abstractmethod
     def create_folder(self, parent_id: str, name: str) -> str:
         """Create a folder under parent_id. Returns new folder ID."""
@@ -590,6 +603,41 @@ class GoogleDriveClient(DriveClient):
                     encoding="base64",
                 )
         return FileContent(content=content, content_type=mime_type)
+
+    def anyone_roles(self, file_ids: list[str]) -> dict[str, str | None]:
+        """Concurrent ``permissions.list`` (see ``link_shared`` for why not
+        ``files.get``). A failed read omits the id: unknown, not unshared."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        ids = [fid for fid in dict.fromkeys(file_ids) if fid]
+
+        def _one(file_id: str):
+            try:
+                resp = self._service.permissions().list(
+                    fileId=file_id, fields="permissions(type,role)", supportsAllDrives=True,
+                ).execute(http=self._thread_http())
+            except Exception:  # noqa: BLE001
+                log.warning("anyone_roles failed for %s", file_id, exc_info=True)
+                return file_id, False, None
+            role = next(
+                (p.get("role") for p in resp.get("permissions") or [] if p.get("type") == "anyone"),
+                None,
+            )
+            return file_id, True, role
+
+        out: dict[str, str | None] = {}
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for file_id, ok, role in pool.map(_one, ids):
+                if ok:
+                    out[file_id] = role
+        return out
+
+    @_drive_write_retry
+    def set_anyone_role(self, file_id: str, role: str) -> None:
+        self._service.permissions().create(
+            fileId=file_id, body={"type": "anyone", "role": role},
+            supportsAllDrives=True, fields="id",
+        ).execute()
 
     def create_folder(self, parent_id: str, name: str) -> str:
         body = {

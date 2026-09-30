@@ -349,6 +349,7 @@ export type RunProductKind =
   | "chatbot"
   | "dashboard"
   | "solicitation"
+  | "walkthrough"
   | "link";
 
 export interface RunProduct {
@@ -368,6 +369,9 @@ export interface RunProduct {
   producer: string | null;
   /** OCS widget credentials, when the chatbot can be embedded. */
   chatbot: { public_id: string; embed_key: string } | null;
+  /** The page anyone can open without signing in (a chatbot's chat, a
+   *  solicitation), when there is one. */
+  public_url?: string | null;
   /** Keys of later `products` entries that were the same thing (de-duplicated). */
   aliases?: string[];
   /** Screenshots of it, in display order — `apps/opps/output_previews.py`.

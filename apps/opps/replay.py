@@ -398,7 +398,7 @@ def build_products(snapshot: dict, events: list[dict]) -> list[dict]:
         if seq is None:
             seq = by_phase.get(item.get("phase") or "")
         previews = [
-            {**p, "reveal_seq": _preview_seq(p, seq, by_skill)}
+            {**p, "reveal_seq": _preview_seq(p, seq, by_skill, by_phase)}
             for p in item.get("previews") or []
             if isinstance(p, dict)
         ]
@@ -406,17 +406,28 @@ def build_products(snapshot: dict, events: list[dict]) -> list[dict]:
     return out
 
 
-def _preview_seq(preview: dict, product_seq: int | None, by_skill: dict[str, int]) -> int | None:
+def _preview_seq(
+    preview: dict,
+    product_seq: int | None,
+    by_skill: dict[str, int],
+    by_phase: dict[str, int],
+) -> int | None:
     """The beat a preview may first be shown at (see :func:`build_products`).
 
-    A named capturer that has no ``step_end`` in this run — a fork whose
-    Phase 6 has not run again yet — has not taken these frames in this run,
-    so they wait for the final beat (``None``), like any unplaced product.
+    Its capturer's ``step_end`` when the capturer is a step of this run;
+    otherwise — ``output-preview-capture`` is a utility the phases call at
+    their end, with no step of its own — the end of ``captured_phase``. A
+    named capturer that placed nothing in this run (a fork whose Phase 6 has
+    not run again yet) has not taken these frames in this run, so they wait
+    for the final beat (``None``), like any unplaced product. Never before
+    the product itself.
     """
     captured_by = preview.get("captured_by")
     if not captured_by:
         return product_seq
     seq = by_skill.get(captured_by)
+    if seq is None and preview.get("captured_phase"):
+        seq = by_phase.get(preview["captured_phase"])
     if seq is None:
         return None
     return seq if product_seq is None else max(seq, product_seq)
