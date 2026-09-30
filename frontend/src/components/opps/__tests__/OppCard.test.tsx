@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { OppCardItem } from "../OppCard";
 import type { OppCard as OppCardData, RunSummary } from "../../../api/types.ws";
@@ -271,5 +271,42 @@ describe("OppCardItem no per-card /runs fan-out (#512)", () => {
     expect(screen.getByText("P8")).toBeInTheDocument();
     // And no fetch fired.
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("OppCardItem navigation", () => {
+  it("opens the opp in the card's own workspace, never the bare /opps/<slug> form", () => {
+    let path = "";
+    function Probe() {
+      path = useLocation().pathname;
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={["/w/spark/opps"]}>
+        <Routes>
+          <Route
+            path="*"
+            element={
+              <>
+                <OppCardItem
+                  opp={baseOpp}
+                  workspaceSlug="spark"
+                  isExpanded={false}
+                  tagFilter={[]}
+                  canCompare={true}
+                  onToggleExpanded={vi.fn()}
+                  onToggleTag={vi.fn()}
+                  onRequestDelete={vi.fn()}
+                  onRequestCompare={vi.fn()}
+                />
+                <Probe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "malaria-itn-app (Malaria ITN App)" }));
+    expect(path).toBe("/w/spark/opps/malaria-itn-app");
   });
 });
