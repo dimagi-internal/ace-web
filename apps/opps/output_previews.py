@@ -276,6 +276,17 @@ def _meta(f: DriveFile, caption: Any, name: Any = None) -> dict:
     }
 
 
+def _plain_caption(text: str | None) -> str | None:
+    """A caption as plain text. The plugin writes ``shows:`` lines in markdown
+    (``the **In Progress** section``), and a thumbnail caption is not a place
+    to render markdown — shown raw, the asterisks read as noise."""
+    if not text:
+        return text
+    text = re.sub(r"(\*\*|__)(.+?)\1", r"\2", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    return text.strip() or None
+
+
 def _is_image(f: DriveFile) -> bool:
     return (f.mime_type or "").startswith("image/") or f.name.lower().endswith(_IMAGE_SUFFIXES)
 
@@ -322,8 +333,16 @@ def attach_previews(products: list[dict], records: list[dict]) -> list[dict]:
     def give(p: dict, i: int, rec: dict) -> None:
         used.add(i)
         covered.add(str(p.get("id")))
+        # Captions are cleaned here, at serialize time, not when read: the
+        # snapshot cache holds what was read, so a reader-side fix would not
+        # reach a cached run until its Drive files next changed.
         p["previews"].extend(
-            {**item, "captured_by": rec.get("captured_by")} for item in rec["items"]
+            {
+                **item,
+                "caption": _plain_caption(item.get("caption")),
+                "captured_by": rec.get("captured_by"),
+            }
+            for item in rec["items"]
         )
 
     for i, rec in enumerate(records):

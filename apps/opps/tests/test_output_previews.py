@@ -376,3 +376,26 @@ def test_legacy_frames_of_a_journey_that_did_not_pass_are_not_shown():
         }
     )
     assert [r["app"] for r in _load(client)] == ["deliver"]
+
+
+def test_captions_drop_markdown_emphasis():
+    """Seen on labs: ``shows:`` lines carry markdown, and the gallery showed
+    ``**In Progress**`` literally."""
+    from apps.opps.output_previews import _plain_caption
+
+    assert (
+        _plain_caption("The **In Progress** section, with `apps.learn` and __four__ tiles")
+        == "The In Progress section, with apps.learn and four tiles"
+    )
+    assert _plain_caption("2 * 3 = 6, a lone * stays") == "2 * 3 = 6, a lone * stays"
+    assert _plain_caption(None) is None
+
+
+def test_attached_captions_are_plain_text():
+    record = {
+        "source": "legacy", "app": "learn", "captured_by": "app-screenshot-capture",
+        "items": [{"file_id": "f1", "name": "a.png", "caption": "The **In Progress** list",
+                   "mime_type": "image/png"}],
+    }
+    by_key = {p["key"]: p for p in attach_previews(_apps_products(), [record])}
+    assert by_key["apps.learn"]["previews"][0]["caption"] == "The In Progress list"
