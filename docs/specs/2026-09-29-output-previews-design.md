@@ -198,6 +198,8 @@ anything left. What makes a GOOD screenshot per kind:
 
 ### Replay
 
-`captured_by` is a utility skill with no step of its own, so ace-web reveals a
-preview at its capturer's step if the run has one, else at the end of
-`captured_phase` — never before the output itself.
+A preview from `output-preview-capture` — a utility with no step, called at
+every phase end and at run end — is a picture OF the output, so the replay
+shows it WITH the output; where it happened to be captured is bookkeeping.
+Only a preview taken by a STEP of the run (Phase 6's emulator walk) waits for
+that step, because the walk is itself an event in the run.

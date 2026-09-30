@@ -59,6 +59,7 @@ export function FlowPanel({ replay, steps, phases, products, isRevealed, justRev
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
   const [flash, setFlash] = useState<string | null>(null);
   const cardRefs = useRef(new Map<string, HTMLElement>());
+  const phaseRefs = useRef(new Map<string, HTMLElement>());
   const endRef = useRef<HTMLDivElement>(null);
 
   // Everything the cursor has reached, in run order, with phase headers.
@@ -98,11 +99,19 @@ export function FlowPanel({ replay, steps, phases, products, isRevealed, justRev
   }, [products, isRevealed, runSkills]);
   const builtCount = products.filter(isRevealed).length;
 
-  // Follow the replay down the chain.
+  // Follow the replay down the chain. A step keeps its card in view; a new
+  // phase goes to the TOP, so the chapter heading is what the audience sees
+  // first and its steps fill in below it — "nearest" parked the heading on
+  // the rail's bottom edge.
+  const beatPhase = replay.beat.event?.kind === "phase_start" ? replay.beat.phase : null;
   useEffect(() => {
+    if (beatPhase) {
+      phaseRefs.current.get(beatPhase)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+      return;
+    }
     const target = current ? cardRefs.current.get(current) : endRef.current;
     target?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
-  }, [current, entries.length]);
+  }, [current, beatPhase, entries.length]);
 
   useEffect(() => {
     if (!flash) return;
@@ -161,7 +170,14 @@ export function FlowPanel({ replay, steps, phases, products, isRevealed, justRev
           if (entry.type === "phase") {
             const phaseBuilt = built.byPhase.get(entry.phase) ?? [];
             return (
-              <li key={`phase-${entry.phase}`} className="mb-1.5 mt-3 px-1 first:mt-0">
+              <li
+                key={`phase-${entry.phase}`}
+                ref={(el) => {
+                  if (el) phaseRefs.current.set(entry.phase, el);
+                  else phaseRefs.current.delete(entry.phase);
+                }}
+                className="mb-1.5 mt-3 scroll-mt-2 px-1 first:mt-0"
+              >
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   {phaseTag(entry.phase) && `${phaseTag(entry.phase)} · `}
                   <Glossed text={entry.label} />
@@ -248,6 +264,10 @@ export function FlowPanel({ replay, steps, phases, products, isRevealed, justRev
         })}
       </ol>
       <div ref={endRef} />
+      {/* Room for the run still to come. Without it the newest entry is the
+          last thing in the rail, and a new phase heading can never scroll
+          above the rail's bottom edge. */}
+      <div aria-hidden className="h-[60vh] shrink-0" />
       <p className="mt-auto border-t border-border px-1 pt-2 text-[10px] leading-snug text-muted-foreground/70">
         As the ACE plugin declares it — what each step is built to read and write, not a trace of
         this run's reads.

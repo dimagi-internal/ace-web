@@ -373,13 +373,17 @@ def build_products(snapshot: dict, events: list[dict]) -> list[dict]:
     means no beat in this run places it (its phase recorded no steps, as a
     fork's carried phases can); the player shows those at the final beat.
 
-    Each of a product's ``previews`` gets its own ``reveal_seq`` — the
-    ``step_end`` of the skill that CAPTURED it (``captured_by``), and never
-    before the product itself. The Learn app is built in Phase 3 but first
-    photographed in Phase 6, and its screenshots live with Phase 3; shown at
-    the app's own beat they would be pictures the run had not taken yet.
+    Each of a product's ``previews`` gets its own ``reveal_seq``
+    (:func:`_preview_seq`): with the product, unless a STEP of the run took it
+    — Phase 6's emulator walk photographs the Phase 3 apps, and the replay
+    shows that walk happen.
     """
     catalogue = (snapshot.get("current_run") or {}).get("products") or []
+    run_skills = {
+        str(st.get("skill_name"))
+        for st in (snapshot.get("current_run") or {}).get("steps") or []
+        if isinstance(st, dict) and st.get("skill_name")
+    }
     by_skill: dict[str, int] = {}
     by_phase: dict[str, int] = {}
     for e in events:
@@ -398,7 +402,7 @@ def build_products(snapshot: dict, events: list[dict]) -> list[dict]:
         if seq is None:
             seq = by_phase.get(item.get("phase") or "")
         previews = [
-            {**p, "reveal_seq": _preview_seq(p, seq, by_skill, by_phase)}
+            {**p, "reveal_seq": _preview_seq(p, seq, by_skill, run_skills)}
             for p in item.get("previews") or []
             if isinstance(p, dict)
         ]
@@ -410,24 +414,28 @@ def _preview_seq(
     preview: dict,
     product_seq: int | None,
     by_skill: dict[str, int],
-    by_phase: dict[str, int],
+    run_skills: set[str],
 ) -> int | None:
     """The beat a preview may first be shown at (see :func:`build_products`).
 
-    Its capturer's ``step_end`` when the capturer is a step of this run;
-    otherwise — ``output-preview-capture`` is a utility the phases call at
-    their end, with no step of its own — the end of ``captured_phase``. A
-    named capturer that placed nothing in this run (a fork whose Phase 6 has
-    not run again yet) has not taken these frames in this run, so they wait
-    for the final beat (``None``), like any unplaced product. Never before
-    the product itself.
+    * Taken by a STEP of this run (Phase 6's emulator walk,
+      ``app-screenshot-capture``): that step's ``step_end`` — the walk is an
+      event in the run, and the replay shows it happening. Never before the
+      product itself.
+    * Taken by a step the run planned but has not finished (a fork whose
+      Phase 6 has not run again): not taken in this run yet — the final beat
+      (``None``), like any unplaced product.
+    * Taken by anything that is not a step — ``output-preview-capture``, the
+      utility every phase end and the run end call: a picture OF the output,
+      so it appears WITH the output. Where it happened to be captured (a
+      phase end, or the run end) is bookkeeping, not part of the story; timed
+      by capture, a run-end screenshot of the Phase 4 opportunity would only
+      appear on the replay's last beat.
     """
     captured_by = preview.get("captured_by")
-    if not captured_by:
+    if not captured_by or captured_by not in run_skills:
         return product_seq
     seq = by_skill.get(captured_by)
-    if seq is None and preview.get("captured_phase"):
-        seq = by_phase.get(preview["captured_phase"])
     if seq is None:
         return None
     return seq if product_seq is None else max(seq, product_seq)

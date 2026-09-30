@@ -155,24 +155,31 @@ def test_preview_is_never_shown_before_its_product():
 
 
 def test_preview_whose_capturer_has_not_run_waits_for_the_end():
-    """A fork carries Phase 3's previews before its Phase 6 has run again."""
+    """A fork carries Phase 3's previews before its Phase 6 has run again: the
+    walk is a step of this run that has not happened yet."""
     snap = _snapshot([{
         "id": "learn", "phase": "commcare-setup", "producer": "pdd-to-learn-app",
         "previews": [{"file_id": "f1", "captured_by": "app-screenshot-capture"}],
     }])
+    snap["current_run"]["steps"].append(
+        _step("app-screenshot-capture", "qa-and-training", 6, status="pending")
+    )
     events = replay.build_timeline(snap)["events"]
     [item] = replay.build_products(snap, events)
     assert item["previews"][0]["reveal_seq"] is None
 
 
-def test_preview_from_a_utility_capturer_appears_when_its_phase_ends():
-    """``output-preview-capture`` is called at a phase's end with no step of
-    its own; its frames land at that phase's last step_end."""
+def test_preview_from_the_capture_utility_appears_with_its_output():
+    """``output-preview-capture`` is not a step — every phase end and the run
+    end call it. Its frames are pictures OF the output, so they appear with
+    the output: a run-end screenshot of a Phase 3 app must not wait for the
+    replay's last beat."""
     snap = _snapshot([{
-        "id": "opp", "phase": "idea-to-design", "producer": "idea-to-pdd",
+        "id": "learn", "phase": "commcare-setup", "producer": "pdd-to-learn-app",
         "previews": [{"file_id": "f1", "captured_by": "output-preview-capture",
-                      "captured_phase": "commcare-setup"}],
+                      "captured_phase": "synthetic-data-and-workflows"}],
     }])
     events = replay.build_timeline(snap)["events"]
     [item] = replay.build_products(snap, events)
-    assert item["previews"][0]["reveal_seq"] == _seq(events, "step_end", "app-deploy")
+    assert item["previews"][0]["reveal_seq"] == item["reveal_seq"]
+    assert item["reveal_seq"] == _seq(events, "step_end", "pdd-to-learn-app")
