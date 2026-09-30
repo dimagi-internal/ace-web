@@ -6,7 +6,6 @@ import type {
   ReplayPreview,
   ReplayProduct,
 } from "@/api/replay";
-import type { Artifact, Step } from "@/api/types.ws";
 
 /**
  * The step cursor — which beat of the run the replay is showing.
@@ -156,70 +155,3 @@ export function phasesFinishedAt(timeline: DemoTimeline, beatIndex: number): Set
   return out;
 }
 
-/**
- * The markdown documents a step wrote — the other thing, besides products,
- * worth popping up as a step finishes (an app's build summary, the chatbot's
- * QA transcript, an eval report). Files already shown as products are left
- * to the product pop-up rather than shown twice.
- */
-export function stepDocuments(
-  step: Step | undefined,
-  alreadyShown: ReadonlySet<string> = new Set(),
-): Artifact[] {
-  if (!step) return [];
-  const docs = step.artifacts.filter(
-    (a) => /\.(md|markdown)$/i.test(a.name || a.path) && !alreadyShown.has(a.drive_file_id),
-  );
-  // The step's own document first; its QA / eval reports after it.
-  const isReview = (a: Artifact) => /-(qa|eval)[_.]/i.test(a.name || a.path);
-  return [...docs.filter((a) => !isReview(a)), ...docs.filter(isReview)];
-}
-
-const TITLE_ACRONYMS = new Set(["pdd", "qa", "ocs", "llo", "flw", "hq", "ux", "faq", "uat", "ppi"]);
-
-/** A readable name for a document ACE wrote, from its filename:
- *  `pdd-to-deliver-app-eval_report.md` → "PDD to deliver app eval report". */
-export function documentTitle(filename: string): string {
-  const stem = filename.replace(/^.*\//, "").replace(/\.(md|markdown)$/i, "");
-  const words = stem.split(/[-_\s]+/).filter(Boolean);
-  return words
-    .map((w, i) =>
-      TITLE_ACRONYMS.has(w.toLowerCase())
-        ? w.toUpperCase()
-        : i === 0
-          ? w[0].toUpperCase() + w.slice(1)
-          : w.toLowerCase(),
-    )
-    .join(" ");
-}
-
-/**
- * The beats worth stopping on when the presenter wants to move fast: every
- * phase start, and every finish that revealed a product, failed, or belongs
- * to a notable skill (one that recorded decisions or wrote a document).
- * Ascending. The final beat is always included so Play ends on the finished
- * run.
- */
-export function highlightBeats(
-  timeline: DemoTimeline,
-  notableSkills: ReadonlySet<string> = new Set(),
-): number[] {
-  const total = timeline.events.length;
-  const revealing = new Set<number>();
-  for (const p of timeline.products ?? []) {
-    revealing.add(revealIndexOf(p, total));
-    for (const pv of p.previews ?? []) revealing.add(previewRevealIndexOf(pv, total));
-  }
-  const out: number[] = [];
-  timeline.events.forEach((e, i) => {
-    if (e.kind === "phase_start") out.push(i);
-    else if (
-      e.kind === "step_end" &&
-      (revealing.has(i) || stepFailed(e) || (e.skill != null && notableSkills.has(e.skill)))
-    ) {
-      out.push(i);
-    }
-  });
-  if (total > 0 && out[out.length - 1] !== total - 1) out.push(total - 1);
-  return out;
-}

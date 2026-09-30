@@ -3,14 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { DemoEvent, DemoTimeline, ReplayProduct } from "@/api/replay";
 
 import {
-  highlightBeats,
   phasesFinishedAt,
   productAsOf,
   productsAtBeat,
   productsPhotographedAt,
-  documentTitle,
   revealIndexOf,
-  stepDocuments,
 } from "../cursor";
 import { groupSpans, phaseGroupOf } from "../phaseGroups";
 
@@ -69,16 +66,6 @@ describe("phasesFinishedAt", () => {
   });
 });
 
-describe("highlightBeats", () => {
-  it("keeps phase starts, product reveals, failures and the last beat", () => {
-    expect(highlightBeats(TIMELINE)).toEqual([0, 2, 5, 7, 9]);
-  });
-
-  it("adds finishes that recorded decisions", () => {
-    expect(highlightBeats(TIMELINE, new Set(["b"]))).toEqual([0, 2, 4, 5, 7, 9]);
-  });
-});
-
 describe("phase groups", () => {
   it("groups ACE's phases one level up and leaves unknown ones alone", () => {
     expect(phaseGroupOf("connect-setup")).toBe("Product setup");
@@ -92,44 +79,6 @@ describe("phase groups", () => {
       { label: null, from: 5, count: 1 },
       { label: "Partner & launch", from: 6, count: 1 },
     ]);
-  });
-});
-
-describe("stepDocuments", () => {
-  const art = (name: string, id: string) => ({
-    name, drive_file_id: id, drive_web_link: "", mime_type: "", size_bytes: null, path: `x/${name}`,
-  });
-  const step = {
-    artifacts: [art("summary.md", "a"), art("verdict.yaml", "b"), art("pdd.md", "c")],
-  } as unknown as import("@/api/types.ws").Step;
-
-  it("pops up a step's markdown, not its YAML, and not what a product already shows", () => {
-    expect(stepDocuments(step).map((a) => a.name)).toEqual(["summary.md", "pdd.md"]);
-    expect(stepDocuments(step, new Set(["c"])).map((a) => a.name)).toEqual(["summary.md"]);
-    expect(stepDocuments(undefined)).toEqual([]);
-  });
-});
-
-describe("documents in the spotlight", () => {
-  const art = (name: string) => ({
-    name, drive_file_id: name, drive_web_link: "", mime_type: "", size_bytes: null, path: name,
-  });
-
-  it("puts the step's own document before its eval / QA reports", () => {
-    const step = {
-      artifacts: [art("pdd-to-deliver-app-eval_report.md"), art("pdd-to-deliver-app_summary.md")],
-    } as unknown as import("@/api/types.ws").Step;
-    expect(stepDocuments(step).map((a) => a.name)).toEqual([
-      "pdd-to-deliver-app_summary.md",
-      "pdd-to-deliver-app-eval_report.md",
-    ]);
-  });
-
-  it("titles a document readably from its filename", () => {
-    expect(documentTitle("pdd-to-deliver-app-eval_report.md")).toBe("PDD to deliver app eval report");
-    expect(documentTitle("3-ocs/ocs-chatbot-qa_transcript-deep.md")).toBe(
-      "OCS chatbot QA transcript deep",
-    );
   });
 });
 
@@ -154,7 +103,4 @@ describe("screenshots in the replay", () => {
     expect(productsPhotographedAt(timeline, 4)).toEqual([]);
   });
 
-  it("the photographing beat is a highlight", () => {
-    expect(highlightBeats(timeline)).toContain(7);
-  });
 });

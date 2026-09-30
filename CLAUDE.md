@@ -544,18 +544,20 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   the snapshot carries `current_run.products` — `run_state`'s
   `phases.<phase>.products.*` flattened by `apps/opps/run_products.py` (it
   WALKS the blocks, so a new product shows up without code). **The right rail
-  is always on** (`components/views/PhaseRail.tsx`, spec
-  `docs/specs/2026-09-29-output-previews-design.md`): the selected phase's
-  outputs, then each step's Inputs (↑ jumps to the phase + step that made one)
-  and Outputs (→ phases that use it), from `GET …/runs/{run}/flow` — the
-  plugin manifest's `producedBy`/`consumedBy` (the declared flow, not a trace);
-  no phase selected = everything the run built, by phase. The old top strip is
-  gone. In replay each product carries `reveal_seq` (its producer's step_end,
-  else its phase's last), and the rail becomes the **Flow** chain — a card
-  per reached step with what it built (kept on screen when the card folds).
-  The full-screen **Spotlight** pop-up per product (plus any `.md` the step
-  wrote) is OFF by default since the rail shows outputs — `P` / the Pop-ups
-  toggle turns it on for a demo. **Output previews** (screenshots): a preview lives with the phase
+  is the run's FLOW, always** (`FlowChain` in `components/replay/FlowPanel.tsx`,
+  spec `docs/specs/2026-09-29-output-previews-design.md`): every phase, a card
+  per step with what it built (screenshots included — folded cards keep
+  them), and opened, its Inputs (↑ jumps to the step that made one) and
+  Outputs (→ phases that use it), from `GET …/runs/{run}/flow` — the plugin
+  manifest's `producedBy`/`consumedBy` (the declared flow, not a trace).
+  Outside a replay (`PhaseRail`) it shows the WHOLE run and scrolls to the
+  phase picked on the left (a heading there picks it back) — it deliberately
+  never narrows to the selected phase, which is what the middle pane is for.
+  In a replay (`ReplayFlow`) the same chain grows beat by beat; each product
+  carries `reveal_seq` (its producer's step_end, else its phase's last). ONE
+  replay mode: the Highlights / Pop-ups toggles and the full-screen Spotlight
+  were removed (2026-09-30) — outputs appear in the rail, nowhere else.
+  **Output previews** (screenshots): a preview lives with the phase
   that BUILT the output, whoever took it —
   `<N>-<phase>/previews/<output-slug>/_previews.yaml` + PNGs (Phase 6 writes
   the app walk into `3-commcare/`). `apps/opps/output_previews.py` reads them
