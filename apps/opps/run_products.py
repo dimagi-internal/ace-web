@@ -225,6 +225,10 @@ def _item(
         or humanize(_str(node.get("key")) or "")
         or _default_title(kind, last)
     )
+    # The cascade's per-partner reports (``opp_reports: [{partner, url}]``)
+    # would otherwise all read "Opp reports".
+    if _str(node.get("partner")) and _str(node.get("partner")) not in title:
+        title = f"{title} — {_str(node.get('partner'))}"
     subtitle = _str(node.get("description"))
     if subtitle and len(subtitle) > 240:
         subtitle = subtitle[:237].rstrip() + "…"

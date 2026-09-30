@@ -153,7 +153,13 @@ class ChangesPage:
     """One page of `drive.changes.list` results.
 
     `changed_file_ids` is the set of file IDs whose state changed (created,
-    modified, removed) since the input page token. `next_page_token` is the
+    modified, removed) since the input page token, PLUS the parent folder of
+    each one. The parents are what make a NEW file visible: a cached snapshot
+    tracks the folders it listed, never a file created after it was cached,
+    and Drive does not reliably report the parent folder itself as modified
+    when a child is added (docs/learnings/drive-changes-api-parent-folder-
+    blind-spot.md). A screenshot written into a new ``previews/`` folder after
+    the run finished was invisible until something else in the run changed. `next_page_token` is the
     token to use on the next `list_changes` call to fetch only what changed
     after this page; it is durable across calls and process restarts.
 
@@ -752,7 +758,10 @@ class GoogleDriveClient(DriveClient):
             while True:
                 kwargs: dict = {
                     "pageToken": token,
-                    "fields": "newStartPageToken,nextPageToken,changes(fileId,removed)",
+                    "fields": (
+                        "newStartPageToken,nextPageToken,"
+                        "changes(fileId,removed,file(parents))"
+                    ),
                     "supportsAllDrives": True,
                     "includeItemsFromAllDrives": True,
                     "pageSize": 1000,
@@ -765,6 +774,8 @@ class GoogleDriveClient(DriveClient):
                     fid = c.get("fileId")
                     if fid:
                         changed.add(fid)
+                    # A removed file carries no `file`; its parent is unknown.
+                    changed.update((c.get("file") or {}).get("parents") or [])
                 next_token = resp.get("nextPageToken")
                 if next_token:
                     token = next_token

@@ -211,7 +211,7 @@ export default function OppWorkbenchPage() {
         runs={snapshot.runs ?? []}
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
-        onRefresh={() => load()}
+        onRefresh={() => load({ force: true })}
         onRunDeleted={(deletedRunId) => {
           // The just-trashed run is gone from Drive. If the URL pins it
           // (either as ?run_id= or as a /runs/<id> path segment), the next

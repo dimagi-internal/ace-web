@@ -199,6 +199,16 @@ def invalidate(file_ids: Iterable[str]) -> None:
             _remove_set_entries(_idx_key(fid), keys_to_drop)
 
 
+def drop(*, workspace_id: str, slug: str, run_id: str | None) -> None:
+    """Forget one cached snapshot, so the next read rebuilds it from Drive.
+
+    The explicit refresh: the changes feed misses what it cannot attribute
+    to a tracked file, and a reader who knows a run moved (the Workbench's
+    Refresh, the preview capture's final check) must be able to say so.
+    """
+    cache.delete(_snap_key(workspace_id, slug, run_id))
+
+
 def clear_workspace(workspace_id: str) -> None:
     """Drop every cached snapshot/card for the workspace."""
     ws_key = _ws_key(workspace_id)

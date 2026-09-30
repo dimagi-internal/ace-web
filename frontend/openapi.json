@@ -170,6 +170,16 @@
               "title": "Run Id"
             },
             "required": false
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -177,7 +187,7 @@
             "description": "OK"
           }
         },
-        "description": "Return the full Workbench payload \u2014 opp + current_run with steps +\ndecisions + phases + pdd_body. Uses the legacy serializer which\nmatches the frontend's OppSnapshot shape (the v2 minimal\nOppSnapshotOut schema was a Phase 1 over-simplification).",
+        "description": "Return the full Workbench payload \u2014 opp + current_run with steps +\ndecisions + phases + pdd_body. Uses the legacy serializer which\nmatches the frontend's OppSnapshot shape (the v2 minimal\nOppSnapshotOut schema was a Phase 1 over-simplification).\n``refresh=true`` rebuilds it from Drive (the Workbench's Refresh).",
         "tags": [
           "opps"
         ],
@@ -594,6 +604,16 @@
               "type": "string"
             },
             "required": true
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -610,7 +630,7 @@
             }
           }
         },
-        "description": "``{run_id, outputs: [{id, phase, output_key, kind, title, url, file_id,\nreason, auth}], covered}``. Every output ace-web lists should be a file the\npage draws or have a screenshot; ``outputs`` is what isn't yet, and it is\nthe ACE plugin's ``output-preview-capture`` work list. ``output_key`` is the\nkey a ``_previews.yaml`` must name; ``auth`` which signed-in session opens\n``url``.",
+        "description": "``{run_id, outputs: [{id, phase, output_key, kind, title, url, file_id,\nreason, auth}], covered}``. ``refresh=true`` rebuilds the run from Drive\nfirst \u2014 what the capture skill asks after writing, so its report sees its\nown screenshots. Every output ace-web lists should be a file the\npage draws or have a screenshot; ``outputs`` is what isn't yet, and it is\nthe ACE plugin's ``output-preview-capture`` work list. ``output_key`` is the\nkey a ``_previews.yaml`` must name; ``auth`` which signed-in session opens\n``url``.",
         "tags": [
           "opps"
         ],
