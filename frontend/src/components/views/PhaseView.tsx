@@ -38,17 +38,14 @@ import {
   productAsOf,
   productsAtBeat,
   productsPhotographedAt,
-  documentTitle,
   revealIndexOf,
-  stepDocuments,
 } from "@/components/replay/cursor";
-import { FlowPanel } from "@/components/replay/FlowPanel";
+import { ReplayFlow } from "@/components/replay/FlowPanel";
 import { ReplayBar } from "@/components/replay/ReplayBar";
-import { itemKey, Spotlight } from "@/components/replay/Spotlight";
 import type { Replay } from "@/components/replay/useReplay";
 import { appStructureArtifact } from "@/components/viewers/ProductViewer";
 import { prefetchViews } from "@/components/viewers/viewCache";
-import { ViewerProvider, type ViewerTarget } from "@/components/viewers/ViewerContext";
+import { ViewerProvider } from "@/components/viewers/ViewerContext";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -411,7 +408,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
   );
   const products: readonly RunProduct[] = replayProducts ?? snapshot.current_run.products ?? [];
   const isRevealed = useCallback(
-    (p: ReplayProduct) => revealIndexOf(p, replay.total) <= replay.beat.index,
+    (p: RunProduct) => revealIndexOf(p as ReplayProduct, replay.total) <= replay.beat.index,
     [replay.total, replay.beat.index],
   );
   const beatProducts = useMemo(() => {
@@ -424,56 +421,13 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
     const ids = new Set(productsPhotographedAt(replay.timeline, replay.beat.index).map((p) => p.id));
     return replayProducts.filter((p) => ids.has(p.id));
   }, [replay.active, replay.timeline, replay.beat.index, replayProducts]);
-  const photographedIds = useMemo(
-    () => new Set(photographedProducts.map((p) => p.id)),
-    [photographedProducts],
-  );
   const justRevealed = useMemo(
     () => new Set([...beatProducts, ...photographedProducts].map((p) => p.id)),
     [beatProducts, photographedProducts],
   );
 
-  // The spotlight: pop up what this beat just built — its products, then any
-  // markdown the step wrote that isn't already one of them.
-  const productFileIds = useMemo(
-    () => new Set(products.map((p) => p.file_id).filter((id): id is string => !!id)),
-    [products],
-  );
-  const beatItems = useMemo<ViewerTarget[]>(() => {
-    const items: ViewerTarget[] = [...beatProducts, ...photographedProducts].map((p) => ({
-      type: "product",
-      product: p,
-    }));
-    const e = replay.beat.event;
-    if (replay.active && e?.kind === "step_end" && e.skill) {
-      const step = snapshot.current_run.steps.find((st) => st.skill_name === e.skill);
-      for (const a of stepDocuments(step, productFileIds)) {
-        items.push({
-          type: "file",
-          fileId: a.drive_file_id,
-          name: a.name || a.path,
-          title: documentTitle(a.name || a.path),
-          driveLink: a.drive_web_link,
-          skill: e.skill,
-        });
-      }
-    }
-    return items;
-  }, [
-    beatProducts,
-    photographedProducts,
-    replay.active,
-    replay.beat.event,
-    snapshot.current_run.steps,
-    productFileIds,
-  ]);
-  const [spotlight, setSpotlight] = useState<ViewerTarget[] | null>(null);
-  useEffect(() => {
-    setSpotlight(replay.spotlights && beatItems.length > 0 ? beatItems : null);
-  }, [beatItems, replay.spotlights]);
-
-  // Warm every product's view as soon as a replay starts, so each one pops up
-  // already loaded rather than spinning on Drive in front of an audience.
+  // Warm every product's view and screenshot as soon as a replay starts, so
+  // the rail's thumbnails and the viewer open without waiting on Drive.
   useEffect(() => {
     if (!replay.active || !replay.timeline || !workspaceSlug) return;
     const ids = new Set<string>();
@@ -483,9 +437,6 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
       const structure =
         p.kind === "commcare_app" ? appStructureArtifact(p, snapshot.current_run.steps) : null;
       if (structure) ids.add(structure.drive_file_id);
-    }
-    for (const st of snapshot.current_run.steps) {
-      for (const a of stepDocuments(st)) ids.add(a.drive_file_id);
     }
     const signal = { cancelled: false };
     void prefetchViews(
@@ -660,7 +611,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
             aria-label="Flow"
             className="w-[320px] shrink-0 border-l border-border bg-background"
           >
-            <FlowPanel
+            <ReplayFlow
               replay={replay}
               steps={snapshot.current_run.steps}
               phases={phases}
@@ -671,7 +622,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
           </aside>
         ) : (
           <aside
-            aria-label="Inputs and outputs"
+            aria-label="Flow"
             className="w-[320px] shrink-0 border-l border-border bg-background"
           >
             <PhaseRail
@@ -724,15 +675,6 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
             affectedDocs={affectedDocs}
           />
         )}
-      {spotlight && (
-        <Spotlight
-          key={spotlight.map(itemKey).join("|")}
-          items={spotlight}
-          replay={replay}
-          onClose={() => setSpotlight(null)}
-          photographed={photographedIds}
-        />
-      )}
     </div>
     </ViewerProvider>
   );

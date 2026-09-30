@@ -1,10 +1,9 @@
 import { useEffect, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, Sparkles, X, Zap } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, X } from "lucide-react";
 
 import { Button } from "canopy-ui/ui";
 import type { DemoEvent, DemoTimeline } from "@/api/replay";
 import { Glossed } from "@/components/glossary/Glossed";
-import { cn } from "@/lib/utils";
 
 import { stepFailed } from "./cursor";
 import { groupSpans } from "./phaseGroups";
@@ -20,9 +19,9 @@ import type { Replay } from "./useReplay";
  * and jump anywhere with a click.
  *
  * Keyboard-first, because whoever drives this is usually talking over it:
- * → next, ← back, space play/pause, R start over, H highlights only,
- * P product pop-ups on/off, Esc leave. Shortcuts stand down while a dialog
- * (a viewer, the spotlight) is open — its own keys win.
+ * → next, ← back, space play/pause, R start over, Esc leave. Shortcuts stand
+ * down while a dialog (a viewer) is open — its own keys win. What each step
+ * built appears in the right rail as the cursor reaches it.
  */
 export function ReplayBar({ replay }: { replay: Replay }) {
   const { timeline } = replay;
@@ -45,10 +44,6 @@ export function ReplayBar({ replay }: { replay: Replay }) {
         replay.prev();
       } else if (e.key.toLowerCase() === "r") {
         replay.restart();
-      } else if (e.key.toLowerCase() === "h") {
-        replay.toggleHighlights();
-      } else if (e.key.toLowerCase() === "p") {
-        replay.toggleSpotlights();
       } else if (e.key === "Escape") {
         replay.stop();
       }
@@ -132,23 +127,6 @@ export function ReplayBar({ replay }: { replay: Replay }) {
         <p className="min-w-0 flex-1 truncate text-sm text-foreground">
           <Describe event={replay.beat.event} />
         </p>
-
-        <div className="flex items-center gap-1">
-          <Toggle
-            on={replay.highlightsOnly}
-            onClick={replay.toggleHighlights}
-            icon={<Zap className="size-3.5" />}
-            label="Highlights"
-            title="Step only between phase starts and steps that built, failed or decided something (H)"
-          />
-          <Toggle
-            on={replay.spotlights}
-            onClick={replay.toggleSpotlights}
-            icon={<Sparkles className="size-3.5" />}
-            label="Pop-ups"
-            title="Also pop each output up full-screen as the step that made it finishes (P). Off by default — the right rail shows them."
-          />
-        </div>
 
         <Button size="sm" variant="ghost" onClick={replay.stop} title="Leave replay (Esc)">
           <X className="mr-1 size-3.5" />
@@ -301,38 +279,6 @@ function StepTrack({
       })}
     </div>
     </>
-  );
-}
-
-function Toggle({
-  on,
-  onClick,
-  icon,
-  label,
-  title,
-}: {
-  on: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  title: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      title={title}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors",
-        on
-          ? "border-primary/50 bg-primary/10 text-primary"
-          : "border-border text-muted-foreground hover:bg-accent",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 

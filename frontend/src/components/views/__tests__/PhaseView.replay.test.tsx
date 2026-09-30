@@ -132,9 +132,9 @@ function replayAt(index: number, over: Partial<Replay> = {}): Replay {
   return {
     active: true, loading: false, error: null, timeline: TIMELINE,
     beat: beatAtIndex(TIMELINE, index), reveal: index < 0 ? EMPTY_REVEAL : revealAt(TIMELINE, index),
-    total: TIMELINE.events.length, playing: false, highlightsOnly: false, spotlights: true,
+    total: TIMELINE.events.length, playing: false,
     start: noop, stop: noop, toggle: noop, next: noop, prev: noop, restart: noop, goTo: noop,
-    goToSkill: noop, toggleHighlights: noop, toggleSpotlights: noop, hold: noop,
+    goToSkill: noop,
     ...over,
   };
 }
@@ -168,14 +168,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PhaseView in replay", () => {
-  it("pops up what the beat just built, and counts it built in the flow", async () => {
+  it("shows what the beat just built on the card of the step that built it — no pop-up", () => {
     renderAt(replayAt(2));
-    const spotlight = screen.getByRole("dialog", { name: /Just built: Turmeric Market Survey/ });
-    expect(within(spotlight).getByText("Just built")).toBeInTheDocument();
-    expect(await within(spotlight).findByText("The PDD")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const flow = screen.getByRole("complementary", { name: "Flow" });
     expect(within(flow).getByText("Built so far · 1/2")).toBeInTheDocument();
-    // The PDD sits on the card of the step that built it.
     expect(within(flow).getByText("Built")).toBeInTheDocument();
     expect(within(flow).getByRole("button", { name: /Turmeric Market Survey/ })).toBeInTheDocument();
     // The app isn't built yet: nothing names it.
@@ -183,33 +180,23 @@ describe("PhaseView in replay", () => {
   });
 
   it("withholds an app's screenshots until the beat that took them", () => {
-    renderAt(replayAt(5, { spotlights: false }));
+    renderAt(replayAt(5));
     const flow = screen.getByRole("complementary", { name: "Flow" });
     expect(within(flow).getByRole("button", { name: /FLW Training/ })).toBeInTheDocument();
     // Built in Phase 3, not photographed until Phase 6.
     expect(within(flow).queryByRole("list", { name: /Screenshots of/ })).not.toBeInTheDocument();
   });
 
-  it("pops the app up again when Phase 6 photographs it", async () => {
+  it("shows the app under Photographed when Phase 6 photographs it", async () => {
     renderAt(replayAt(8));
-    const spotlight = screen.getByRole("dialog", { name: /Just photographed: Turmeric — FLW Training/ });
-    expect(within(spotlight).getByText("What it looks like")).toBeInTheDocument();
-    expect(await within(spotlight).findByAltText("Learn app home")).toBeInTheDocument();
-    // …and the capture step's card says what it photographed.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const flow = screen.getByRole("complementary", { name: "Flow" });
     expect(within(flow).getByText("Photographed")).toBeInTheDocument();
-  });
-
-  it("shows no spotlight on a beat that built nothing, or with pop-ups off", () => {
-    const { unmount } = renderAt(replayAt(1));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    unmount();
-    renderAt(replayAt(2, { spotlights: false }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect((await within(flow).findAllByAltText("Learn app home")).length).toBeGreaterThan(0);
   });
 
   it("grows a flow chain: the current step open with its inputs and outputs", () => {
-    renderAt(replayAt(2, { spotlights: false }));
+    renderAt(replayAt(2));
     const flow = screen.getByRole("complementary", { name: "Flow" });
     expect(within(flow).getByText("Inputs")).toBeInTheDocument();
     expect(within(flow).getByText("Outputs")).toBeInTheDocument();
@@ -220,7 +207,7 @@ describe("PhaseView in replay", () => {
   });
 
   it("folds earlier steps to one line once the replay moves on", () => {
-    renderAt(replayAt(5, { spotlights: false }));
+    renderAt(replayAt(5));
     const flow = screen.getByRole("complementary", { name: "Flow" });
     const earlier = within(flow).getByRole("button", { name: /^idea-to-pdd/ });
     expect(earlier).toHaveAttribute("aria-expanded", "false");
@@ -233,16 +220,8 @@ describe("PhaseView in replay", () => {
     );
   });
 
-  it("pops up the markdown a step wrote alongside what it built", () => {
-    renderAt(replayAt(2));
-    const spotlight = screen.getByRole("dialog", { name: /Just built/ });
-    // PDD product first, then the step's own idea-to-pdd.md as a second tab.
-    expect(within(spotlight).getByText("1 of 2", { exact: false })).toBeInTheDocument();
-    expect(within(spotlight).getByRole("button", { name: "Idea to PDD" })).toBeInTheDocument();
-  });
-
   it("lands a decision only once its skill has finished", () => {
-    const { container } = renderAt(replayAt(2, { spotlights: false }));
+    const { container } = renderAt(replayAt(2));
     // Phase tiles count overridden decisions only; check the data path via the
     // phase panel instead — idea-to-design is open (the cursor's phase).
     expect(within(container).getByText("Question d1?")).toBeInTheDocument();
@@ -253,47 +232,48 @@ describe("PhaseView in replay", () => {
 describe("PhaseView outside a replay", () => {
   const idle = () => replayAt(-1, { active: false, timeline: null });
 
-  it("lists everything the run built, by phase, when no phase is open", () => {
-    renderAt(idle());
-    const rail = screen.getByRole("complementary", { name: "Inputs and outputs" });
-    expect(within(rail).getByText("What this run built")).toBeInTheDocument();
-    // Glossary terms render as their own <abbr>, so match the card's full text.
-    expect(within(rail).getByRole("button", { name: /Turmeric — FLW Training/ })).toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "Flow" })).not.toBeInTheDocument();
+  it("shows the WHOLE run as a flow, not just the open phase", async () => {
+    renderAt(idle(), "/?phase=commcare-setup");
+    const flow = screen.getByRole("complementary", { name: "Flow" });
+    // Every phase, every step — the selected phase is marked, not isolated.
+    expect(within(flow).getByRole("button", { name: /Phase 1 ·/ })).toBeInTheDocument();
+    expect(within(flow).getByRole("button", { name: /Phase 3 ·/ })).toHaveAttribute("aria-current", "true");
+    expect(within(flow).getByRole("button", { name: /^idea-to-pdd/ })).toBeInTheDocument();
+    expect(within(flow).getByRole("button", { name: /^app-screenshot-capture/ })).toBeInTheDocument();
+    // Each output under the step that built it, screenshots included.
+    expect(within(flow).getByRole("button", { name: /Turmeric Market Survey/ })).toBeInTheDocument();
+    // The app shows twice: under the step that built it, and under the
+    // Phase 6 walk that photographed it.
+    expect(within(flow).getAllByRole("button", { name: /Turmeric — FLW Training/ })).toHaveLength(2);
+    expect((await within(flow).findAllByAltText("Learn app home")).length).toBeGreaterThan(0);
+    expect(within(flow).getByText("Photographed")).toBeInTheDocument();
   });
 
-  it("shows the open phase's outputs with their screenshots, then its steps", async () => {
+  it("picks a phase on the left when its heading is clicked in the flow", () => {
     renderAt(idle(), "/?phase=commcare-setup");
-    const rail = screen.getByRole("complementary", { name: "Inputs and outputs" });
-    const built = within(rail).getByRole("region", { name: "Built in this phase" });
-    expect(within(built).getByRole("button", { name: /Turmeric — FLW Training/ })).toBeInTheDocument();
-    // The Phase 6 screenshot lives with the Phase 3 app.
-    expect(await within(built).findByAltText("Learn app home")).toBeInTheDocument();
-    // Not another phase's output.
-    expect(within(built).queryByRole("button", { name: /Turmeric Market Survey/ })).not.toBeInTheDocument();
-    expect(await within(rail).findByRole("button", { name: /pdd-to-learn-app/ })).toBeInTheDocument();
+    const flow = screen.getByRole("complementary", { name: "Flow" });
+    fireEvent.click(within(flow).getByRole("button", { name: /Phase 1 ·/ }));
+    expect(within(flow).getByRole("button", { name: /Phase 1 ·/ })).toHaveAttribute("aria-current", "true");
   });
 
-  it("jumps from an input to the phase and step that made it", async () => {
+  it("jumps from an input to the step that made it", async () => {
     renderAt(idle(), "/?phase=commcare-setup");
-    const rail = screen.getByRole("complementary", { name: "Inputs and outputs" });
-    fireEvent.click(await within(rail).findByRole("button", { name: /pdd-to-learn-app/ }));
-    fireEvent.click(within(rail).getByRole("button", { name: /Show where it was made/ }));
+    const flow = screen.getByRole("complementary", { name: "Flow" });
+    fireEvent.click(await within(flow).findByRole("button", { name: /^pdd-to-learn-app/ }));
+    fireEvent.click(await within(flow).findByRole("button", { name: /Show where it was made/ }));
     await waitFor(() =>
-      expect(within(rail).getByRole("button", { name: /^idea-to-pdd/ })).toHaveAttribute(
+      expect(within(flow).getByRole("button", { name: /^idea-to-pdd/ })).toHaveAttribute(
         "aria-expanded",
         "true",
       ),
     );
-    expect(within(rail).getByText(/Phase 1 ·/)).toBeInTheDocument();
   });
 
-  it("still works when the flow can't be loaded", async () => {
+  it("still shows what was built when the flow can't be loaded", async () => {
     vi.mocked(fetchRunFlow).mockRejectedValue(new Error("500"));
-    renderAt(idle(), "/?phase=commcare-setup");
-    expect(
-      await screen.findByText("What each step reads and writes isn't available for this run."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Built in this phase" })).toBeInTheDocument();
+    renderAt(idle());
+    const flow = screen.getByRole("complementary", { name: "Flow" });
+    expect(await within(flow).findByText("inputs & outputs unavailable")).toBeInTheDocument();
+    expect(within(flow).getAllByRole("button", { name: /Turmeric — FLW Training/ }).length).toBeGreaterThan(0);
   });
 });
