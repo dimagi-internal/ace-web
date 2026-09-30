@@ -238,8 +238,15 @@ account, and HQ sign-in then fails for them.
   workspace's default**. A run already in the target is a 409 — unless its
   last clone record is `error`, or `copying` with no progress for 10 minutes
   (its worker died): then the partial run is trashed and the clone restarts.
+- **Drive links:** after copying, the clone rewrites every source Drive id in
+  the copied `run_state.yaml` and `decisions.yaml` to its copy (whole-id match,
+  one pass), and gives each copy its original's anyone-with-link role —
+  `files.copy` carries neither. Without it, the first Spark clone's page opened
+  the SOURCE workspace's Docs for all eight documents (99 ids, 125
+  occurrences), and 26 copies lost the link sharing their originals had.
 - **Products:** the copied run's `products` blocks still point at the source
-  tenancy's assets until the ACE command rewrites them system by system.
+  tenancy's assets (HQ apps, Connect, Labs, OCS) until the ACE command rewrites
+  them system by system.
 - **Record:** a `RunClone` row (source, target, opp, run, status, files,
   error, who) — in ace-web's database, NOT the source run's `run_state.yaml`,
   so the source is never written to. `GET …/runs/{run}/clones` lists them.
