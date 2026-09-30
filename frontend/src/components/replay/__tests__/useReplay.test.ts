@@ -143,10 +143,10 @@ describe("useReplay — highlights and holding", () => {
     expect(result.current.beat.index).toBe(2);
   });
 
-  it("pop-ups are on by default and can be switched off", async () => {
+  it("pop-ups start off and can be switched on", async () => {
     const { result } = await started();
-    expect(result.current.spotlights).toBe(true);
-    act(() => result.current.toggleSpotlights());
     expect(result.current.spotlights).toBe(false);
+    act(() => result.current.toggleSpotlights());
+    expect(result.current.spotlights).toBe(true);
   });
 });

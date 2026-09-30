@@ -551,10 +551,11 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   plugin manifest's `producedBy`/`consumedBy` (the declared flow, not a trace);
   no phase selected = everything the run built, by phase. The old top strip is
   gone. In replay each product carries `reveal_seq` (its producer's step_end,
-  else its phase's last) and pops up in a **Spotlight** on that beat (along
-  with any `.md` the finishing step wrote that isn't already a product), and
-  the rail becomes the **Flow** chain — a card per reached step, with what it
-  built. **Output previews** (screenshots): a preview lives with the phase
+  else its phase's last), and the rail becomes the **Flow** chain — a card
+  per reached step with what it built (kept on screen when the card folds).
+  The full-screen **Spotlight** pop-up per product (plus any `.md` the step
+  wrote) is OFF by default since the rail shows outputs — `P` / the Pop-ups
+  toggle turns it on for a demo. **Output previews** (screenshots): a preview lives with the phase
   that BUILT the output, whoever took it —
   `<N>-<phase>/previews/<output-slug>/_previews.yaml` + PNGs (Phase 6 writes
   the app walk into `3-commcare/`). `apps/opps/output_previews.py` reads them
