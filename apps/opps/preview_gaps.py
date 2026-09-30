@@ -29,12 +29,15 @@ _FILE_KINDS = frozenset({"document", "deck", "sheet", "link"})
 
 
 def auth_for(url: str | None) -> str:
-    """Which session opens ``url``: connect | labs | hq | ocs | google | public."""
-    host = (urlparse(url or "").hostname or "").lower()
+    """Which session opens ``url``: connect | labs | canopy | hq | ocs |
+    google | public. canopy is served under the labs host but signs in on
+    its own — a labs session is sent to Google sign-in there."""
+    parsed = urlparse(url or "")
+    host = (parsed.hostname or "").lower()
     if host == "connect.dimagi.com":
         return "connect"
     if host == "labs.connect.dimagi.com":
-        return "labs"
+        return "canopy" if (parsed.path or "").startswith("/canopy/") else "labs"
     if host.endswith("commcarehq.org"):
         return "hq"
     if host.endswith("openchatstudio.com"):
@@ -98,6 +101,9 @@ def _gap(product: dict, reason: str) -> dict[str, Any]:
         "kind": product.get("kind"),
         "title": product.get("title"),
         "url": url,
+        # The page anyone can open, when there is one (a chatbot's anonymous
+        # chat): what a screenshot should show, rather than an admin page.
+        "public_url": product.get("public_url"),
         "file_id": product.get("file_id"),
         "reason": reason,
         "auth": "google" if reason == "not-viewable-file" else auth_for(url),

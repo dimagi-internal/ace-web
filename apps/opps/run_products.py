@@ -89,15 +89,16 @@ def build_products(
     Each item::
 
         {id, phase, key, aliases, kind, title, subtitle, url, file_id, facts,
-         producer, chatbot}
+         producer, chatbot, public_url}
 
     ``key`` is the dotted path under ``products`` (list indexes included);
     ``aliases`` the keys of later entries that were the same thing (see
     de-duplication below) — a preview index may name either;
     ``producer`` the skill that wrote it per the plugin, or ``None``;
     ``chatbot`` is ``{public_id, embed_key}`` for an OCS bot that can be
-    embedded, else ``None``. Items are de-duplicated by Drive file id, then
-    by URL, first seen wins.
+    embedded, else ``None``; ``public_url`` the page anyone can open without
+    signing in (a chatbot's chat, a solicitation), else ``None``. Items are
+    de-duplicated by Drive file id, then by URL, first seen wins.
     """
     if not isinstance(phase_products, dict):
         return []
@@ -177,6 +178,7 @@ def _item(
     file_id = _str(node.get("file_id")) or drive_file_id(url)
     facts: list[dict] = []
     chatbot = None
+    public_url: str | None = None
 
     if kind == "commcare_app":
         app_domain = _str(node.get("domain")) or _str((parent or {}).get("domain")) or domain
@@ -189,16 +191,24 @@ def _item(
         file_id = None
         _fact(facts, "Build", node.get("build_status"))
         _fact(facts, "Project space", app_domain)
+    elif kind == "connect_program":
+        url = _program_list_url(url)
     elif kind == "connect_opportunity":
         _fact(facts, "Starts", node.get("start_date"))
         _fact(facts, "Ends", node.get("end_date"))
     elif kind == "chatbot":
         url = node.get("admin_url") if _is_http(node.get("admin_url")) else url
+        public_url = _chatbot_public_url(node)
         _fact(facts, "Team", node.get("team_slug"))
         _fact(facts, "Published version", node.get("published_version"))
         if node.get("public_id") and node.get("embed_key"):
             chatbot = {"public_id": str(node["public_id"]), "embed_key": str(node["embed_key"])}
     elif kind == "solicitation":
+        url = _with_labs_program(url, node.get("labs_program_id"))
+        public_url = _with_labs_program(
+            node.get("public_url") if _is_http(node.get("public_url")) else url,
+            node.get("labs_program_id"),
+        )
         _fact(facts, "Deadline", node.get("deadline"))
         _fact(facts, "Status", node.get("status"))
 
@@ -232,6 +242,7 @@ def _item(
         "facts": facts,
         "producer": _producer(phase, names),
         "chatbot": chatbot,
+        "public_url": public_url,
     }
 
 
@@ -278,6 +289,35 @@ def _kind(last: str, parent_name: str, node: dict) -> str:
         # says otherwise (docs/learnings/drive-prose-export.md).
         return "document"
     return "link"
+
+
+def _program_list_url(url: str | None) -> str | None:
+    """Connect has no program detail page: ``/a/<org>/program/<uuid>/`` is a
+    404, so a program links to its org's program list, where it is a card."""
+    if not url:
+        return url
+    return re.sub(r"(/a/[^/]+/program/)[^/?#]+/?$", r"\1", url)
+
+
+def _with_labs_program(url: str | None, labs_program_id: Any) -> str | None:
+    """A labs solicitation page needs its program as context — opened bare it
+    falls back to the viewer's remembered program and answers "Solicitation
+    not found"."""
+    if not url or labs_program_id in (None, "") or "program_id=" in url:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}program_id={labs_program_id}"
+
+
+def _chatbot_public_url(node: dict) -> str | None:
+    """The anonymous chat page: recorded as ``public_url`` by newer runs, else
+    built from ``team_slug`` + ``public_id`` the way those records spell it."""
+    if _is_http(node.get("public_url")):
+        return str(node["public_url"])
+    team, public_id = _str(node.get("team_slug")), _str(node.get("public_id"))
+    if team and public_id:
+        return f"https://www.openchatstudio.com/a/{team}/chatbots/{public_id}/start/"
+    return None
 
 
 def _default_title(kind: str, last: str) -> str:
