@@ -9,8 +9,8 @@ import { useWorkspace } from "../hooks/useWorkspace";
  * to `/welcome`.
  *
  * `subPath` may include a `:slug` or `:canopyId` placeholder which is
- * filled from the current `useParams` (used by `/opps/:slug`,
- * `/chat/:slug`, and `/chat/c/:canopyId`).
+ * filled from the current `useParams` (used by `/chat/:slug` and
+ * `/chat/c/:canopyId`). Never `/opps/:slug` — see UnscopedOppLinkPage.
  */
 export function NoWorkspaceRedirect({ subPath }: { subPath: string }) {
   const { all, loading } = useWorkspace();

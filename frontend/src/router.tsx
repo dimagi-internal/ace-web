@@ -19,6 +19,7 @@ import { SessionStructurePage } from "./pages/SessionStructurePage";
 import SessionsPage from "./pages/SessionsPage";
 import SettingsPage from "./pages/SettingsPage";
 import SystemPage from "./pages/SystemPage";
+import UnscopedOppLinkPage from "./pages/UnscopedOppLinkPage";
 import VideoExplorerPage from "./pages/VideoExplorerPage";
 import VideosListPage from "./pages/VideosListPage";
 import WelcomePage from "./pages/WelcomePage";
@@ -96,10 +97,12 @@ export const router = createBrowserRouter(
 
         // Legacy redirects: bare /opps, /sessions, /chat — resolve to the
         // user's first workspace (or /welcome if none). Deep links with
-        // a slug substitute the slug into the redirect.
+        // a slug substitute the slug into the redirect. NOT /opps/:slug:
+        // an opp's workspace can't be guessed (two workspaces can hold the
+        // same slug), so that link says so instead of picking one.
         { index: true, element: <NoWorkspaceRedirect subPath="opps" /> },
         { path: "opps", element: <NoWorkspaceRedirect subPath="opps" /> },
-        { path: "opps/:slug", element: <NoWorkspaceRedirect subPath="opps/:slug" /> },
+        { path: "opps/:slug", element: <UnscopedOppLinkPage /> },
         { path: "sessions", element: <NoWorkspaceRedirect subPath="sessions" /> },
         { path: "chat", element: <NoWorkspaceRedirect subPath="chat" /> },
         { path: "chat/c/:canopyId", element: <NoWorkspaceRedirect subPath="chat/c/:canopyId" /> },
