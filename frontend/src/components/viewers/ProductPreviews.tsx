@@ -45,18 +45,21 @@ export function ProductPreviews({ previews, of, compact = false }: Props) {
     <ul
       aria-label={`Screenshots of ${of}`}
       className={cn(
-        compact ? "flex items-center gap-1.5" : "grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3",
+        // Every frame at one height, each at its own width: a phone screen
+        // stays narrow and a landscape dashboard gets the room it needs. A
+        // fixed grid cell sized for phones drew a dashboard as a sliver.
+        compact ? "flex items-center gap-1.5" : "flex flex-wrap items-start gap-3",
       )}
     >
       {shown.map((p) => (
-        <li key={p.file_id} className={compact ? "shrink-0" : "flex flex-col gap-1"}>
+        <li key={p.file_id} className={compact ? "shrink-0" : "flex max-w-full flex-col gap-1"}>
           <button
             type="button"
             onClick={() => open(p)}
             title={p.caption ?? p.name}
             className={cn(
               "block overflow-hidden rounded border border-border bg-muted/30 transition-colors hover:border-primary/60",
-              compact ? "h-14" : "flex h-64 w-full items-center justify-center",
+              compact ? "h-14" : "h-72",
             )}
           >
             <Thumb
@@ -66,7 +69,11 @@ export function ProductPreviews({ previews, of, compact = false }: Props) {
             />
           </button>
           {!compact && p.caption && (
-            <span className="line-clamp-3 text-[11px] leading-snug text-muted-foreground">{p.caption}</span>
+            // `w-0 min-w-full`: the caption wraps to the IMAGE's width rather
+            // than widening the item to fit its own text.
+            <span className="line-clamp-3 w-0 min-w-full text-[11px] leading-snug text-muted-foreground">
+              {p.caption}
+            </span>
           )}
         </li>
       ))}
@@ -106,12 +113,18 @@ function Thumb({ url, alt, compact }: { url: string; alt: string; compact: boole
       </span>
     );
   }
-  if (!src) return <span className="block h-full w-9 animate-pulse bg-muted/60" aria-hidden />;
+  if (!src) {
+    return (
+      <span className={cn("block h-full animate-pulse bg-muted/60", compact ? "w-9" : "w-40")} aria-hidden />
+    );
+  }
   return (
     <img
       src={src}
       alt={alt}
-      className={compact ? "h-full w-auto max-w-24 object-cover object-top" : "max-h-full max-w-full object-contain"}
+      className={
+        compact ? "h-full w-auto max-w-24 object-cover object-top" : "h-full w-auto max-w-none"
+      }
     />
   );
 }
