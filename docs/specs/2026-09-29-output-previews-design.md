@@ -120,3 +120,75 @@ moving the PNGs does not affect them. `drive_path` in the manifest changes.
   outputs.
 * In replay: the chain as before; each step card also lists the outputs it
   produced, and previews appear at `captured_by`'s beat.
+
+## Addendum (2026-09-30): every output is a doc or has screenshots
+
+**Rule.** Every output ace-web lists is either a file the in-page viewer draws
+(a Doc, deck, sheet, PDF, image, video) or has one or more good screenshots.
+Before this, only the apps (Phase 6's emulator walk) and — best effort — the
+labs dashboards (Phase 7's render) had any. The Connect program and
+opportunity, the chatbot, the solicitation, the demo-walkthrough package, the
+labs reports and any Drive file the viewer cannot draw had nothing.
+
+### ace-web: the gap list is the source of truth
+
+`GET /api/w/{ws}/opps/{slug}/runs/{run_id}/preview-gaps` →
+
+```json
+{
+  "run_id": "20260908-1544",
+  "outputs": [
+    {
+      "id": "connect-setup:connect.opportunity",
+      "phase": "connect-setup",
+      "output_key": "connect.opportunity",
+      "kind": "connect_opportunity",
+      "title": "…",
+      "url": "https://connect.dimagi.com/a/…/opportunity/…/",
+      "file_id": null,
+      "reason": "no-preview",
+      "auth": "connect"
+    }
+  ],
+  "covered": 14
+}
+```
+
+* An output is a **gap** unless it is an in-page doc (a Drive file whose MIME
+  the viewer draws) or already has ≥1 preview. `reason` is `no-preview`, or
+  `not-viewable-file` for a Drive file the viewer cannot draw.
+* `output_key` is exactly the key ace-web matches an index on, so a writer
+  never re-derives ace-web's product walk.
+* `auth` says which signed-in session can open `url`: `connect`
+  (connect.dimagi.com), `labs` (labs.connect.dimagi.com, including canopy's
+  `/canopy/` pages), `hq` (commcarehq.org), `ocs` (openchatstudio.com),
+  `google` (a Drive file — use the Drive thumbnail/export, not a browser), or
+  `public`.
+* Empty `outputs` ⇒ the run meets the rule.
+
+### Plugin: one capture skill, run at every phase end
+
+A utility skill (not a run_state step — like `decisions-render`) that reads the
+gap list for the current run, filtered to one phase or to all, and for each gap
+opens `url` with the session `auth` names, captures one or more screenshots,
+**looks at each one** and rejects a login page, an error, a 404 or a blank
+page, then writes `<phase-folder>/previews/<slug of output_key>/` + its index
+(`captured_by: output-preview-capture`, `captured_phase: <the phase it ran in>`).
+Called at the end of Phases 3–8 and once at the end of the run to catch
+anything left. What makes a GOOD screenshot per kind:
+
+| Kind | Screenshot(s) |
+|---|---|
+| Connect program / opportunity | its page on Connect, top of page; the opportunity also its payment-units / verification section |
+| Chatbot | the public chat with one real question answered (from the Phase 5 test suite), not the admin page |
+| Solicitation | the public solicitation page |
+| Labs dashboard / report | the rendered report with data loaded (not the spinner) |
+| Demo-walkthrough package | the canopy package page (hero + narrative) |
+| CommCare app (fallback when the emulator walk left none) | the HQ app's form summary |
+| Drive file the viewer cannot draw | Drive's thumbnail, or a rendered first page |
+
+### Replay
+
+`captured_by` is a utility skill with no step of its own, so ace-web reveals a
+preview at its capturer's step if the run has one, else at the end of
+`captured_phase` — never before the output itself.

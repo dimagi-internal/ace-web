@@ -263,6 +263,14 @@ def _kind(last: str, parent_name: str, node: dict) -> str:
             return "document"
     if node.get("par_url") or node.get("run_url") or "dashboard" in lowered:
         return "dashboard"
+    if host == "labs.connect.dimagi.com" and "/labs/workflow/" in path:
+        # A labs report recorded under a plain ``url`` (the cascade's
+        # ``opp_reports``, ``programme_report``) is still a dashboard.
+        return "dashboard"
+    if "/ddd/" in path:
+        # canopy's demo-driven-development package: the narrated walkthrough
+        # video + deck of the Phase 7 demo.
+        return "walkthrough"
     if "deck" in lowered or "slides" in lowered:
         return "deck"
     if node.get("file_id") or host == "drive.google.com":
@@ -281,6 +289,8 @@ def _default_title(kind: str, last: str) -> str:
         return "Connect program"
     if kind == "chatbot":
         return "Support chatbot"
+    if kind == "walkthrough":
+        return "Demo walkthrough"
     return humanize(last) or "Product"
 
 

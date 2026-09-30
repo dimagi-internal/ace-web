@@ -566,7 +566,16 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   shows the Learn app in Phase 3 and its screenshots only at Phase 6 ("Just
   photographed"). `run_products` records de-duplicated keys as `aliases` so an
   index can name either (`synthetic.workflows.<k>` vs
-  `synthetic.source.dashboards.N`). Snapshot cache v12. Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
+  `synthetic.source.dashboards.N`). Snapshot cache v12. **Every output is a
+  doc the page shows or has screenshots** (spec addendum):
+  `GET …/runs/{run}/preview-gaps` (`apps/opps/preview_gaps.py`) lists the
+  outputs that are neither — with the exact `output_key` an index must name
+  and the `auth` (connect | labs | hq | ocs | google | public) that opens the
+  URL — and is the ACE plugin's `output-preview-capture` work list, run at
+  every phase end. "Shows" is `artifact_view.is_viewable`, the same
+  classifier `render` dispatches on. A utility capturer has no step, so its
+  frames reveal at the end of `captured_phase`. Cards say "no screenshot yet"
+  for a gap. Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
   any run file in-page via `GET …/artifacts/{id}/view` — the id must belong to
   the run (step artifact, product file id or preview, or run-folder child); Slides come
   back as PDF (drawn slide-by-slide with pdf.js — nginx serves its `.mjs`

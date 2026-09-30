@@ -563,6 +563,64 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/preview-gaps": {
+      "get": {
+        "operationId": "apps_opps_api_get_run_preview_gaps",
+        "summary": "Outputs of a run with neither an in-page view nor a screenshot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "``{run_id, outputs: [{id, phase, output_key, kind, title, url, file_id,\nreason, auth}], covered}``. Every output ace-web lists should be a file the\npage draws or have a screenshot; ``outputs`` is what isn't yet, and it is\nthe ACE plugin's ``output-preview-capture`` work list. ``output_key`` is the\nkey a ``_previews.yaml`` must name; ``auth`` which signed-in session opens\n``url``.",
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
       "get": {
         "operationId": "apps_opps_api_get_step",
