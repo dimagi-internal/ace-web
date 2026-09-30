@@ -37,6 +37,8 @@ export interface Replay {
   /** Jump to a beat. Pauses, so whoever is driving holds where they land. */
   goTo: (index: number) => void;
   goToSkill: (skill: string) => void;
+  /** While held, auto-play waits — a pop-up holds the beat it is showing. */
+  hold: (held: boolean) => void;
 }
 
 /**
@@ -60,6 +62,7 @@ export function useReplay(
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const warmed = useRef<string | null>(null);
+  const held = useRef(false);
 
   const total = timeline?.events.length ?? 0;
 
@@ -129,10 +132,12 @@ export function useReplay(
     });
   }, [total, index]);
 
-  // Auto-play: one beat per tick, stopping on the last.
+  // Auto-play: one beat per tick, stopping on the last, and waiting while a
+  // pop-up holds the current beat.
   useEffect(() => {
     if (!playing || total === 0) return;
     const id = window.setInterval(() => {
+      if (held.current) return;
       setIndex((i) => {
         if (i >= total - 1) {
           setPlaying(false);
@@ -166,6 +171,10 @@ export function useReplay(
     };
   }, [active, timeline, workspaceSlug, oppSlug, runId]);
 
+  const hold = useCallback((h: boolean) => {
+    held.current = h;
+  }, []);
+
   const beat = useMemo(
     () => (timeline ? beatAtIndex(timeline, index) : NO_BEAT),
     [timeline, index],
@@ -192,5 +201,6 @@ export function useReplay(
     restart,
     goTo,
     goToSkill,
+    hold,
   };
 }

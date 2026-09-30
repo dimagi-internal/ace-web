@@ -556,7 +556,14 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   In a replay (`ReplayFlow`) the same chain grows beat by beat; each product
   carries `reveal_seq` (its producer's step_end, else its phase's last). ONE
   replay mode: the Highlights / Pop-ups toggles and the full-screen Spotlight
-  were removed (2026-09-30) — outputs appear in the rail, nowhere else.
+  were removed (2026-09-30); the only pop-up is for a FEATURED output
+  (`featured` in `run_products` — what the public summary puts in front of
+  a reader: PDD, work order, build memo, apps, Connect opportunity, training
+  pack, chatbot, dashboards, walkthroughs, solicitation) as it is built, and
+  the apps again when Phase 6 photographs them; everything else stays in the
+  rail. A FORK's screenshots are read from its `forked_from` lineage (the
+  forker copies no screenshots/), and an app's emulator frames always beat
+  the capture skill's HQ form-summary fallback. Snapshot cache v14.
   **Output previews** (screenshots): a preview lives with the phase
   that BUILT the output, whoever took it —
   `<N>-<phase>/previews/<output-slug>/_previews.yaml` + PNGs (Phase 6 writes
@@ -570,7 +577,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `output-preview-capture` utility (every phase end + run end) is a picture of
   the output, so where it was captured never delays it. `run_products` records de-duplicated keys as `aliases` so an
   index can name either (`synthetic.workflows.<k>` vs
-  `synthetic.source.dashboards.N`). Snapshot cache v12. **Every output is a
+  `synthetic.source.dashboards.N`). **Every output is a
   doc the page shows or has screenshots** (spec addendum):
   `GET …/runs/{run}/preview-gaps` (`apps/opps/preview_gaps.py`) lists the
   outputs that are neither — with the exact `output_key` an index must name

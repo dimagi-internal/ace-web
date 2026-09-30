@@ -372,6 +372,9 @@ export interface RunProduct {
   /** The page anyone can open without signing in (a chatbot's chat, a
    *  solicitation), when there is one. */
   public_url?: string | null;
+  /** One of the things the public run summary puts in front of a reader —
+   *  the replay pops these up as they're built. */
+  featured?: boolean;
   /** Keys of later `products` entries that were the same thing (de-duplicated). */
   aliases?: string[];
   /** Screenshots of it, in display order — `apps/opps/output_previews.py`.

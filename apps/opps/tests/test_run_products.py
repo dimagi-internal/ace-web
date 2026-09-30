@@ -264,3 +264,17 @@ def test_per_partner_reports_are_titled_by_partner():
         ]},
     }}})
     assert [i["title"] for i in items] == ["Opp reports — Partner A", "Opp reports — Partner B"]
+
+
+def test_featured_follows_the_public_summarys_sections():
+    """The replay pops up what the partner-facing summary highlights, and
+    nothing else — a step's internal reports and the Connect program (which
+    the summary omits) sit in the rail only."""
+    items = _by_key(run_products.build_products(FULL, phase_order=ORDER))
+    featured = {k for k, i in items.items() if i["featured"]}
+    assert featured == {
+        "pdd", "work_order", "apps.learn", "apps.deliver", "connect.opportunity",
+        "connect.build_memo", "ocs_chatbot", "training.deck", "training.docs.llo_guide",
+        "synthetic.source.dashboards.0", "synthetic.workflows.verification",
+    }
+    assert items["connect.program"]["featured"] is False

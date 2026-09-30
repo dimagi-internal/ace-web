@@ -45,7 +45,8 @@ import { ReplayBar } from "@/components/replay/ReplayBar";
 import type { Replay } from "@/components/replay/useReplay";
 import { appStructureArtifact } from "@/components/viewers/ProductViewer";
 import { prefetchViews } from "@/components/viewers/viewCache";
-import { ViewerProvider } from "@/components/viewers/ViewerContext";
+import { ViewerProvider, type ViewerTarget } from "@/components/viewers/ViewerContext";
+import { itemKey, Spotlight } from "@/components/replay/Spotlight";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -426,6 +427,26 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
     [beatProducts, photographedProducts],
   );
 
+  // The pop-up: only what the public run summary features (the PDD, the
+  // apps, the Connect opportunity, the training pack, the chatbot, the demo
+  // dashboards…), as it is built — and the apps again when Phase 6
+  // photographs them. A step's internal reports stay in the rail.
+  const photographedIds = useMemo(
+    () => new Set(photographedProducts.map((p) => p.id)),
+    [photographedProducts],
+  );
+  const spotlightItems = useMemo<ViewerTarget[]>(
+    () =>
+      [...beatProducts, ...photographedProducts]
+        .filter((p) => p.featured)
+        .map((p) => ({ type: "product", product: p })),
+    [beatProducts, photographedProducts],
+  );
+  const [spotlight, setSpotlight] = useState<ViewerTarget[] | null>(null);
+  useEffect(() => {
+    setSpotlight(spotlightItems.length > 0 ? spotlightItems : null);
+  }, [spotlightItems]);
+
   // Warm every product's view and screenshot as soon as a replay starts, so
   // the rail's thumbnails and the viewer open without waiting on Drive.
   useEffect(() => {
@@ -675,6 +696,15 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
             affectedDocs={affectedDocs}
           />
         )}
+      {spotlight && (
+        <Spotlight
+          key={spotlight.map(itemKey).join("|")}
+          items={spotlight}
+          replay={replay}
+          onClose={() => setSpotlight(null)}
+          photographed={photographedIds}
+        />
+      )}
     </div>
     </ViewerProvider>
   );
