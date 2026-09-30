@@ -623,20 +623,24 @@ def _load_verdicts(
 
     When multiple verdicts exist for one skill (e.g. quick + deep +
     monitor for ocs-chatbot-eval), keep the latest by ``evaluated_at``,
-    with deep > monitor > shallow > quick as tiebreakers.
+    with deep > monitor > full (no suffix) > shallow > quick as tiebreakers.
 
     ``registered_skills`` is the set of skill names that exist in the
     workbench (the lifecycle rows). Used to disambiguate eval-suffix vs
     self-eval producers; pass ``None`` to skip that check (every parsed
     producer is taken at face value, matching the legacy behaviour).
     """
-    ranking = {"-deep": 4, "-monitor": 3, "-shallow": 2, "-quick": 1}
+    # The un-suffixed verdict is a skill's FULL evaluation; `-shallow` and
+    # `-quick` are one-dimension smoke passes beside it. Ranking the plain
+    # file 0 let the smoke win: app-screenshot-capture's 4-dimension 9.2 was
+    # hidden behind its shallow ux_smoke on spark-facilitator (ace#2563).
+    ranking = {"-deep": 5, "-monitor": 4, "-shallow": 2, "-quick": 1}
 
     def _variant_rank(path: str) -> int:
         for suffix, score in ranking.items():
             if suffix in path:
                 return score
-        return 0
+        return 3
 
     candidates: dict[str, tuple[int, str, JudgeVerdict]] = {}
     for f in opp_files:
