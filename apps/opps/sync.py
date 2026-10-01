@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 import yaml
 from django.conf import settings
 
+from apps.opps.attribution import creator_label
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.parsers import (
     Decision,
@@ -930,8 +931,7 @@ def load_opp_card(
     )
     created_by = (
         opp_yaml_data.get("created_by")
-        or state_data.get("created_by")
-        or state_data.get("initiated_by")
+        or creator_label(state_data)
     )
 
     opp_manifest = OppManifest(

@@ -31,6 +31,55 @@ class DispatchError(Exception):
         super().__init__(detail)
 
 
+class RunActorUnresolvable(Exception):
+    """canopy resolves the run's owner to a CONTACT, which canopy confines to
+    ask-only — a run started for them would be accepted and then never execute.
+
+    Observed: spark-facilitator/20261001-2208 (canopy turn 2727e227). ace@ was
+    resolved as a contact, the ACE session refused to run, ace-web still
+    answered 202, and the run sat at Phase 3 `pending` forever.
+    """
+
+    def __init__(self, email: str):
+        self.email = email
+        super().__init__(
+            f"canopy resolves {email} to a contact, not a user; canopy confines "
+            "a contact to ask-only, so a run started for them would never "
+            "execute. Give that identity a canopy user account (or start the "
+            "run as a person who has one)."
+        )
+
+
+class RunActorUnverified(Exception):
+    """canopy could not be asked who the run's owner is, so it is unknown
+    whether the run could execute."""
+
+    def __init__(self, email: str, detail: str):
+        self.email, self.detail = email, detail
+        super().__init__(f"could not resolve {email} in canopy: {detail}")
+
+
+def preflight_run_actor(email: str) -> None:
+    """Refuse BEFORE minting anything when a run for ``email`` cannot execute.
+
+    For RUN-STARTING actions only (seeded-run). Ordinary workbench chat for a
+    contact — an external reviewer asking questions — is a different path and
+    is deliberately not gated: ask-only is exactly what a contact's chat is.
+
+    No-op when run execution is off (the legacy subprocess path does not go
+    through canopy). Raises ``RunActorUnresolvable`` for a contact and
+    ``RunActorUnverified`` when canopy cannot be reached.
+    """
+    if not enabled():
+        return
+    try:
+        principal = client.act_as(email)
+    except client.CanopyError as exc:
+        raise RunActorUnverified(email, f"{exc.status}: {exc.detail}") from exc
+    if principal.is_contact:
+        raise RunActorUnresolvable(email)
+
+
 def enabled() -> bool:
     return bool(
         settings.CANOPY_RUN_EXECUTION
@@ -63,6 +112,10 @@ def _run_metadata(session) -> dict:
         meta["opp_run_id"] = session.opp_run_id
     if session.opp_step_skill:
         meta["opp_step_skill"] = session.opp_step_skill
+    if getattr(session, "requested_by", ""):
+        # Who ASKED for the run (attribution) — the owner, which canopy acts
+        # as, may be an agent identity carrying a human's request.
+        meta["requested_by"] = session.requested_by
     return meta
 
 

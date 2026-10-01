@@ -6978,6 +6978,18 @@
               }
             ],
             "title": "Feedback"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
           }
         },
         "title": "OppForkIn",
@@ -7144,6 +7156,18 @@
             "default": true,
             "title": "Skip Evals",
             "type": "boolean"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
           }
         },
         "required": [

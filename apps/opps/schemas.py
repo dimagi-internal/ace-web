@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Annotated, Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, EmailStr, Field, model_validator
 
 from apps.common.schemas import StrictModel
 
@@ -207,6 +207,9 @@ class OppForkIn(StrictModel):
     """Why this fork exists. Seeded as the first user-turn of the new run's
     working session, so the agent picking it up reads the intent instead of
     inferring it. Optional — an empty fork is legitimate."""
+    requested_by: EmailStr | None = None
+    """The HUMAN the authenticated caller is acting for — same rules as
+    ``SeededRunIn.requested_by`` (apps/opps/attribution.py)."""
 
     @model_validator(mode="after")
     def _exactly_one_fork_point(self) -> OppForkIn:
@@ -258,6 +261,10 @@ class OppForkOut(StrictModel):
     working_session_slug: str
     #: Set on a skill fork only; a phase fork carries no phase state.
     carried: ForkCarriedOut | None = None
+    #: The authenticated actor that made the fork (truthful).
+    initiated_by: str | None = None
+    #: The human it was made for, when known (attribution).
+    requested_by: str | None = None
 
 
 class DecisionOverridesSaveIn(StrictModel):
@@ -451,6 +458,12 @@ class SeededRunIn(StrictModel):
     # `--no-evals` cleanly yields `verdict: partial-evals-skipped`. So default
     # to skipping them; set false to force inline grading.
     skip_evals: bool = True
+    # The HUMAN the authenticated caller is acting for (attribution; the
+    # authenticated actor stays `initiated_by`). A human caller defaults to
+    # themselves and may not name anyone else (400); an agent identity
+    # (settings.ACE_AGENT_IDENTITIES, e.g. ace@dimagi-ai.com) passes the human
+    # it is running for, and absent ⇒ nothing is recorded. apps/opps/attribution.py.
+    requested_by: EmailStr | None = None
 
 
 class SeededRunOut(StrictModel):
@@ -465,3 +478,7 @@ class SeededRunOut(StrictModel):
     session_slug: str
     assistant_message_id: int
     run_id: str
+    #: The authenticated actor that started the run (truthful).
+    initiated_by: str | None = None
+    #: The human it was started for, when known (attribution).
+    requested_by: str | None = None

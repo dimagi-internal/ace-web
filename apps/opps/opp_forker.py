@@ -29,7 +29,8 @@ artifacts. See ace-web#734.
 * A fresh ``run_state.yaml`` synthesized from scratch per the State
   Schema in orchestrator-reference: ``opportunity``, ``run_id``,
   ``mode``, ``created``, ``initiated_by``, ``last_actor`` +
-  ``last_actor_at``, and a ``phases`` map seeded ``done`` for kept
+  ``last_actor_at`` (plus ``requested_by`` — the human an agent caller was
+  acting for — when known; apps/opps/attribution.py), and a ``phases`` map seeded ``done`` for kept
   phases and ``pending`` for everything from ``fork_at_phase`` onward.
   Written FIRST, ahead of every copy — it depends on nothing the copy
   produces. Two things ARE carried out of the source run's own
@@ -205,6 +206,7 @@ def fork_opp(
     now: _dt.datetime | None = None,
     run_phases: list[int] | None = None,
     create_session: bool = True,
+    requested_by: str | None = None,
 ) -> ForkOppResult:
     """Fork the source opp's named run (or its latest if ``source_run_id``
     is None) into a new run under the same opp.
@@ -225,6 +227,11 @@ def fork_opp(
     ``create_session=False`` skips the fork's working-session creation (the
     seeded-run action drives its own headless session); ``working_session`` is
     ``None`` in that case.
+
+    ``requested_by`` is the human the authenticated ``owner`` is acting for
+    (already resolved by ``apps.opps.attribution.resolve_requested_by``). It is
+    written to ``run_state.yaml`` beside ``initiated_by`` and onto the working
+    session; ``None`` records nothing.
 
     Raises ``ForkOppError`` for caller-friendly validation failures
     (source not found, no runs to fork from, run-id collision, unknown
@@ -370,6 +377,7 @@ def fork_opp(
             run_phases=run_phases,
             source_products=source_products,
             skill_fork_block=skill_fork_block,
+            requested_by=requested_by,
         )
         drive.upload_file(
             new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
@@ -407,6 +415,7 @@ def fork_opp(
                 opp_slug=source_slug,
                 opp_run_id=new_run_id,
                 workspace=workspace,
+                requested_by=requested_by or "",
             )
             Message.objects.create(
                 session=session,
@@ -1263,6 +1272,7 @@ def _build_run_state_yaml(
     run_phases: list[int] | None = None,
     source_products: dict[str, dict] | None = None,
     skill_fork_block: dict | None = None,
+    requested_by: str | None = None,
 ) -> str:
     """Synthesize a fresh ``run_state.yaml`` per the State Schema in the
     plugin's orchestrator-reference (§ State Schema, defensive init).
@@ -1297,6 +1307,7 @@ def _build_run_state_yaml(
         "initiated_by": owner_email,
         "last_actor": owner_email,
         "last_actor_at": iso_now,
+        **({"requested_by": requested_by} if requested_by else {}),
         "current_phase": fork_at_phase,
         "phases": phases_map,
         # A top-level STRING, not a block. ``canopy_agent_runs`` reads this
