@@ -348,6 +348,28 @@ export interface Run {
    *  flattened server-side by apps/opps/run_products.py. Absent on a
    *  snapshot cached before v11. */
   products?: RunProduct[];
+  /** The plugin's release-check verdict for this run, or absent/null when it
+   *  has never been checked (apps/opps/release_check.py). */
+  release_check?: ReleaseCheck | null;
+}
+
+export interface ReleaseCheckItem {
+  id: string | null;
+  area: string | null;
+  owner: string | null;
+  detail: string | null;
+  fix: string | null;
+}
+
+export interface ReleaseCheck {
+  verdict: "READY" | "NOT_READY" | "UNREADABLE";
+  checked_at: string | null;
+  run_last_write: string | null;
+  read_only: boolean;
+  counts: { blockers: number; warnings: number };
+  blockers: ReleaseCheckItem[];
+  warnings: ReleaseCheckItem[];
+  report: { file_id: string; url: string | null } | null;
 }
 
 /** Kinds `apps/opps/run_products.py` infers. `document`/`deck`/`sheet` are

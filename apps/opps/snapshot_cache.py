@@ -101,7 +101,10 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        The Drive files never changed, so warm v14 entries kept serving the
 #        smoke: spark-facilitator/20260926-1800's App Screenshot Capture read
 #        25 after the deploy, 92 on a refresh.
-_KEY_VERSION = "v15"
+#   v16 — RunDetail gained ``release_check`` (the plugin's release-check
+#        verdict). A warm v15 entry would show a release-ready run as never
+#        checked until its Drive files next changed.
+_KEY_VERSION = "v16"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

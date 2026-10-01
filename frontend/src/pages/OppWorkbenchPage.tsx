@@ -15,6 +15,7 @@ import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { RunsTable } from "../components/opps/RunsTable";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { ReleaseCheckBadge } from "../components/opps/ReleaseCheckBadge";
 import { useReplay } from "../components/replay/useReplay";
 import { WorkbenchLayout, usePaneCollapsed } from "../components/workbench";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
@@ -248,13 +249,14 @@ export default function OppWorkbenchPage() {
             {replay.active ? "Back to replay" : "Replay this run"}
           </button>
         )}
+        <div className={replay.active && view === "phase" ? "ml-auto" : ""}>
+          <ReleaseCheckBadge check={snapshot.current_run.release_check} />
+        </div>
         <a
           href={`/ace/opps/${workspaceSlug}/${slug}/runs/${snapshot.current_run.run_id}/summary`}
           target="_blank"
           rel="noopener noreferrer"
-          className={`flex items-center gap-1.5 px-6 text-xs text-muted-foreground hover:text-foreground transition ${
-            replay.active && view === "phase" ? "ml-auto" : ""
-          }`}
+          className="flex items-center gap-1.5 px-6 text-xs text-muted-foreground hover:text-foreground transition"
         >
           Summary
           <ExternalLink className="h-3 w-3" />
