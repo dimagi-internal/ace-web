@@ -181,6 +181,11 @@ def serialize_step_snapshot(
         "preview_text": build_preview(step_snap, bodies),
         "judge": serialize_judge(step_snap.judge),
         "qa_result": serialize_qa_result(step_snap.qa_result),
+        # The plugin's recorded QA decision for this producer
+        # (skills/_qa-decisions.md): most producers have no `-qa` skill BY
+        # DESIGN — they check themselves inline, or the external system
+        # validates each call — and the page must say which, not imply a gap.
+        "qa_policy": (overview.get("qa_decisions") or {}).get(step_snap.step.skill_name),
         "artifacts": [serialize_artifact(a) for a in step_snap.artifacts],
     }
 

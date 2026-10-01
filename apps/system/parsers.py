@@ -410,3 +410,67 @@ def parse_mcp_tools(ts_source: str) -> list[dict]:
             }
         )
     return tools
+
+
+# ---------------------------------------------------------------------------
+# QA decisions registry (skills/_qa-decisions.md → {skill: policy})
+# ---------------------------------------------------------------------------
+
+#: A registry row: ``| `skill` [note] | **status** | reason |``.
+_QA_ROW_RE = re.compile(
+    r"^\|\s*`(?P<skill>[^`]+)`[^|]*\|\s*\*\*(?P<status>[^*]+)\*\*\s*\|(?P<reason>.*)\|\s*$"
+)
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_REASON_MAX = 240
+
+
+def parse_qa_decisions(markdown: str) -> dict[str, dict[str, str]]:
+    """The plugin's per-producer QA decisions, from ``skills/_qa-decisions.md``.
+
+    ``{skill: {"status", "label", "reason"}}`` where ``status`` is one of
+    ``standalone`` (its own ``<skill>-qa``), ``inline`` (the producer checks
+    itself as it works), ``none`` (deliberately no QA — the reason says why),
+    ``is_qa`` (the row IS a QA skill), ``pending`` or ``not_applicable``.
+    ``label`` is the registry's own wording; ``reason`` its first sentence or
+    two, markdown links flattened. Rows that don't parse are skipped — this
+    is a display aid, and a malformed row must not take the page down.
+    """
+    out: dict[str, dict[str, str]] = {}
+    for line in markdown.splitlines():
+        m = _QA_ROW_RE.match(line.strip())
+        if not m:
+            continue
+        label = m.group("status").strip().strip("`")
+        out.setdefault(
+            m.group("skill").strip(),
+            {"status": _qa_status(label), "label": label, "reason": _qa_reason(m.group("reason"))},
+        )
+    return out
+
+
+def _qa_status(label: str) -> str:
+    lowered = label.lower()
+    if "no qa" in lowered:
+        return "none"
+    if "inline" in lowered:
+        return "inline"
+    if "is the qa" in lowered:
+        return "is_qa"
+    if "has qa" in lowered:
+        return "standalone"
+    if "not yet migrated" in lowered:
+        return "pending"
+    return "not_applicable"
+
+
+def _qa_reason(cell: str) -> str:
+    text = _MD_LINK_RE.sub(r"\1", cell).replace("**", "").replace("`", "").strip()
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    reason = ""
+    for s in sentences:
+        if reason and len(reason) + len(s) + 1 > _REASON_MAX:
+            break
+        reason = f"{reason} {s}".strip()
+    if len(reason) > _REASON_MAX:
+        reason = reason[: _REASON_MAX - 1].rstrip() + "…"
+    return reason

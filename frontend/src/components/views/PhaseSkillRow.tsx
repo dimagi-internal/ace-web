@@ -8,7 +8,9 @@ import { cn } from "@/lib/utils";
 
 import {
   DecisionsSection,
+  ChecksLine,
   EvalSection,
+  isQuietChecks,
   isFinished,
   ProducerSection,
   QASection,
@@ -118,8 +120,14 @@ export function PhaseSkillRow({
         <div className="animate-in fade-in slide-in-from-top-1 duration-150 border-t border-border px-3 py-3">
           <ProducerSection step={step} />
           {decisions.length > 0 && <DecisionsSection decisions={decisions} />}
-          <QASection step={step} />
-          <EvalSection step={step} finished={finished} />
+          {isQuietChecks(step) ? (
+            <ChecksLine step={step} />
+          ) : (
+            <>
+              <QASection step={step} />
+              <EvalSection step={step} finished={finished} />
+            </>
+          )}
           <div className="mt-3 flex items-center gap-3 border-t border-border pt-2 text-[11px]">
             <Link
               to={`/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(step.skill_name)}?view=workbench`}
@@ -164,13 +172,48 @@ function statusVisual(status: string): { glyph: string; color: string; label: st
 function QAChip({ step, finished }: { step: Step; finished: boolean }) {
   const qa = step.qa_result;
   if (!qa) {
+    // Say what the plugin decided (skills/_qa-decisions.md), not "missing":
+    // most producers check themselves inline or are validated by the system
+    // they call, and only a QA skill that recorded nothing is a real gap.
+    const policy = step.qa_policy;
+    if (policy?.status === "is_qa") return null;
+    if (policy?.status === "standalone") {
+      return (
+        <span
+          className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500"
+          title="This step has a QA skill, but it recorded no result for this run"
+        >
+          <span>QA</span>
+          <span>!</span>
+        </span>
+      );
+    }
+    const inline = policy?.status === "inline";
     return (
       <span
         className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-border/60 bg-transparent px-1.5 text-[10px] font-semibold text-muted-foreground/60"
-        title="No QA defined for this skill yet"
+        title={
+          inline
+            ? `QA checked inside the step — ${policy.reason}`
+            : policy
+              ? `No QA, by design — ${policy.reason}`
+              : "No QA recorded for this step"
+        }
       >
         <span>QA</span>
-        <span>—</span>
+        <span>{inline ? "in step" : "—"}</span>
+      </span>
+    );
+  }
+  if (qa.verdict === "pass" && qa.stats.checks_run === 0) {
+    // "Passed" having checked nothing is not a pass.
+    return (
+      <span
+        className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500"
+        title="QA reported a pass but ran 0 checks — nothing was checked"
+      >
+        <span>QA</span>
+        <span>0/0</span>
       </span>
     );
   }

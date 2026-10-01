@@ -279,7 +279,20 @@ export interface Step {
   preview_text: string;
   judge: Judge | null;
   qa_result: QAResult | null;
+  /** The plugin's recorded QA decision for this producer
+   *  (skills/_qa-decisions.md). Absent on older snapshots / unknown skills. */
+  qa_policy?: QaPolicy | null;
   artifacts: Artifact[];
+}
+
+export interface QaPolicy {
+  /** standalone: its own `<skill>-qa` · inline: the step checks itself as it
+   *  works · none: no QA by design · is_qa: this step IS a QA skill. */
+  status: "standalone" | "inline" | "none" | "is_qa" | "pending" | "not_applicable";
+  /** The registry's own wording, e.g. "inline QA". */
+  label: string;
+  /** Why — the registry's first sentence or two. */
+  reason: string;
 }
 
 export interface PhaseInfo {
