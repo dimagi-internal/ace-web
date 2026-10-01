@@ -570,6 +570,14 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   the eval covers what matters). `parse_qa_decisions` → system overview
   `qa_decisions` → each step's `qa_policy`. Only two states are flagged: a
   QA skill that recorded no result, and a QA "pass" that ran 0 checks.
+  **Release check:** the plugin's `release-check` (one final pass across a
+  run — every gate, the live Connect read-back, preview gaps, every link as
+  the partner opens it, the public summary) writes
+  `<run>/release-check_verdict.yaml` (ReleaseVerdict v1); `/ace:release`
+  refuses to invite without READY. `apps/opps/release_check.py` reads it
+  into `current_run.release_check`; the run's tab row shows the pill
+  (READY / Not ready · N blockers / Not release-checked; a dry run is never
+  ready). Snapshot cache v16.
   **Output previews** (screenshots): a preview lives with the phase
   that BUILT the output, whoever took it —
   `<N>-<phase>/previews/<output-slug>/_previews.yaml` + PNGs (Phase 6 writes
