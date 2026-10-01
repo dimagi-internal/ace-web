@@ -11552,6 +11552,31 @@
         "title": "PhaseSummaryOut",
         "type": "object"
       },
+      "QaDecisionOut": {
+        "additionalProperties": false,
+        "description": "One producer's row in the plugin's ``skills/_qa-decisions.md``.",
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "label",
+          "reason"
+        ],
+        "title": "QaDecisionOut",
+        "type": "object"
+      },
       "SkillArtifactRowOut": {
         "additionalProperties": false,
         "description": "Minimal artifact reference embedded in a skill summary.",
@@ -11699,6 +11724,14 @@
             },
             "title": "Mcps",
             "type": "array"
+          },
+          "qa_decisions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/QaDecisionOut"
+            },
+            "default": {},
+            "title": "Qa Decisions",
+            "type": "object"
           },
           "plugin_version": {
             "anyOf": [

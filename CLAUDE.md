@@ -564,6 +564,12 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   rail. A FORK's screenshots are read from its `forked_from` lineage (the
   forker copies no screenshots/), and an app's emulator frames always beat
   the capture skill's HQ form-summary fallback. Snapshot cache v14.
+  **QA shows the plugin's DECISION, not "missing":** `skills/_qa-decisions.md`
+  records every producer as `has QA` / `inline QA` (checks itself as it
+  works) / `NO QA` (by design — the external system validates each call, or
+  the eval covers what matters). `parse_qa_decisions` → system overview
+  `qa_decisions` → each step's `qa_policy`. Only two states are flagged: a
+  QA skill that recorded no result, and a QA "pass" that ran 0 checks.
   **Output previews** (screenshots): a preview lives with the phase
   that BUILT the output, whoever took it —
   `<N>-<phase>/previews/<output-slug>/_previews.yaml` + PNGs (Phase 6 writes

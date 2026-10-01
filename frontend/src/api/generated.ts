@@ -4708,6 +4708,18 @@ export interface components {
             readonly agent: string;
         };
         /**
+         * QaDecisionOut
+         * @description One producer's row in the plugin's ``skills/_qa-decisions.md``.
+         */
+        readonly QaDecisionOut: {
+            /** Status */
+            readonly status: string;
+            /** Label */
+            readonly label: string;
+            /** Reason */
+            readonly reason: string;
+        };
+        /**
          * SkillArtifactRowOut
          * @description Minimal artifact reference embedded in a skill summary.
          */
@@ -4783,6 +4795,13 @@ export interface components {
             readonly phases: readonly components["schemas"]["PhaseSummaryOut"][];
             /** Mcps */
             readonly mcps: readonly components["schemas"]["McpServerOut"][];
+            /**
+             * Qa Decisions
+             * @default {}
+             */
+            readonly qa_decisions: {
+                readonly [key: string]: components["schemas"]["QaDecisionOut"];
+            };
             /** Plugin Version */
             readonly plugin_version?: string | null;
             /** Remote Version */

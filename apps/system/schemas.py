@@ -212,6 +212,14 @@ class RefreshPluginOut(StrictModel):
 # ── Top-level overview ───────────────────────────────────────────────────────
 
 
+class QaDecisionOut(StrictModel):
+    """One producer's row in the plugin's ``skills/_qa-decisions.md``."""
+
+    status: str
+    label: str
+    reason: str
+
+
 class SystemOverviewOut(StrictModel):
     """Full system snapshot returned by GET /api/system/overview."""
 
@@ -220,6 +228,8 @@ class SystemOverviewOut(StrictModel):
     artifacts: list[ArtifactOut]
     phases: list[PhaseSummaryOut]
     mcps: list[McpServerOut]
+    #: ``{skill: decision}`` — how each producer is QA'd, per the plugin.
+    qa_decisions: dict[str, QaDecisionOut] = {}
     plugin_version: str | None = None
     remote_version: str | None = None
     update_available: bool | None = None

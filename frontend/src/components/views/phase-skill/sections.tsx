@@ -82,26 +82,83 @@ export function ProducerSection({ step }: { step: Step }) {
   );
 }
 
+/** One line saying how a step with no QA result is checked, per the plugin's
+ *  recorded decision — "no `-qa` skill" usually means "checked another way",
+ *  and the page must not imply a gap the plugin decided against. */
+function qaNote(step: Step): string | null {
+  const policy = step.qa_policy;
+  if (!policy) return "QA: none recorded";
+  switch (policy.status) {
+    case "inline":
+      return "QA: checked inside the step";
+    case "none":
+      return "QA: none, by design";
+    case "is_qa":
+      return null;
+    case "pending":
+      return "QA: planned, not built yet";
+    default:
+      return "QA: not applicable";
+  }
+}
+
+/** A step whose QA and eval are both "nothing to show" gets ONE quiet line,
+ *  not two dashed boxes. */
+export function isQuietChecks(step: Step): boolean {
+  const quietQa = !step.qa_result && step.qa_policy?.status !== "standalone";
+  const quietEval = !step.judge && !step.has_judge;
+  return quietQa && quietEval;
+}
+
+/** The one quiet line for {@link isQuietChecks} steps. */
+export function ChecksLine({ step }: { step: Step }) {
+  const qa = qaNote(step);
+  const reason = step.qa_policy?.reason;
+  return (
+    <p className="mb-1 text-[11px] text-muted-foreground/80" title={reason || undefined}>
+      {[qa, "Eval: none for this step"].filter(Boolean).join(" · ")}
+      {reason && <span className="block truncate text-muted-foreground/60">{reason}</span>}
+    </p>
+  );
+}
+
 export function QASection({ step }: { step: Step }) {
   const qa = step.qa_result;
   if (!qa) {
+    const policy = step.qa_policy;
+    if (policy?.status === "standalone") {
+      // A real gap: the plugin HAS a QA skill for this producer, and it
+      // recorded nothing for this run.
+      return (
+        <section className="mb-3 rounded border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+          <SectionHeader
+            source={`QA · ${step.skill_name}-qa`}
+            title="No result recorded"
+            badge="!"
+            badgeTone="muted"
+          />
+          <p className="text-[11px] text-muted-foreground/80 inline-flex items-center gap-1.5">
+            <AlertTriangle className="h-3 w-3 text-amber-500" />
+            This step has a QA skill, but it recorded no result for this run.
+          </p>
+        </section>
+      );
+    }
+    const note = qaNote(step);
+    if (!note) return null;
     return (
-      <section className="mb-3 rounded border border-dashed border-border/50 px-3 py-2">
-        <SectionHeader
-          source="QA · — none defined"
-          title="No QA skill for this producer yet"
-          badge="—"
-          badgeTone="muted"
-        />
-        <p className="text-[11px] text-muted-foreground/80">
-          When a paired <code className="rounded bg-muted/40 px-1">{step.skill_name}-qa</code>{" "}
-          skill ships in the plugin, its structural checks will surface here.
-        </p>
-      </section>
+      <p className="mb-3 text-[11px] text-muted-foreground/80" title={policy?.reason || undefined}>
+        {note}
+        {policy?.reason && (
+          <span className="block truncate text-muted-foreground/60">{policy.reason}</span>
+        )}
+      </p>
     );
   }
   const isFail = qa.verdict === "fail";
-  const isPass = qa.verdict === "pass";
+  // "Passed" having run 0 checks checked nothing — shown as a warning, not a pass.
+  const isEmptyPass = qa.verdict === "pass" && qa.stats.checks_run === 0;
+  const isPass = qa.verdict === "pass" && !isEmptyPass;
   const tone: "green" | "red" | "amber" = isPass ? "green" : isFail ? "red" : "amber";
   return (
     <section
@@ -121,7 +178,9 @@ export function QASection({ step }: { step: Step }) {
             ? `Passed (${qa.stats.checks_passed}/${qa.stats.checks_run} checks)`
             : isFail
               ? `Failed (${qa.stats.checks_failed} of ${qa.stats.checks_run} checks)`
-              : `Incomplete`
+              : isEmptyPass
+                ? "Ran no checks — nothing was verified"
+                : `Incomplete`
         }
         badge={qa.verdict}
         badgeTone={tone}
@@ -196,12 +255,7 @@ export function EvalSection({
 
   if (!judge) {
     if (!step.has_judge) {
-      return (
-        <section className="mb-1 rounded border border-dashed border-border/50 px-3 py-2">
-          <SectionHeader source="Eval · — none defined" title="No eval skill for this producer" badge="—" badgeTone="muted" />
-          <p className="text-[11px] text-muted-foreground/80">No eval defined for this producer yet.</p>
-        </section>
-      );
+      return <p className="mb-1 text-[11px] text-muted-foreground/80">Eval: none for this step</p>;
     }
     if (finished) {
       return (

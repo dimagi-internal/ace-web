@@ -16,7 +16,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-from apps.system.parsers import parse_artifact_manifest, parse_frontmatter, parse_mcp_tools
+from apps.system.parsers import (
+    parse_artifact_manifest,
+    parse_frontmatter,
+    parse_mcp_tools,
+    parse_qa_decisions,
+)
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +88,18 @@ def _load_artifacts(plugin_path: Path) -> list[dict[str, Any]]:
 
 
 _TOOL_NAME_RE = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
+
+
+def _load_qa_decisions(plugin_path: Path) -> dict[str, dict[str, str]]:
+    """The plugin's per-producer QA decisions (``skills/_qa-decisions.md``)."""
+    path = plugin_path / "skills" / "_qa-decisions.md"
+    if not path.is_file():
+        return {}
+    try:
+        return parse_qa_decisions(path.read_text())
+    except Exception as exc:  # noqa: BLE001 — a display aid, never a failure
+        log.warning("Failed to parse QA decisions: %s", exc)
+        return {}
 
 
 def _resolve_server_path(plugin_path: Path, server_args: list[Any]) -> Path | None:
@@ -309,6 +326,7 @@ def load_system_overview(plugin_path: str) -> dict[str, Any]:
             "artifacts": [],
             "phases": [],
             "mcps": [],
+            "qa_decisions": {},
             "warning": f"ACE plugin not found at {plugin_path}",
         }
 
@@ -355,6 +373,7 @@ def load_system_overview(plugin_path: str) -> dict[str, Any]:
             for p in phases
         ],
         "mcps": mcps,
+        "qa_decisions": _load_qa_decisions(pp),
         "warning": None,
     }
 

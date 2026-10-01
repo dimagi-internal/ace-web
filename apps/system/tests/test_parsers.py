@@ -479,3 +479,38 @@ server.tool('two', { b: z.string() }, async () => null);
             for t in tools:
                 assert "_" in t["name"]
                 assert isinstance(t["params"], list)
+
+
+class TestParseQaDecisions:
+    SAMPLE = """# Per-skill QA decisions
+
+| Skill | Status | Notes |
+|---|---|---|
+| `idea-to-pdd` | **has QA** | [`idea-to-pdd-qa`](./x.md) (PR #149). 6 static checks. |
+| `pdd-to-learn-app` | **inline QA** | Inline checks in the Process. A second sentence here. |
+| `connect-opp-setup` | **NO QA** | Connect MCP atoms validate at boundary. Producer surfaces. |
+| `llo-launch` | **has eval, NO QA** | Process skill. |
+| `app-release-qa` | **IS the QA skill** | Structural QA on the CCZ. |
+| `ocs-chatbot-qa` (runtime) | **has QA** | Runtime-exercise QA. |
+| not a row |
+"""
+
+    def test_statuses_follow_the_registry(self):
+        from apps.system.parsers import parse_qa_decisions
+
+        d = parse_qa_decisions(self.SAMPLE)
+        assert {k: v["status"] for k, v in d.items()} == {
+            "idea-to-pdd": "standalone",
+            "pdd-to-learn-app": "inline",
+            "connect-opp-setup": "none",
+            "llo-launch": "none",
+            "app-release-qa": "is_qa",
+            "ocs-chatbot-qa": "standalone",
+        }
+
+    def test_reasons_are_plain_text(self):
+        from apps.system.parsers import parse_qa_decisions
+
+        d = parse_qa_decisions(self.SAMPLE)
+        assert d["idea-to-pdd"]["reason"] == "idea-to-pdd-qa (PR #149). 6 static checks."
+        assert d["connect-opp-setup"]["label"] == "NO QA"
