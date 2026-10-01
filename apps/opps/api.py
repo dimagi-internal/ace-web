@@ -14,6 +14,7 @@ from apps.api.deps import require_write_global, resolve_workspace_for_member
 from apps.api.errors import (
     TYPE_CONFLICT,
     TYPE_NOT_FOUND,
+    TYPE_UPSTREAM,
     TYPE_VALIDATION,
     ProblemError,
 )
@@ -1562,6 +1563,9 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
             404, "Drive not configured", type_=TYPE_NOT_FOUND, detail=str(exc),
         ) from exc
 
+    from apps.opps.attribution import resolve_requested_by
+
+    requested_by = resolve_requested_by(user, body.requested_by)
     source_run_id = body.source_run_id or None
     write_progress = _write_fork_progress(workspace, slug, source_run_id or "")
 
@@ -1578,6 +1582,7 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         edits=[e.model_dump() for e in body.edits] if body.edits else None,
         mode=body.mode,
         feedback=body.feedback,
+        requested_by=requested_by,
     )
     from apps.opps.decisions_buffer import clear_edits
     clear_edits(slug, source_run_id or "")
@@ -1586,6 +1591,8 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         "run_id": result.new_run_id,
         "working_session_slug": result.working_session.slug,
         "carried": carried.as_dict() if (carried := getattr(result, "carried", None)) else None,
+        "initiated_by": getattr(user, "email", None),
+        "requested_by": requested_by,
     }
 
 
@@ -1618,11 +1625,17 @@ def fork_opp_endpoint(
     even an interrupted fork yields a run that ``/ace:run
     <opp>/<run-id>`` can resume (ace-web#734).
     """
+    from apps.opps.attribution import RequestedByForbidden
     from apps.opps.opp_forker import ForkOppError
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
         result = fork_opp_and_return(workspace, request.user, slug, body)
+    except RequestedByForbidden as exc:
+        raise ProblemError(
+            400, "requested_by must be you", type_=TYPE_VALIDATION, detail=str(exc),
+            extras={"code": "requested_by_forbidden"},
+        ) from exc
     except ForkOppError as exc:
         if exc.code in ("source-not-found", "source-run-not-found"):
             raise ProblemError(
@@ -2042,8 +2055,17 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     The run is loop-blind; the ``/ace:iterate`` client observes its run_state.
     The golden run is validated to exist by the fork (missing → 404).
 
-    Returns ``{session_slug, assistant_message_id, run_id}`` — ``run_id`` is the
-    new forked run the action minted. The route spawns the headless turn driver
+    Returns ``{session_slug, assistant_message_id, run_id, requested_by}`` —
+    ``run_id`` is the new forked run the action minted; ``requested_by`` the
+    human the run was started for (``apps.opps.attribution``; raises
+    ``RequestedByForbidden`` for a human naming someone else).
+
+    Before anything is forked, the owner is resolved in canopy
+    (``run_dispatch.preflight_run_actor``): an owner canopy only knows as a
+    contact is confined to ask-only, so the run would be minted and never
+    execute — that raises ``RunActorUnresolvable`` and creates nothing.
+
+    The route spawns the headless turn driver
     against ``assistant_message_id`` to actually execute the run (no WebSocket
     client needed). Raises FileNotFoundError when the opp or golden run can't be
     resolved, ValueError for a bad ``only`` allowlist. The monkeypatch target in
@@ -2052,12 +2074,18 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     from django.db import transaction
     from django.utils import timezone
 
+    from apps.canopy.run_dispatch import preflight_run_actor
     from apps.opps import access
+    from apps.opps.attribution import resolve_requested_by
     from apps.opps.drive_client import get_drive_client
     from apps.opps.opp_forker import ForkOppError, fork_opp
     from apps.opps.skills import all_phases
     from apps.service_accounts.exceptions import ServiceAccountNotFound
     from apps.sessions.models import Message, Session
+
+    # Attribution first: a bad requested_by is a caller error, refused before
+    # anything is touched.
+    requested_by = resolve_requested_by(user, body.requested_by)
 
     ace_folder_id = access.resolve_ace_root_folder_id(workspace)
     if ace_folder_id is None:
@@ -2084,6 +2112,13 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     # is actually selected.
     nova_preflight(run_phases, phases)
 
+    # Preflight: refuse to mint a run canopy will never execute. The turn is
+    # dispatched AS the session owner; a contact is confined to ask-only, so
+    # the run would sit `pending` forever behind a 202 (observed:
+    # spark-facilitator/20261001-2208, canopy turn 2727e227). Checked BEFORE
+    # the fork so no Drive run or Session is created.
+    preflight_run_actor((getattr(user, "email", "") or "").strip())
+
     # Fork the golden into a fresh run, shaped for a structural resume. No
     # session here — we drive our own headless seeded-run session below.
     try:
@@ -2098,6 +2133,7 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
             mode="keep-all",
             run_phases=run_phases,
             create_session=False,
+            requested_by=requested_by,
         )
     except ForkOppError as exc:
         if exc.code in ("source-not-found", "no-runs", "source-run-not-found"):
@@ -2116,13 +2152,17 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     with transaction.atomic():
         session = Session.create_with_owner(
             owner=user,
-            title=f"seeded-run: {slug}/{new_run_id} (--only {body.only})",
+            title=(
+                f"seeded-run: {slug}/{new_run_id} (--only {body.only})"
+                + (f" — requested by {requested_by}" if requested_by else "")
+            ),
             backend_kind="cli",
             status="active",
             source="web",
             opp_slug=slug,
             opp_run_id=new_run_id,
             workspace=workspace,
+            requested_by=requested_by or "",
         )
         # The command goes in as a completed USER turn (turn_driver loads the
         # last user text to feed the backend), with an assistant placeholder
@@ -2149,6 +2189,7 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
         "session_slug": session.slug,
         "assistant_message_id": assistant_msg.id,
         "run_id": new_run_id,
+        "requested_by": requested_by,
     }
 
 
@@ -2174,11 +2215,37 @@ def seeded_run(
     why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
     MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
     """
-    from apps.canopy.run_dispatch import start_turn
+    from apps.canopy.run_dispatch import (
+        RunActorUnresolvable,
+        RunActorUnverified,
+        start_turn,
+    )
+    from apps.opps.attribution import RequestedByForbidden
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
         result = seed_run_for_opp(workspace, slug, request.user, body)
+    except RequestedByForbidden as exc:
+        raise ProblemError(
+            400, "requested_by must be you", type_=TYPE_VALIDATION, detail=str(exc),
+            extras={"code": "requested_by_forbidden"},
+        ) from exc
+    except RunActorUnresolvable as exc:
+        raise ProblemError(
+            409,
+            "Run owner cannot execute runs in canopy",
+            type_=TYPE_CONFLICT,
+            detail=str(exc),
+            extras={"code": "run_actor_unresolvable", "email": exc.email},
+        ) from exc
+    except RunActorUnverified as exc:
+        raise ProblemError(
+            502,
+            "Could not verify the run owner in canopy",
+            type_=TYPE_UPSTREAM,
+            detail=str(exc),
+            extras={"code": "run_actor_unverified", "email": exc.email},
+        ) from exc
     except NovaAuthInvalid as exc:
         raise ProblemError(
             409,
@@ -2203,7 +2270,11 @@ def seeded_run(
     # `manage.py drive_turn` process (ace-web#585). Either way the run is
     # decoupled from this request's event loop.
     start_turn(result["assistant_message_id"])
-    payload = SeededRunOut.model_validate(result).model_dump(mode="json")
+    payload = SeededRunOut.model_validate({
+        **result,
+        "initiated_by": getattr(request.user, "email", None),
+        "requested_by": result.get("requested_by"),
+    }).model_dump(mode="json")
     return JsonResponse(payload, status=202)
 
 

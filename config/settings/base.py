@@ -350,6 +350,12 @@ CANOPY_RUN_EXECUTION = env.bool("CANOPY_RUN_EXECUTION", default=False)
 # web worker's memory to re-derive cost/structure from.
 CANOPY_TRANSCRIPT_MAX_BYTES = env.int("CANOPY_TRANSCRIPT_MAX_BYTES", default=64 * 1024 * 1024)
 
+# Identities that are AGENTS acting for a human, not humans themselves. A run
+# started by one of these carries `requested_by` (the human it is acting for) as
+# attribution beside the truthful `initiated_by` (apps/opps/attribution.py). A
+# human caller can only ever attribute a run to themselves. Comma-separated.
+ACE_AGENT_IDENTITIES = env.list("ACE_AGENT_IDENTITIES", default=["ace@dimagi-ai.com"])
+
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships
 # are the actual access-control gate; the domain filter is preserved as a

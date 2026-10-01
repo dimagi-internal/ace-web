@@ -51,6 +51,7 @@ import yaml
 from canopy_agent_runs.drive.store import DriveRunStore
 
 from apps.opps import framework_map as fm
+from apps.opps.attribution import creator_label
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.drive_export import read_prose
 from apps.opps.output_previews import load_output_previews
@@ -417,7 +418,7 @@ def load_opp_run_via_store(
         slug=slug,
         display_name=display_name,
         created_at=opp_data.get("created_at") or state_data.get("started_at"),
-        created_by=opp_data.get("created_by") or state_data.get("initiated_by"),
+        created_by=opp_data.get("created_by") or creator_label(state_data),
         labels=[],
         current_run_id=target_id,
     )
@@ -502,7 +503,7 @@ def load_opp_flat_via_store(
         slug=slug,
         display_name=state_data.get("display_name", slug),
         created_at=state_data.get("started_at") or state_data.get("created"),
-        created_by=state_data.get("created_by") or state_data.get("initiated_by"),
+        created_by=creator_label(state_data),
         labels=[],
         current_run_id=_FlatRunClient.RUN_ID,
     )

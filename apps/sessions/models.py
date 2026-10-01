@@ -96,6 +96,12 @@ class Session(models.Model):
     # Empty = this run has never been dispatched to canopy.
     canopy_session_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
 
+    # The HUMAN this run was started for, when the owner is an agent identity
+    # acting on their behalf (apps/opps/attribution.py). `owner` stays the
+    # authenticated actor; this is attribution. Empty = unknown / not
+    # applicable (a human-started run records its own owner here too).
+    requested_by = models.EmailField(blank=True, default="")
+
     workspace = models.ForeignKey(
         "ace_workspaces.Workspace",
         on_delete=models.SET_NULL,

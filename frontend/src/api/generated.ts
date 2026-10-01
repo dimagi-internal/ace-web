@@ -2727,6 +2727,8 @@ export interface components {
             readonly mode: "keep-overrides-only" | "keep-all";
             /** Feedback */
             readonly feedback?: string | null;
+            /** Requested By */
+            readonly requested_by?: string | null;
         };
         /**
          * DecisionOverridesSaveIn
@@ -2817,6 +2819,8 @@ export interface components {
              * @default true
              */
             readonly skip_evals: boolean;
+            /** Requested By */
+            readonly requested_by?: string | null;
         };
         /**
          * OppHealthOut

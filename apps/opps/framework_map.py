@@ -101,6 +101,7 @@ from canopy_agent_runs.schemas import (
     Verdict as FwVerdict,
 )
 
+from apps.opps.attribution import creator_label
 from apps.opps.parsers import (
     Decision as AceDecision,
 )
@@ -516,7 +517,7 @@ def map_opp_snapshot(
         slug=run.agent_slug,
         display_name=run.label or run.agent_slug,
         created_at=_iso(run.created_at),
-        created_by=(rs.get("created_by") or rs.get("initiated_by")),
+        created_by=creator_label(rs),
         labels=[],
         tags=[],
         current_run_id=run.id,
