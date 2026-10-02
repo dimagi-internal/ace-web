@@ -18,13 +18,9 @@ vi.mock("../../components/views/PhaseView", () => ({ PhaseView: () => null }));
 vi.mock("../../components/opps/WorkbenchHeader", () => ({ WorkbenchHeader: () => null }));
 vi.mock("../../components/opps/RunsTable", () => ({ RunsTable: () => null }));
 vi.mock("../../components/opps/ForkOppDialog", () => ({ ForkOppDialog: () => null }));
-vi.mock("../../components/workbench", () => ({
-  WorkbenchLayout: () => <div data-testid="layout" />,
-  usePaneCollapsed: () => ({ collapsed: false, toggle: vi.fn() }),
-}));
 vi.mock("@/components/opps/ClonedToBanner", () => ({ ClonedToBanner: () => null }));
 
-const { default: OppWorkbenchPage } = await import("../OppWorkbenchPage");
+const { default: OppRunPage } = await import("../OppRunPage");
 
 const SNAPSHOT = {
   opp: { slug: "opp", display_name: "Opp" },
@@ -51,14 +47,14 @@ function renderAt(url: string) {
       <Routes>
         <Route
           path="/w/:workspaceSlug/opps/:slug"
-          element={<><OppWorkbenchPage /><LocationProbe /></>}
+          element={<><OppRunPage /><LocationProbe /></>}
         />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-describe("OppWorkbenchPage run-id pinning", () => {
+describe("OppRunPage run-id pinning", () => {
   beforeEach(() => {
     getOpp.mockReset();
     getOpp.mockResolvedValue(SNAPSHOT);

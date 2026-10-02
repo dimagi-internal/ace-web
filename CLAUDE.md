@@ -9,7 +9,7 @@ Phases 1–4 of the original design spec shipped (foundation, conversation engin
 multi-player, library/ingest); Phase 5 (Polish) is deferred indefinitely. Interactive
 chat moved out to canopy-hosted chat (canopy-web) — ace-web's own multi-player
 WebSocket chat UI was retired; see "Chat is canopy-hosted, full stop" below. Active
-surfaces in 2026-09 are the opp Workbench (Phases/Runs/Review tabs + run replay), the
+surfaces in 2026-09 are the opp run page (Phases + Runs tabs, step drill-down, run replay), the
 public run summary, the cloud mobile emulator, and the videos app.
 
 ## Where things live
@@ -330,7 +330,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   account, which is a narrower ACL, not an error.
   None of these 404/403s are silent in the UI: `useCanopyStatus()` gates
   every chat surface (`ChatPage.tsx`'s `CanopyChatRoutePage`,
-  `ChatRedirectPage`, `RecentSessionsSidebar`, `WorkbenchChatPane`) and
+  `ChatRedirectPage`, `RecentSessionsSidebar`, `StepChatPane`) and
   degrades to a visible "chat is unreachable" message rather than rendering
   a dead page; every user-triggered canopy call (new chat, discuss-this-step)
   surfaces its error rather than swallowing it — see
@@ -415,7 +415,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   MCP tool, plus a copy folded into the first message so turn one does not race
   the MCP connection. ace-web's half is `canopy/usePageState.ts`
   (`useCanopyPageState`) + `declareCanopyPageState` in `canopy/api.ts`, wired
-  into `WorkbenchChatPane`. **This is plain REST on the session with the
+  into `StepChatPane`. **This is plain REST on the session with the
   delegated token ace-web already mints — it needs no iframe, no widget, and no
   change to `CanopyChatPanel`.** Three rules it must keep: it declares the
   SELECTION (ids + `backing_tool`, the MCP tool that resolves them), never the
@@ -744,10 +744,27 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
 `apps/opps/` is a read-through UI on top of Google Drive showing every skill of
 an ACE run, per-step artifact previews, judge verdicts, gate history, a
 run-level opp-eval scorecard + trend, a pending-gates banner, and a "Discuss in
-chat" CTA (`WorkbenchChatPane`) that seeds a canopy-hosted chat session
+chat" CTA (`StepChatPane`) that seeds a canopy-hosted chat session
 (`createCanopySession`, title + `opp_slug`/`opp_run_id`/`opp_step_skill`
 metadata) from a step's context — see "Chat is canopy-hosted, full stop"
 above.
+
+**Phases is THE per-run view** (Jon, 2026-10-02: "The Phases UI is all I
+use"). The 3-pane Workbench tab was removed; `pages/OppRunPage.tsx` has only
+Phases + Runs. A step's detail (artifacts, eval, chat) opens IN Phases as a
+right-hand `StepDrawer`, addressed by the path `…/runs/<run>/steps/<skill>`
+(or `…/opps/<slug>/steps/<skill>` for the latest run) — any `?view=` on such a
+link is ignored, so old `?view=workbench` links still land. The canopy page
+key stays `opp-workbench` (`apps/canopy/grant.py`): it is a contract name,
+not a tab.
+
+**Superseded decision rows are history, never live choices.** A row with
+`superseded_by` (an in-run correction, or one a fork retired) is folded under
+its successor as a collapsed "earlier version" on the Phases panel
+(`views/decisions/supersession.ts`), dropped by the public summary, and
+ignored by run compare. `canopy-agent-runs` (0.1.4) drops the key, so
+`framework_reader.attach_superseded_by` reads it ace-side from the same
+`decisions.yaml` (snapshot cache v17).
 
 Drive is the source of truth — **no ORM tables** for opps / runs / steps /
 artifacts. The data lives as files under `<workspace.drive_root_folder_id>/<opp-slug>/`

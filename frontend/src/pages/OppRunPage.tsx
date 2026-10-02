@@ -5,31 +5,26 @@ import { ExternalLink, History } from "lucide-react";
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
 import { ApiError } from "../api/client";
-import type { OppSnapshot, Step } from "../api/types.ws";
+import type { OppSnapshot } from "../api/types.ws";
 import { ForkOppDialog } from "../components/opps/ForkOppDialog";
 import { PhaseView } from "../components/views/PhaseView";
-import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
-import { SkillList } from "../components/opps/SkillList";
-import { StepDetailPane } from "../components/opps/StepDetailPane";
-import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
+import { ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { RunsTable } from "../components/opps/RunsTable";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { ReleaseCheckBadge } from "../components/opps/ReleaseCheckBadge";
 import { useReplay } from "../components/replay/useReplay";
-import { WorkbenchLayout, usePaneCollapsed } from "../components/workbench";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
 import { ClonedToBanner } from "@/components/opps/ClonedToBanner";
 
-// Per-opp view tabs. Phases is the default — it's the view that
-// answers "what's the state of this opp?" at a glance without
-// requiring a step selection (the Workbench's 3-pane shell needs a
-// click to populate its middle pane).
+// Per-opp view tabs. Phases is THE per-run view (Jon, 2026-10-02: "The
+// Phases UI is all I use"): the old Workbench tab is gone, and the step
+// detail it hosted opens inside Phases instead. A `?view=workbench` on an
+// old link fails `useViewMode`'s validation and lands on Phases.
 const VIEW_TABS: ViewTab[] = [
   { kind: "phase", label: "Phases" },
-  { kind: "workbench", label: "Workbench" },
   // Cross-run view. Every other tab is scoped to ONE run; this is the only
   // place the opp's whole run history is comparable side by side. It reads
   // `snapshot.runs`, which the page already loads for the run selector, so
@@ -54,16 +49,25 @@ type LoadState =
   | { kind: "error"; message: string; code: string | null }
   | { kind: "loaded"; snapshot: OppSnapshot };
 
-export default function OppWorkbenchPage() {
+/**
+ * One opp, one run: the Phases view (default) and the cross-run Runs table.
+ *
+ * Routes: `/w/<ws>/opps/<slug>` (latest run), `…/runs/<run>`, and the step
+ * deep links `…/runs/<run>/steps/<skill>` and `…/opps/<slug>/steps/<skill>`
+ * (latest run) — a step link always lands on Phases with that step's detail
+ * open, whatever `?view=` it carries.
+ */
+export default function OppRunPage() {
   const { slug = "", runId: pathRunId, skill, workspaceSlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   // ?run_id= query param takes precedence; fall back to :runId path segment
   // (kept for backwards-compat with existing /opps/:slug/runs/:runId routes).
   const runId = searchParams.get("run_id") ?? pathRunId;
-  const { view, setView } = useViewMode("phase");
+  const { view: tabView, setView } = useViewMode("phase");
+  // A step link is a Phases address: the step detail lives there.
+  const view = skill ? "phase" : tabView;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
   const costRollup = useOppCostRollup(slug, workspaceSlug);
   // Replay is started from the tab row but plays on the Phases view, so the
   // page owns it. Lazily fetched — costs nothing until someone presses it.
@@ -72,10 +76,6 @@ export default function OppWorkbenchPage() {
     slug,
     state.kind === "loaded" ? state.snapshot.current_run.run_id : null,
   );
-  const { collapsed: chatCollapsed, toggle: toggleChatCollapsed } =
-    usePaneCollapsed("ace.workbench.chatPaneCollapsed");
-  const { collapsed: navCollapsed, toggle: toggleNavCollapsed } =
-    usePaneCollapsed("ace.workbench.navPaneCollapsed");
 
   // ?fork=<phase> — auto-open ForkOppDialog when a Slack deep-link lands here.
   const forkPhaseQuery = searchParams.get("fork");
@@ -162,10 +162,6 @@ export default function OppWorkbenchPage() {
     },
   });
 
-  useEffect(() => {
-    if (skill) setSelectedSkill(skill);
-  }, [skill]);
-
   // Pin the resolved run id into the URL on first load when the user
   // arrived without one (e.g. /opps/<slug> from the list page). The
   // backend already picks the latest run, but the URL stayed bare —
@@ -198,9 +194,31 @@ export default function OppWorkbenchPage() {
   if (state.kind === "error") return <ErrorState message={state.message} code={state.code} onRetry={() => load()} />;
 
   const { snapshot } = state;
-  const selectedStep: Step | null = selectedSkill
-    ? snapshot.current_run.steps.find((s) => s.skill_name === selectedSkill) ?? null
-    : null;
+  const loadedRunId = snapshot.current_run.run_id;
+
+  // ── Step deep links ───────────────────────────────────────────────────
+  // The open step lives in the URL PATH (`…/runs/<run>/steps/<skill>`), so a
+  // step is a shareable address and Back closes it. Every link keeps the
+  // current query (run_id, phase…) minus `view`: a step is a Phases address.
+  const oppBase = `/w/${workspaceSlug}/opps/${encodeURIComponent(slug)}`;
+  const runPath = (rid: string) => (rid ? `${oppBase}/runs/${encodeURIComponent(rid)}` : oppBase);
+  const query = (edit: (p: URLSearchParams) => void) => {
+    const p = new URLSearchParams(searchParams);
+    p.delete("view");
+    edit(p);
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  };
+  const stepHref = (stepSkill: string, phase: string) =>
+    `${runPath(loadedRunId)}/steps/${encodeURIComponent(stepSkill)}${query((p) => p.set("phase", phase))}`;
+  const closeStep = (phase?: string) =>
+    navigate(`${runPath(loadedRunId)}${query((p) => phase && p.set("phase", phase))}`);
+  const changeView = (k: typeof view) => {
+    if (!skill) return setView(k);
+    // Leaving Phases from a step address: drop the step from the path too,
+    // or the page would keep forcing Phases.
+    navigate(`${runPath(loadedRunId)}${query((p) => k !== "phase" && p.set("view", k))}`);
+  };
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
@@ -209,7 +227,13 @@ export default function OppWorkbenchPage() {
         run={snapshot.current_run}
         runs={snapshot.runs ?? []}
         selectedRunId={snapshot.selected_run_id ?? null}
-        onRunChange={(id) => setSearchParams({ run_id: id })}
+        onRunChange={(id) =>
+          // From a step address, keep the step open in the other run (the
+          // path names the run, so it has to change with it).
+          skill
+            ? navigate(`${runPath(id)}/steps/${encodeURIComponent(skill)}`)
+            : setSearchParams({ run_id: id })
+        }
         onRefresh={() => load({ force: true })}
         onRunDeleted={(deletedRunId) => {
           // The just-trashed run is gone from Drive. If the URL pins it
@@ -235,7 +259,7 @@ export default function OppWorkbenchPage() {
         runId={snapshot.current_run.run_id}
       />
       <div className="flex items-center border-b border-border bg-background">
-        <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
+        <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={changeView} />
         {!(replay.active && view === "phase") && (
           <button
             type="button"
@@ -262,59 +286,6 @@ export default function OppWorkbenchPage() {
           <ExternalLink className="h-3 w-3" />
         </a>
       </div>
-      {view === "workbench" && (
-        <div className="min-h-0 flex-1">
-          <WorkbenchLayout
-            left={{
-              title: "Lifecycle",
-              collapsed: navCollapsed,
-              onToggle: toggleNavCollapsed,
-              expandedWidth: 440,
-              content: (
-                <SkillList
-                  steps={snapshot.current_run.steps}
-                  priorRunSteps={[]}
-                  phases={snapshot.phases}
-                  selectedSkill={selectedSkill}
-                  onSelect={setSelectedSkill}
-                  costRollup={costRollup}
-                />
-              ),
-            }}
-            center={
-              selectedStep ? (
-                <StepDetailPane
-                  workspaceSlug={workspaceSlug ?? ""}
-                  slug={slug}
-                  runId={snapshot.current_run.run_id}
-                  skill={selectedStep.skill_name}
-                  skillDisplayName={selectedStep.display_name}
-                />
-              ) : (
-                <EmptyState title="Select a step" description="Click a row in the lifecycle to see its details." />
-              )
-            }
-            right={{
-              title: "Chat",
-              collapsed: chatCollapsed,
-              onToggle: toggleChatCollapsed,
-              expandedWidth: 400,
-              content: selectedStep ? (
-                <WorkbenchChatPane
-                  slug={slug}
-                  runId={snapshot.current_run.run_id}
-                  skill={selectedStep.skill_name}
-                  skillDisplayName={selectedStep.display_name}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
-                  Select a step in the lifecycle to see its chats
-                </div>
-              ),
-            }}
-          />
-        </div>
-      )}
       {view === "runs" && (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <RunsTable
@@ -352,6 +323,9 @@ export default function OppWorkbenchPage() {
             sendDecisionRevert={sendDecisionRevert}
             onRemoteDecisionEdit={decisionEditRef}
             onRemoteDecisionRevert={decisionRevertRef}
+            openSkill={skill ?? null}
+            stepHref={stepHref}
+            onCloseStep={closeStep}
           />
         </div>
       )}

@@ -56,8 +56,10 @@ SCOPE_TOOLS: dict[str, tuple[str, ...]] = {
 #: Which pages grant which scopes. Keyed like the SDK's ``PAGE_SCOPES``; the
 #: SDK validates it against ``SCOPE_TOOLS``.
 PAGE_SCOPES: dict[str, tuple[str, ...]] = {
-    # The opp Workbench — the page with the "Discuss in chat" pane. Everything
-    # the agent can read here is what the visitor is already looking at.
+    # The opp run page (Phases view) — the page whose step drawer has the
+    # "Chat" tab. Everything the agent can read here is what the visitor is
+    # already looking at. The key keeps its old name: it is a contract with
+    # canopy (page-state `surface`, probe.PROBE_PAGE), not a tab label.
     "opp-workbench": ("opps:read",),
 }
 
@@ -69,7 +71,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
 #: names its path, and the registry decides what, if anything, it grants — a
 #: path can only SELECT among the read-only scopes registered here.
 PAGE_PATTERNS: dict[str, str] = {
-    "opp-workbench": r"(?:/ace)?/w/[^/]+/opps/(?!compare/)[^/]+(?:/runs/[^/]+(?:/steps/[^/]+)?)?/?",
+    "opp-workbench": r"(?:/ace)?/w/[^/]+/opps/(?!compare/)[^/]+(?:/runs/[^/]+)?(?:/steps/[^/]+)?/?",
 }
 
 #: Where the resolved principal rides on the MCP request's ASGI scope, from the

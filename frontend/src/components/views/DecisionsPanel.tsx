@@ -6,8 +6,10 @@ import { DecisionAnswerEditor } from "@/components/opps/decisions/DecisionAnswer
 import { DecisionHistory } from "@/components/opps/decisions/DecisionHistory";
 import { DecisionRow as SharedDecisionRow } from "@/components/opps/decisions/DecisionRow";
 import { DecisionSection } from "@/components/opps/decisions/DecisionSection";
+import { SupersededVersions } from "@/components/opps/decisions/SupersededVersions";
 
 import type { EditOp } from "./decisions/decisionsReducer";
+import { splitSuperseded } from "./decisions/supersession";
 
 interface Props {
   /** The phase whose decisions we want to show — match `Decision.phase`. */
@@ -55,9 +57,13 @@ export function DecisionsPanel({
   onEdit,
   onRevert,
 }: Props) {
-  const phaseRows = useMemo(
-    () =>
-      decisions
+  // Superseded rows are history, not choices: split them out over the WHOLE
+  // log (a correction can point across phases), then keep this phase's live
+  // rows — each carrying the versions it replaced — and its retired rows.
+  const { phaseRows, earlierBy, retired } = useMemo(() => {
+    const split = splitSuperseded(decisions);
+    return {
+      phaseRows: split.live
         .filter((d) => d.phase === phase)
         .map((d, i) => ({ d, i }))
         .sort((a, b) => {
@@ -65,16 +71,20 @@ export function DecisionsPanel({
           return r !== 0 ? r : a.i - b.i;
         })
         .map((x) => x.d),
-    [decisions, phase],
-  );
+      earlierBy: split.earlierBy,
+      retired: split.retired.filter((d) => d.phase === phase),
+    };
+  }, [decisions, phase]);
 
-  if (phaseRows.length === 0) return null;
+  if (phaseRows.length === 0 && retired.length === 0) return null;
 
   const overridden = phaseRows.filter((d) => d.status === "overridden").length;
 
   return (
     <DecisionsPanelInner
       phaseRows={phaseRows}
+      earlierBy={earlierBy}
+      retired={retired}
       overridden={overridden}
       editBuffer={editBuffer}
       savedOverrides={savedOverrides}
@@ -86,6 +96,8 @@ export function DecisionsPanel({
 
 function DecisionsPanelInner({
   phaseRows,
+  earlierBy,
+  retired,
   overridden,
   editBuffer,
   savedOverrides,
@@ -93,6 +105,8 @@ function DecisionsPanelInner({
   onRevert,
 }: {
   phaseRows: Decision[];
+  earlierBy: Map<string, Decision[]>;
+  retired: Decision[];
   overridden: number;
   editBuffer?: readonly EditOp[];
   savedOverrides?: Record<string, SavedDecisionOverride>;
@@ -126,6 +140,7 @@ function DecisionsPanelInner({
         <li key={d.id}>
           <DecisionRow
             decision={d}
+            earlier={earlierBy.get(d.id) ?? []}
             editBuffer={editBuffer}
             savedOverride={savedOverrides?.[d.id]}
             onEdit={onEdit}
@@ -133,18 +148,29 @@ function DecisionsPanelInner({
           />
         </li>
       ))}
+      {retired.length > 0 && (
+        <li>
+          <SupersededVersions
+            earlier={retired}
+            label={`${retired.length} retired ${retired.length === 1 ? "decision" : "decisions"} (no longer in force)`}
+          />
+        </li>
+      )}
     </DecisionSection>
   );
 }
 
 function DecisionRow({
   decision,
+  earlier,
   editBuffer,
   savedOverride,
   onEdit,
   onRevert,
 }: {
   decision: Decision;
+  /** Rows this run replaced with this one, nearest first. */
+  earlier: readonly Decision[];
   editBuffer?: readonly EditOp[];
   savedOverride?: SavedDecisionOverride;
   onEdit?: (row_id: string, new_answer: string, override_reasoning?: string) => void;
@@ -174,13 +200,25 @@ function DecisionRow({
       pending={isEdited}
       optionsLabel={canEdit ? "Pick option" : "Options"}
       badges={
-        isEdited ? (
-          <span
-            className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-400"
-            aria-label="this row has a pending edit"
-          >
-            edited{pendingEdit?.editor_name ? ` by ${pendingEdit.editor_name}` : ""}
-          </span>
+        isEdited || earlier.length > 0 ? (
+          <>
+            {earlier.length > 0 && (
+              <span
+                className="shrink-0 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground"
+                title="This run replaced an earlier version of this decision — open the row to see it"
+              >
+                revised
+              </span>
+            )}
+            {isEdited && (
+              <span
+                className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-400"
+                aria-label="this row has a pending edit"
+              >
+                edited{pendingEdit?.editor_name ? ` by ${pendingEdit.editor_name}` : ""}
+              </span>
+            )}
+          </>
         ) : undefined
       }
       optionsSlot={
@@ -217,6 +255,7 @@ function DecisionRow({
           }
         />
       )}
+      <SupersededVersions live={decision} earlier={earlier} />
     </SharedDecisionRow>
   );
 }

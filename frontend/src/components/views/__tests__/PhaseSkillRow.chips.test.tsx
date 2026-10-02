@@ -30,7 +30,7 @@ function step(p: Partial<Step> = {}): Step {
 const renderRow = (props: Partial<Parameters<typeof PhaseSkillRow>[0]> = {}) =>
   render(
     <MemoryRouter>
-      <PhaseSkillRow step={step()} oppSlug="opp" runId="r1" {...props} />
+      <PhaseSkillRow step={step()} {...props} />
     </MemoryRouter>,
   );
 

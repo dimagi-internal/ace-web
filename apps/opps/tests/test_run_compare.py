@@ -126,3 +126,16 @@ def test_a_change_of_case_or_spacing_is_not_a_changed_answer():
     base = _snap("a", [], [_decision("cadence", "Reporting cadence?", "weekly")])
     head = _snap("b", [], [_decision("cadence", "Reporting cadence?", "  Weekly. ")])
     assert build_run_compare(base, head)["changed_decisions"] == []
+
+
+def test_a_fork_retired_row_is_not_a_new_decision():
+    """A fork retires a re-run phase's rows under a renamed id with
+    ``superseded_by`` (ace#2582). That history row is not something the later
+    run newly decided, and it does not count toward its decisions."""
+    retired = _decision("cap-20260722-1341", "Daily visit cap?", "10")
+    retired["superseded_by"] = "cap"
+    base = _snap("a", [], [_decision("cap", "Daily visit cap?", "10")])
+    head = _snap("b", [], [_decision("cap", "Daily visit cap?", "10"), retired])
+    out = build_run_compare(base, head)
+    assert out["new_decisions"] == []
+    assert out["head"]["decision_count"] == 1

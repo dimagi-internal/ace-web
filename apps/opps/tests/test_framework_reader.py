@@ -108,6 +108,71 @@ def test_multi_run_full_decision_rows():
     assert d.notes == "partner is a survey org"
 
 
+def _tree_with_superseded_rows() -> dict:
+    """A run whose log carries both shapes of HISTORY row next to the live
+    ones: an in-run correction (ace#1421: ``d-old`` → ``d-new``) and a row a
+    fork retired under a renamed id (ace#2582: ``fx-20260530-1200`` → ``fx``).
+    Plus a live row that has history, and one with none — the negative
+    control that a live row is never mistaken for history."""
+    tree = _demo_multi_run_tree()
+    tree["ACE"]["demo"]["runs"]["20260601-0900"]["decisions.yaml"] = (
+        "decisions:\n"
+        "  - id: d-old\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Which archetype?\n"
+        "    ai-default: data-collection\n"
+        "    superseded_by: d-new\n"
+        "  - id: d-new\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Which archetype?\n"
+        "    ai-default: service-delivery\n"
+        "  - id: fx-20260530-1200\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Payment per visit?\n"
+        "    ai-default: '2 USD'\n"
+        "    superseded_by: fx\n"
+        "  - id: fx\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Payment per visit?\n"
+        "    ai-default: '3 USD'\n"
+        "  - id: plain\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Language?\n"
+        "    ai-default: English\n"
+    )
+    return tree
+
+
+def test_snapshot_decisions_carry_superseded_by():
+    """canopy-agent-runs drops ``superseded_by``; the reader must put it back,
+    or the Phases panel shows corrected / fork-retired rows as live choices."""
+    client = FakeDriveClient.from_tree(_tree_with_superseded_rows())
+    snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
+    got = {d.id: d.superseded_by for d in snap.current_run.decisions}
+    assert got == {
+        "d-old": "d-new",
+        "d-new": "",
+        "fx-20260530-1200": "fx",
+        "fx": "",
+        "plain": "",
+    }
+
+
+def test_superseded_by_reaches_the_serialized_snapshot():
+    from apps.opps.serializers import serialize_run_detail
+
+    client = FakeDriveClient.from_tree(_tree_with_superseded_rows())
+    snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
+    rows = serialize_run_detail(snap.current_run)["decisions"]
+    assert {r["id"]: r["superseded_by"] for r in rows}["d-old"] == "d-new"
+    assert {r["id"]: r["superseded_by"] for r in rows}["plain"] == ""
+
+
 def test_multi_run_attaches_judge_verdict_via_store():
     """Step status + judge verdict come from the framework store + map."""
     client = FakeDriveClient.from_tree(_demo_multi_run_tree())

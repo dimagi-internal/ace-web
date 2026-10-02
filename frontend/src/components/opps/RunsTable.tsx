@@ -286,7 +286,7 @@ export function RunsTable({
                     href={href}
                     className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                   >
-                    open in workbench
+                    open in Phases
                   </a>
                 </div>
               </div>

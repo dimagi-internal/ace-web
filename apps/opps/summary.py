@@ -2223,6 +2223,9 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
             conflict_signals=[str(c) for c in (raw.get("conflict_signals") or [])],
         )
         serialized = serialize_decision(decision)
+        # Always "" here (superseded rows were skipped above); dropped so the
+        # frozen public payload (PR #723) keeps its exact row shape.
+        serialized.pop("superseded_by", None)
         # ``decision.phase`` is the phase TAG the log writes (``3-commcare``);
         # the phase NAME it projects onto (``commcare-setup``) rides on the
         # serialized ``phase`` field, which is what the registry is keyed on.
