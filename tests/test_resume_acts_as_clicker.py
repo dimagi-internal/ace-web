@@ -228,14 +228,16 @@ def test_an_unreachable_canopy_is_a_502_and_writes_nothing(workspace, monkeypatc
 @override_settings(**CANOPY_ON)
 def test_the_post_deploy_sweep_still_dispatches_as_the_owner(workspace, canopy, monkeypatch):
     """Nobody clicked: the sweep continues a run its owner started, so the turn
-    runs as the owner even though a member made the HTTP call."""
+    runs as the owner even though another identity (the deploy caller) made the
+    HTTP call. Only the system caller may make it — see
+    tests/test_resume_sweep_authority.py for the member refusal."""
     owner = _member(workspace, OWNER, role="owner")
-    member = _member(workspace, MEMBER)
+    deployer = _member(workspace, "deploy@dimagi.com", role="owner")
     # Never dispatched to canopy (no canopy_session_id) → the sweep does not
     # consult canopy for liveness, it just resumes.
     session, _ = _dead_run(workspace, owner, canopy_session_id="")
 
-    resp = _client(member).post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    resp = _client(deployer).post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
 
     assert resp.status_code == 200, resp.content
     assert resp.json()["count"] == 1

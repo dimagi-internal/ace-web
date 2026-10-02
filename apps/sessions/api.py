@@ -12,6 +12,7 @@ from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
 from apps.api.errors import (
     TYPE_CONFLICT,
+    TYPE_FORBIDDEN,
     TYPE_NOT_FOUND,
     TYPE_UPSTREAM,
     TYPE_VALIDATION,
@@ -434,6 +435,35 @@ def resume_session_run(session, *, sender=None) -> dict | None:
     return {"assistant_message_id": assistant_msg.id, "command": command, "slug": session.slug}
 
 
+def may_run_resume_sweep(user, workspace) -> bool:
+    """Who may trigger the post-deploy sweep — the SYSTEM caller, not any member.
+
+    The sweep dispatches every interrupted run as that run's OWNER (it continues
+    what a deploy killed; nobody chose those runs). Gated only on membership, it
+    let any member — partner workspaces hold external reviewers as members —
+    make every interrupted run in the workspace execute with its owner's
+    authority. So the caller must be one of:
+
+    - a workspace OWNER. The deploy PAT (secret ``ACE_WEB_DEPLOY_PAT``) is a
+      personal token; its user is not recorded anywhere in this repo, but the
+      only identities that mint it (a human via ``/ace:ace-web-pat-mint``, or
+      ACE's own login) are owners of the workspace it sweeps;
+    - ``is_staff`` (a site operator);
+    - an email named in ``settings.ACE_RESUME_SWEEP_CALLERS`` — the explicit
+      deploy identity, for a deployment whose sweep token is not an owner.
+    """
+    from django.conf import settings
+
+    from apps.workspaces.permissions import role_for
+
+    if getattr(user, "is_staff", False):
+        return True
+    email = (getattr(user, "email", "") or "").strip().lower()
+    if email and email in {e.strip().lower() for e in settings.ACE_RESUME_SWEEP_CALLERS}:
+        return True
+    return role_for(user, workspace) == "owner"
+
+
 @router.post(
     "/resume-interrupted",
     summary="Resume all interrupted ACE opp runs (post-deploy self-heal)",
@@ -457,13 +487,32 @@ def resume_interrupted(
     Best-effort per session, never all-or-nothing: a session that cannot be
     restarted is reported in ``failed`` and the sweep carries on. Anything that
     raises here is a *self-heal* failing, and aborting the whole sweep on the
-    first one leaves every later run unresumed AND unreported."""
+    first one leaves every later run unresumed AND unreported.
+
+    Because it borrows each owner's authority, only the system caller may
+    trigger it (``may_run_resume_sweep``: a workspace owner, staff, or a
+    configured deploy identity). Any other member gets 403
+    ``resume_sweep_forbidden`` and nothing is touched; a member who wants one
+    run back uses ``POST /{slug}/resume``, which runs as them."""
     from django.http import JsonResponse
 
     from apps.canopy import run_dispatch
     from apps.sessions.models import Session
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
+    if not may_run_resume_sweep(request.user, workspace):
+        raise ProblemError(
+            403,
+            "Only the deploy sweep may resume every run",
+            type_=TYPE_FORBIDDEN,
+            detail=(
+                "This sweep continues every interrupted run as its owner, so it is "
+                "limited to workspace owners, staff and the configured deploy "
+                "identity (ACE_RESUME_SWEEP_CALLERS). To restart one run as "
+                "yourself, use POST /sessions/{slug}/resume."
+            ),
+            extras={"code": "resume_sweep_forbidden"},
+        )
     resumed: list[dict] = []
     failed: list[dict] = []
     skipped: list[dict] = []

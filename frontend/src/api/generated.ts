@@ -622,6 +622,12 @@ export interface paths {
          *     restarted is reported in ``failed`` and the sweep carries on. Anything that
          *     raises here is a *self-heal* failing, and aborting the whole sweep on the
          *     first one leaves every later run unresumed AND unreported.
+         *
+         *     Because it borrows each owner's authority, only the system caller may
+         *     trigger it (``may_run_resume_sweep``: a workspace owner, staff, or a
+         *     configured deploy identity). Any other member gets 403
+         *     ``resume_sweep_forbidden`` and nothing is touched; a member who wants one
+         *     run back uses ``POST /{slug}/resume``, which runs as them.
          */
         readonly post: operations["apps_sessions_api_resume_interrupted"];
         readonly delete?: never;
