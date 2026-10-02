@@ -2051,7 +2051,7 @@
             "description": "OK"
           }
         },
-        "description": "Bulk-resume every interrupted ACE opp run in the workspace. Intended for\nthe post-deploy hook: after a rollout drains the tasks driving live runs,\nthis relaunches them from run_state.yaml. Single serial call \u2192 no\ndouble-spawn race.\n\nBest-effort per session, never all-or-nothing: a session that cannot be\nrestarted is reported in ``failed`` and the sweep carries on. Anything that\nraises here is a *self-heal* failing, and aborting the whole sweep on the\nfirst one leaves every later run unresumed AND unreported.",
+        "description": "Bulk-resume every interrupted ACE opp run in the workspace. Intended for\nthe post-deploy hook: after a rollout drains the tasks driving live runs,\nthis relaunches them from run_state.yaml. Single serial call \u2192 no\ndouble-spawn race.\n\nSYSTEM-initiated, so each run continues AS ITS OWNER \u2014 deliberately unlike\n``resume_run``. Nobody chose these runs: the sweep restarts what a deploy\nkilled, inside ``resumable_after_deploy``'s 30-min window, with the fixed\nresume command, so the authority is the owner's who started the run. The\ncaller (the deploy PAT) is not the person the run is for, and acting as it\nwould re-attribute every run in the workspace to the deploy identity.\n\nBest-effort per session, never all-or-nothing: a session that cannot be\nrestarted is reported in ``failed`` and the sweep carries on. Anything that\nraises here is a *self-heal* failing, and aborting the whole sweep on the\nfirst one leaves every later run unresumed AND unreported.",
         "tags": [
           "sessions"
         ],
@@ -2091,6 +2091,7 @@
             "description": "OK"
           }
         },
+        "description": "Resume one run AS THE PERSON WHO CLICKED, never as its owner.\n\nAny workspace member may resume any run here, so running the turn as the\nowner let a member execute with the owner's authority \u2014 and, since\ncanopy-web#1044 resolves ACE's own login to the agent, with ACE's full\nauthority on an ace@-owned run. Partner workspaces hold external reviewers\nas members, so that reached outsiders. Now canopy applies the clicker's\nown authority: a member gets a member's access; someone canopy knows only\nas a contact is refused here (409) before anything is written \u2014 the same\npreflight a seeded run gets (ace-web#845).",
         "tags": [
           "sessions"
         ],
