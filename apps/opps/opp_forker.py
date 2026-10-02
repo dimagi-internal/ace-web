@@ -21,8 +21,9 @@ artifacts. See ace-web#734.
   ``N < fork_ordinal``. The plugin lays out per-phase artifacts in
   numbered folders so the folder name carries the phase ordinal — no
   manifest introspection needed.
-* ``decisions.yaml`` carried over from the source run, with rows for
-  phases >= the fork ordinal trimmed.
+* ``decisions.yaml`` carried over from the source run WHOLE: rows for
+  phases >= the fork ordinal are retired as superseded history rather
+  than dropped, so the re-run's own rows become the live ones (ace#2582).
 * ``idea.md`` (only when the source had a ``--idea`` seed) and
   ``inputs-manifest.yaml`` carried over verbatim — they describe the
   source pack the kept phases worked from.
@@ -66,13 +67,16 @@ from apps.sessions.models import Message, Session
 # Fork modes — both copy upstream artifacts; they differ only in how
 # decisions.yaml rows from upstream phases are filtered.
 #
-# * keep-overrides-only: only rows where status == "overridden" carry
-#   forward (and only from phases strictly before the fork point).
-#   AI defaults from upstream are dropped so downstream phases re-derive.
-# * keep-all: every row upstream of the fork point carries forward
+# * keep-overrides-only: only human-ruled rows (status "overridden" /
+#   "human-decided") carry forward LIVE. AI defaults are retired so
+#   downstream phases re-derive.
+# * keep-all: every row upstream of the fork point carries forward live
 #   regardless of status — both AI defaults and overrides.
 #
-# In both modes, rows at or downstream of the fork-phase are dropped.
+# Nothing is ever dropped (ace#2582): a row that doesn't carry forward live
+# is RETIRED — kept as history, moved off its canonical id and marked
+# ``superseded_by`` (see ``_retire_decision_rows``). In both modes, rows at
+# or downstream of the fork-phase are retired.
 FORK_MODES = ("keep-overrides-only", "keep-all")
 DEFAULT_FORK_MODE = "keep-all"
 
@@ -394,14 +398,18 @@ def fork_opp(
 
         progress.emit("finalizing")
 
-        # Trim decisions.yaml to pre-fork rows (only if the source run had
-        # one — otherwise nothing to trim).
+        # Carry decisions.yaml forward: rows the fork re-runs are RETIRED
+        # (kept as history, off their canonical ids), never dropped —
+        # ace#2582. Only if the source run had one.
         if decisions_dest_id is not None:
             trimmed = _rewrite_decisions_yaml(
                 decisions_source_body or "",
                 fork_ordinal=fork_ordinal,
                 edits=edits,
                 mode=mode,
+                source_run_id=source_run.name,
+                fork_phase=point.phase,
+                skill_fork_ordinal=point.skill_ordinal,
             )
             drive.update_file(decisions_dest_id, trimmed, "text/yaml")
         session: Session | None = None
@@ -1329,42 +1337,148 @@ def _build_run_state_yaml(
     return yaml.safe_dump(data, sort_keys=False)
 
 
+#: Row statuses that record a HUMAN ruling. They stay live across a fork at any
+#: phase: an ``overridden`` row is honored when its phase next runs (#544), and
+#: a ``human-decided`` row is binding into later runs by the plugin's contract
+#: (ACE ``lib/decisions-schema.ts`` § status).
+_HUMAN_RULED_STATUSES = ("overridden", "human-decided")
+
+# A decisions-row ``phase`` tag: ``<N>-<kebab>`` (``3-commcare``,
+# ``8-solicitation-management``). The plugin's schema REQUIRES this shape
+# (ACE ``lib/decisions-schema.ts`` DecisionRowSchema.phase), and ``N`` is the
+# phase ordinal — the same convention as the ``<N>-<phase>/`` folders.
+_DECISION_PHASE_TAG_RE = re.compile(r"^(\d+)-[a-z]")
+
+
+def _decision_row_ordinal(phase_tag: str) -> int | None:
+    """Phase ordinal of a decisions row.
+
+    The ``<N>-`` prefix is authoritative. This is the ace#2582 root cause:
+    the trim used to look the tag up in the AGENT registry
+    (``commcare-setup``), where ``3-commcare`` never matches — so every
+    schema-conformant row resolved to None and was "kept as unknown". The
+    fork trim was a no-op on every real run. A bare agent phase name (older
+    logs, the stub-registry tests) still resolves through the registry.
+    """
+    m = _DECISION_PHASE_TAG_RE.match(phase_tag)
+    if m:
+        return int(m.group(1))
+    return _resolve_phase_ordinal(phase_tag)
+
+
+def _archive_suffix(source_run_id: str | None) -> str:
+    """Kebab-safe suffix for a retired row's archived id."""
+    raw = (source_run_id or "pre-fork").lower()
+    cleaned = re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
+    return cleaned or "pre-fork"
+
+
+def _retire_decision_rows(
+    rows: list[Any],
+    retire: list[dict],
+    *,
+    source_run_id: str | None,
+) -> None:
+    """Retire ``retire`` (a subset of ``rows``) in place, keeping every row.
+
+    Operator decision 2026-10-02 (ace#2582): *"a copied run should keep the
+    decision history."* So a row the fork re-runs is NOT dropped. It is moved
+    off its canonical id and marked superseded, REUSING the plugin's own
+    supersession semantics (ace#1421) rather than a parallel flag:
+
+    * ``id`` → ``<id>-<source-run-id>`` (``-2``, ``-3`` … on a collision).
+      The canonical id is then FREE, so the re-run producer's append under it
+      lands — ``decisions_append_rows`` skips an id that already exists, which
+      is exactly how inherited rows used to win over the re-run.
+    * a row that was LIVE gets ``superseded_by: <its original id>``. Every
+      consumer already treats a row carrying ``superseded_by`` as history
+      (``liveDecisions``, the decisions gdoc, the build memo, carry-forward).
+      Until the phase re-runs that id is not in the log; once the producer
+      appends it, the chain ``<id>-<src> → <id>`` is an ordinary supersession.
+    * a row that was ALREADY history keeps its ``superseded_by``, rewritten to
+      the archived id when its successor was retired too, so in-run chains
+      (``X → X-verbatim``) survive intact.
+    * ``inherited_from_run: <source-run-id>`` records where the row came from.
+
+    ``supersedes`` is rewritten on every row that names a retired id, so a
+    chain never points at a canonical id the archive moved away from. Rows
+    that are NOT retired are otherwise untouched — in particular a pre-fork
+    row's ``superseded_by`` is left as written.
+    """
+    if not retire:
+        return
+    suffix = _archive_suffix(source_run_id)
+    taken = {str(r.get("id")) for r in rows if isinstance(r, dict)}
+    renamed: dict[str, str] = {}
+    for row in retire:
+        old = str(row.get("id") or "")
+        if not old or old in renamed:
+            continue
+        new = f"{old}-{suffix}"
+        n = 2
+        while new in taken:
+            new = f"{old}-{suffix}-{n}"
+            n += 1
+        taken.add(new)
+        renamed[old] = new
+
+    retire_ids = {id(r) for r in retire}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sup = row.get("supersedes")
+        if isinstance(sup, str) and sup in renamed:
+            row["supersedes"] = renamed[sup]
+        if id(row) not in retire_ids:
+            continue
+        old = str(row.get("id") or "")
+        if old in renamed:
+            row["id"] = renamed[old]
+        by = row.get("superseded_by")
+        if isinstance(by, str) and by:
+            row["superseded_by"] = renamed.get(by, by)
+        elif old:
+            row["superseded_by"] = old
+        if source_run_id:
+            row["inherited_from_run"] = source_run_id
+
+
 def _rewrite_decisions_yaml(
     original: str,
     *,
     fork_ordinal: int | None,
     edits: list[dict[str, str]] | None = None,
     mode: str = DEFAULT_FORK_MODE,
+    source_run_id: str | None = None,
+    fork_phase: str | None = None,
+    skill_fork_ordinal: int | None = None,
 ) -> str:
-    """Trim ``decisions.yaml`` to rows from phases strictly before the fork,
-    filter by ``mode``, then apply any human answer edits.
+    """Carry ``decisions.yaml`` into the fork: apply any human answer edits,
+    then RETIRE (never drop) every row the fork does not keep live.
 
     Schema upgrade: v1 inputs are upgraded in memory to the v2 shape
     (``default`` → ``ai-default``, ``open`` → ``applied``, add ``override``
-    where ``status: overridden``) before any filtering. Output is always
-    serialized in v2 shape.
+    where ``status: overridden``) before anything else.
 
-    Each row carries its own ``phase`` tag (agent-declared phase name).
-    Rows whose phase ordinal >= ``fork_ordinal`` are dropped. Rows whose
-    phase isn't recognized stay (safer than silently dropping content
-    when the registry / decisions file disagree).
+    A row stays LIVE (byte-for-byte) when any of these holds:
 
-    Mode filter (applied after the phase trim):
+    * it records a human ruling (``status`` ``overridden`` / ``human-decided``);
+    * its phase is strictly before the fork phase (``keep-all`` only);
+    * on a SKILL fork, it sits in the fork phase and its ``skill`` ran before
+      the fork skill (the phase's earlier work is kept, so are its decisions);
+    * its phase tag can't be resolved (safer than retiring content when the
+      registry and the log disagree).
 
-    * ``keep-all``: no further filtering. Every surviving upstream row
-      carries forward regardless of status.
-    * ``keep-overrides-only``: only rows where ``status == "overridden"``
-      survive. AI defaults from upstream are dropped so downstream
-      phases re-derive them.
+    Every other row is RETIRED by :func:`_retire_decision_rows`: kept as
+    history, moved off its canonical id, marked ``superseded_by``. Under
+    ``keep-all`` that is the rows at or after the fork point; under
+    ``keep-overrides-only`` it is every AI default, so downstream re-derives
+    them. Nothing is dropped — the audit trail crosses the fork (ace#2582).
 
-    If ``edits`` is provided, edits are applied **before** the phase
-    trim so the edited rows flip to ``status: overridden`` and survive
-    the trim — user-supplied edits are authoritative human intent and
-    must survive regardless of which phase they target.
-
-    Edits whose ``row_id`` doesn't match any row in the source are
-    silently ignored — the forker can't synthesize a new decision row
-    out of thin air; the source must already contain it.
+    Edits are applied FIRST so an edited row is ``overridden`` by the time
+    the retire decision is made, and stays live whichever phase it targets
+    (#544). Edits whose ``row_id`` doesn't match any row are silently
+    ignored — the forker can't synthesize a decision row.
     """
     if fork_ordinal is None and not edits and mode == DEFAULT_FORK_MODE:
         # Nothing to do: no trim, no edits, default mode is keep-all.
@@ -1391,43 +1505,38 @@ def _rewrite_decisions_yaml(
 
     # 1. Apply user edits FIRST. apply_edits_to_decisions_data flips
     #    affected rows to status=overridden, populating the v2 `override`
-    #    field. This means the trim (step 2) sees the row as overridden
-    #    and preserves it — without this ordering, a Phase-1 edit forked
-    #    at Phase 1 would be silently eaten by the trim. (See #544.)
+    #    field, so step 2 sees them as human-ruled and keeps them live —
+    #    without this ordering a Phase-1 edit forked at Phase 1 would be
+    #    retired with the rest of its phase. (See #544.)
     if edits:
         data = apply_edits_to_decisions_data(data, edits=edits)
 
-    # 2. Phase trim: drop rows whose phase ordinal >= fork_ordinal, with
-    #    one exception — `status: overridden` rows survive the trim
-    #    regardless of which phase they belong to. Overrides represent
-    #    explicit human intent: the override is honored when the relevant
-    #    phase next runs (whether re-running as part of this fork, or
-    #    later in fresh execution).
-    if fork_ordinal is not None:
-        kept: list = []
-        for row in data["decisions"]:
-            if not isinstance(row, dict):
-                kept.append(row)
-                continue
-            if row.get("status") == "overridden":
-                kept.append(row)
-                continue
-            phase_name = str(row.get("phase") or "").strip()
-            if not phase_name:
-                kept.append(row)
-                continue
-            ordinal = _resolve_phase_ordinal(phase_name)
-            if ordinal is None or ordinal < fork_ordinal:
-                kept.append(row)
-        data["decisions"] = kept
+    from apps.opps.skills import skill_ordinal_for_step
 
-    # 3. Mode filter: keep-overrides-only drops AI defaults from upstream
-    #    so downstream phases re-derive them with the new overrides in
-    #    context. keep-all is a no-op here.
-    if mode == "keep-overrides-only":
-        data["decisions"] = [
-            row for row in data["decisions"]
-            if isinstance(row, dict) and row.get("status") == "overridden"
-        ]
+    def stays_live(row: dict) -> bool:
+        if row.get("status") in _HUMAN_RULED_STATUSES:
+            return True
+        if mode == "keep-overrides-only":
+            return False
+        if fork_ordinal is None:
+            return True
+        phase_tag = str(row.get("phase") or "").strip()
+        if not phase_tag:
+            return True
+        ordinal = _decision_row_ordinal(phase_tag)
+        if ordinal is None or ordinal < fork_ordinal:
+            return True
+        if ordinal > fork_ordinal or skill_fork_ordinal is None or not fork_phase:
+            return False
+        # Skill fork, row in the fork phase: live iff its skill ran before the
+        # fork skill. An unattributable skill is RETIRED, not kept — retiring
+        # loses nothing (the row stays as history), whereas keeping it live
+        # is the exact defect this closes.
+        skill_ord = skill_ordinal_for_step(str(row.get("skill") or ""), fork_phase)
+        return skill_ord is not None and skill_ord < skill_fork_ordinal
+
+    # 2. Retire every row that doesn't stay live. Nothing is dropped.
+    retire = [r for r in data["decisions"] if isinstance(r, dict) and not stays_live(r)]
+    _retire_decision_rows(data["decisions"], retire, source_run_id=source_run_id)
 
     return yaml.safe_dump(data, sort_keys=False)

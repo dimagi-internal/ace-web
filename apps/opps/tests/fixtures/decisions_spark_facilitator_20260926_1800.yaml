@@ -1,0 +1,199 @@
+schema_version: 5
+opportunity: spark-facilitator
+run_id: 20260926-1800
+generated_at: '2026-09-25T21:43:55.230Z'
+decisions:
+- id: archetype-selection
+  phase: 1-design
+  skill: idea-to-pdd
+  question: Which delivery archetype best fits the intervention?
+  ai-default: longitudinal-visits
+  options:
+  - atomic-visit
+  - longitudinal-visits
+  - focus-group
+  - multi-stage
+  reasoning: The community is visited repeatedly in an ordered FCAP step sequence and carries state between meetings; communities progress asynchronously, so not multi-stage.
+  source: Enock Q&A §1 (weekly meetings per community); FCAP Structure PDF (ordered steps 1-7); CCZ m0f4 per-meeting record
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: pilot-scope-window
+  phase: 1-design
+  skill: idea-to-pdd
+  question: Which slice of the FCAP arc does the pilot cover?
+  ai-default: Goal Setting subphase, FCAP steps 1-7
+  options:
+  - Goal Setting subphase, FCAP steps 1-7
+  - Whole Planning phase, steps 1-14
+  - Full FCAP arc
+  reasoning: Enock confirmed a focused first slice; the window within FCAP is ACE's choice. Goal Setting is weekly-cadence, self-contained, ends before the Proposal Generator (steps 10-12) boundary.
+  source: Enock Q&A §3 (focused first slice); FCAP Structure PDF (Goal Setting ~3 months, steps 1-7)
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: inferred
+- id: llo-payment-per-visit
+  phase: 1-design
+  skill: idea-to-pdd
+  question: LLO (org_amount) payment per verified meeting?
+  ai-default: MWK 1,500 [PROPOSED]
+  options:
+  - MWK 1,500 [PROPOSED]
+  - MWK 0
+  - Percentage set by LLO response
+  reasoning: About 20% of the FLW band midpoint, to cover Partner Trainer Layer B visits and Layer C calls. Placeholder pending the LLO's costed response.
+  source: connect_create_payment_unit requires org_amount on managed opportunities; no source states an LLO fee
+  superseded_by: llo-payment-per-visit-revised
+  status: ai-default
+  value_set_by: external
+  evidence_basis: inferred
+- id: llo-payment-per-visit-revised
+  phase: 1-design
+  skill: idea-to-pdd
+  question: LLO (org_amount) payment per verified meeting?
+  ai-default: MWK 3,000 [PROPOSED]
+  options:
+  - MWK 3,000 [PROPOSED]
+  - MWK 1,500 [PROPOSED]
+  - Costed by LLO response
+  reasoning: Raised to MWK 3,000 as a floor; the solicitation asks the LLO to cost supervision and review explicitly and the fee is re-set from that costing.
+  source: 'idea-to-pdd-eval (run 20260925-1536) WARN: MWK 1,500 x ~156 meetings cannot fund risk-stratified review plus calls'
+  supersedes: llo-payment-per-visit
+  status: ai-default
+  value_set_by: external
+  evidence_basis: inferred
+- id: learn-latitude-baseline-pretest
+  phase: 3-commcare
+  skill: pdd-to-learn-app
+  question: PDD §4.2 names one 12-item bank — does the Learn app also carry a baseline pre-test?
+  ai-default: 6-item non-gating pre-test added
+  options:
+  - 6-item non-gating pre-test added
+  - gate only, no pre-test
+  reasoning: 'ACE''s assessment-gate standard wants a baseline distinct from the gate; it carries learn_module only, never connect.assessment, so it cannot unlock Deliver. Spot-check: Learn app › Before you start › Starting quiz.'
+  source: PDD §4.2 [ACE]
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: inferred
+- id: learn-ambiguity-step-name-ampersand
+  phase: 3-commcare
+  skill: pdd-to-learn-app
+  question: PDD §6.1 step names are verbatim but three contain '&', banned from label text — which wins?
+  ai-default: '''&'' written as ''and'''
+  options:
+  - '''&'' written as ''and'''
+  - '''&'' kept verbatim'
+  reasoning: 'Only the ''&'' character changes; words and order are Spark''s. Deliver app uses the identical substitution. Spot-check: Learn app › Steps and savings › Lesson 5.'
+  source: PDD §6.1 and §14 entity_state_taxonomy [FIXED]
+  superseded_by: learn-ambiguity-step-name-ampersand-verbatim
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §6.1 [FIXED]: step labels transcribed verbatim, not to be paraphrased'
+  - 'Build rule (pdd-to-learn-app REQUIRED angle-bracket/ampersand ban): a raw ''&'' in label text breaks CCHQ make_build'
+- id: deliver-latitude-payability-discriminator
+  phase: 3-commcare
+  skill: pdd-to-deliver-app
+  question: PDD §14 pins a 3-part entity_id grain — add a payability discriminator?
+  ai-default: add meeting_kind as 4th part
+  options:
+  - add meeting_kind as 4th part
+  - ship the 3-part grain
+  reasoning: 'Committee and not-held records must not share the payable key space (ace#969); PDD §3.2 allows Phase 3 to implement the cap differently. Capacity still exactly 3 paid per step. Spot-check: Deliver app › Community Meeting Record › entity_key.'
+  source: PDD §3.2 and §14 entity_id_grain [ACE]
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: inferred
+- id: learn-ambiguity-step-name-ampersand-verbatim
+  phase: 3-commcare
+  skill: pdd-to-learn-app
+  question: PDD §6.1 step names are verbatim but three contain '&', which a build rule banned from label text — which wins?
+  ai-default: '''&'' kept verbatim'
+  options:
+  - '''&'' kept verbatim'
+  - '''&'' written as ''and'''
+  reasoning: 'The ban had no reproducer; HQ built a label carrying ''&'' (compiled to &amp;), so the partner''s words win. Spot-check: Learn app › Steps and savings › Lesson 5 › steps_list.'
+  source: PDD §6.1 and §14 entity_state_taxonomy [FIXED]
+  supersedes: learn-ambiguity-step-name-ampersand
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §6.1 [FIXED]: step labels verbatim, not to be paraphrased'
+  - pdd-to-learn-app REQUIRED ampersand clause (no reproducer; ace#2150)
+- id: program-reuse-vs-create
+  phase: 4-connect
+  skill: connect-program-setup
+  question: Reuse an existing Connect program or create one?
+  ai-default: Create
+  options:
+  - Create
+  - Reuse a115e4f2 (USD)
+  reasoning: 'Only domain+archetype match was a115e4f2, whose currency (USD) diverges from the PDD''s MWK; the operator chose replacement. Spot-check: opp.yaml connect.program.id.'
+  source: connect_list_programs(ai-demo-space) unfiltered, 45 programs; operator decision program-currency-usd-vs-mwk
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: connect-rule-meeting-conducted-yes
+  phase: 4-connect
+  skill: connect-opp-setup
+  question: Where is the PDD verification rule 'meeting_conducted = yes' enforced?
+  ai-default: Not configurable on Connect — not applied
+  options:
+  - Connect form_field_rules
+  - CCZ constraint
+  - Not configurable on Connect — applied elsewhere
+  - Not configurable on Connect — not applied
+  reasoning: 'Not-held records get their own entity_key space (meeting_kind=not_held) but still carry the deliver block, so they mint work until rejected. Set on the Phase 9 LLO opp. Spot-check: Connect verification config; Deliver app › Community Meeting Record › about_this_meeting › meeting_conducted.'
+  source: PDD §3.1, §7.1(1), §14
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §7.1(1): Phase 4 configures both predicate clauses as Connect form-field rules'
+  - 'connect_set_verification_flags refused on the self-managed opp: /verification_flags_config/ 302 (ace#2419)'
+- id: system-prompt-baseline
+  phase: 5-ocs
+  skill: ocs-agent-setup
+  question: What baseline system prompt does the per-opp chatbot inherit (golden template default vs. customized for archetype)?
+  ai-default: Composed per-opp prompt, supplementary surface
+  options:
+  - Golden template default
+  - Composed per-opp prompt, supplementary surface
+  - Composed per-opp prompt, primary surface
+  reasoning: The composed prompt REPLACES the golden template text on publish, so it must carry every protection itself. longitudinal-visits has a real 6-module Learn app, so the bot is framed as supplementary (primary framing is reserved for focus-group). Carries the 4 standing fabrication domains + 8 PDD open questions, contact exactness + retrieval-fallback obligations with zero inlined addresses, the stored-value vs what-happened rule on meeting_type, a correction of the PDD's stale USD locale warning (Phase 4 created an MWK program), and a mandatory closing tag line. Step 7.5 audit exit 0.
+  source: PDD §1, §3, §4, §7, §8.3, §10.1, §15; run_state operator_decisions.program-currency-usd-vs-mwk; ocs-agent-setup Step 7
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: sol-solicitation-type
+  phase: 8-solicitation-management
+  skill: solicitation-create
+  question: Which solicitation kind is published?
+  ai-default: EOI
+  options:
+  - EOI
+  - RFP
+  - custom
+  reasoning: PDD §12 names EOI; the rate, geography and device readiness are all to be proposed by respondents, which suits an expression of interest rather than a priced RFP. Published as labs solicitation 22742 (solicitation_type eoi).
+  source: PDD §12 Solicitation; §14 solicitation_type
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: solicitation-all-in-rate-and-devices
+  phase: 8-solicitation-management
+  skill: solicitation-create
+  question: How is the rate framed on the listing, and where do device costs sit?
+  ai-default: All-in, devices inside the rate
+  options:
+  - All-in, devices inside the rate
+  - Devices costed separately (work order §2)
+  reasoning: Standing operator directive (2026-09-08) requires an all-in per-verified-unit rate with no separately-funded line and an explicit worker-vs-organisation split (ace#2265). The PDD band (MWK 5,000-10,000 to the CBF + MWK 3,000 organisation floor, both PROPOSED; Phase 4 payment unit 7,500 + 3,000) is shown as an indicative all-in MWK 8,000-13,000. This deviates from work order §2 / PDD §12, which let the partner cost device provision separately; the listing instead asks how any device gap is carried inside the rate. The work order text should be reconciled at contract execution.
+  source: PDD §10.1, §12, §14; work order §2, §6.2; run_state connect-setup payment_units
+  status: ai-default
+  value_set_by: external
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'Work order §2 / PDD §12: device provision costed separately, funded only if Dimagi agrees'
+  - 'Operator directive 2026-09-08 (solicitation-create design principle): rate is all-in, never invite a separately-funded line'

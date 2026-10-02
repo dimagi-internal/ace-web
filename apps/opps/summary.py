@@ -2189,6 +2189,12 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
         if not isinstance(raw, dict):
             log.warning("summary: decision entry is not a mapping — skipped")
             continue
+        if raw.get("superseded_by"):
+            # HISTORY, not a choice this run stands behind: a row a later row
+            # corrected (ace#1421), or one a fork retired because this run
+            # re-runs its phase (ace#2582). The log keeps it for the audit
+            # trail; the review page shows a partner only the live choices.
+            continue
         row_id = str(raw.get("id") or "").strip()
         question = str(raw.get("question") or "").strip()
         if not row_id or not question:

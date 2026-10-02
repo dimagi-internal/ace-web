@@ -1732,6 +1732,41 @@ def test_decision_rows_without_id_or_question_are_dropped_loudly():
     assert [r["id"] for r in d["rows"]] == ["fine"]
 
 
+def test_superseded_rows_are_history_not_live_choices():
+    """A row carrying ``superseded_by`` is history: corrected by a later row
+    (ace#1421) or retired by a fork whose run re-runs its phase (ace#2582).
+    The review page shows a partner only the choices this run stands behind;
+    before ace#2582, a forked run's page listed the SOURCE run's Phase 3-8
+    rows as this run's decisions."""
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["runs"]["20260503-0835"]["decisions.yaml"] = (
+        "decisions:\n"
+        "  - id: live-pre-fork\n"
+        "    phase: 1-design\n"
+        "    question: Kept?\n"
+        "    ai-default: a\n"
+        "  - id: corrected\n"
+        "    phase: 1-design\n"
+        "    question: Old?\n"
+        "    ai-default: a\n"
+        "    superseded_by: corrected-revised\n"
+        "  - id: corrected-revised\n"
+        "    phase: 1-design\n"
+        "    question: New?\n"
+        "    ai-default: b\n"
+        "    supersedes: corrected\n"
+        "  - id: payability-20260926-1800\n"
+        "    phase: 3-commcare\n"
+        "    question: Inherited?\n"
+        "    ai-default: c\n"
+        "    superseded_by: payability\n"
+        "    inherited_from_run: 20260926-1800\n"
+    )
+    d = _payload(tree)["decisions"]
+    assert [r["id"] for r in d["rows"]] == ["live-pre-fork", "corrected-revised"]
+    assert d["total"] == 2
+
+
 def test_open_questions_parse_owner_and_where_it_gets_answered():
     """An unresolved question with no owner is an unassigned one. The
     convention ACE writes carries both; parsing keeps them separable."""

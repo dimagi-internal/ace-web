@@ -17,6 +17,12 @@ def _decisions_yaml(rows, *, schema_version=2):
     )
 
 
+def _live_ids(parsed):
+    """ids of rows still LIVE — a fork retires rows (``superseded_by``)
+    instead of dropping them (ace#2582)."""
+    return [r["id"] for r in parsed["decisions"] if "superseded_by" not in r]
+
+
 def test_rewrite_with_no_edits_matches_legacy_trim():
     """Existing callers (no edits) get current behavior.
 
@@ -35,8 +41,9 @@ def test_rewrite_with_no_edits_matches_legacy_trim():
     out = _rewrite_decisions_yaml(src, fork_ordinal=2)  # keep ordinal < 2
 
     parsed = yaml.safe_load(out)
-    ids = [r["id"] for r in parsed["decisions"]]
-    assert ids == ["a"]  # 'b' belongs to phase ordinal 2, dropped
+    assert _live_ids(parsed) == ["a"]  # 'b' belongs to phase ordinal 2, retired
+    # ...but kept as history, off its canonical id (ace#2582).
+    assert [r["id"] for r in parsed["decisions"]] == ["a", "b-pre-fork"]
 
 
 def test_rewrite_preserves_v4_evidence_basis_and_conflict_signals():
@@ -157,8 +164,8 @@ def test_keep_overrides_only_drops_applied_rows():
     )
 
     parsed = yaml.safe_load(out)
-    ids = [r["id"] for r in parsed["decisions"]]
-    assert ids == ["overridden-row"]
+    assert _live_ids(parsed) == ["overridden-row"]
+    assert len(parsed["decisions"]) == 2  # applied-row retired, not dropped
 
 
 def test_keep_all_preserves_both_applied_and_overridden():
@@ -221,8 +228,7 @@ def test_non_overridden_downstream_rows_are_still_trimmed():
     out = _rewrite_decisions_yaml(src, fork_ordinal=2)
 
     parsed = yaml.safe_load(out)
-    ids = [r["id"] for r in parsed["decisions"]]
-    assert ids == ["upstream-applied"]
+    assert _live_ids(parsed) == ["upstream-applied"]
 
 
 def test_edit_at_fork_phase_survives_keep_overrides_only():
@@ -245,9 +251,8 @@ def test_edit_at_fork_phase_survives_keep_overrides_only():
     )
 
     parsed = yaml.safe_load(out)
-    assert len(parsed["decisions"]) == 1
-    [row] = parsed["decisions"]
-    assert row["id"] == "edited-row"
+    assert _live_ids(parsed) == ["edited-row"]
+    [row] = [r for r in parsed["decisions"] if r["id"] == "edited-row"]
     assert row["override"] == "v2"
     assert row["status"] == "overridden"
 
@@ -270,10 +275,9 @@ def test_edit_at_fork_phase_survives_keep_all():
     )
 
     parsed = yaml.safe_load(out)
-    ids = [r["id"] for r in parsed["decisions"]]
     # Edited row survives via the overridden-survives carveout.
-    # other-row gets trimmed (Phase ordinal 1 = fork_ordinal, no edit).
-    assert ids == ["edited-row"]
+    # other-row is retired (Phase ordinal 1 = fork_ordinal, no edit).
+    assert _live_ids(parsed) == ["edited-row"]
     assert parsed["decisions"][0]["status"] == "overridden"
 
 
@@ -292,8 +296,7 @@ def test_pre_existing_override_in_fork_phase_also_survives():
     out = _rewrite_decisions_yaml(src, fork_ordinal=1)
 
     parsed = yaml.safe_load(out)
-    ids = [r["id"] for r in parsed["decisions"]]
-    assert ids == ["old-override"]
+    assert _live_ids(parsed) == ["old-override"]
 
 
 def test_v1_input_upgrades_in_memory_on_rewrite():
