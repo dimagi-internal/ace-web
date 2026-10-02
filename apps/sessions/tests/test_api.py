@@ -63,6 +63,23 @@ def member_client(db, client):
 
 
 @pytest.fixture
+def owner_client(db, client):
+    """A workspace OWNER — who may call the post-deploy resume sweep
+    (``may_run_resume_sweep``); an editor may not."""
+    creator = User.objects.create_user(email="creator@example.com")
+    workspace = Workspace.objects.create(
+        slug="ws1",
+        display_name="WS1",
+        drive_root_folder_id="folder-1",
+        created_by=creator,
+    )
+    user = User.objects.create_user(email="owner@example.com")
+    WorkspaceMembership.objects.create(workspace=workspace, user=user, role="owner")
+    client.force_login(user)
+    return client, workspace, user
+
+
+@pytest.fixture
 def non_member_client(db, client):
     creator = User.objects.create_user(email="creator2@example.com")
     workspace = Workspace.objects.create(
@@ -591,8 +608,8 @@ def _make_interrupted(workspace, user, opp_run_id="20260604-1551"):
 
 
 @pytest.mark.django_db
-def test_resume_interrupted_relaunches_ace_runs(member_client, monkeypatch):
-    client, workspace, user = member_client
+def test_resume_interrupted_relaunches_ace_runs(owner_client, monkeypatch):
+    client, workspace, user = owner_client
     _make_interrupted(workspace, user)
     spawned = []
     monkeypatch.setattr(
@@ -607,13 +624,13 @@ def test_resume_interrupted_relaunches_ace_runs(member_client, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_resume_interrupted_skips_non_opp_sessions(member_client, monkeypatch):
+def test_resume_interrupted_skips_non_opp_sessions(owner_client, monkeypatch):
     from datetime import timedelta
 
     from django.utils import timezone
 
     from apps.sessions.models import Message, Session
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     s = Session.create_with_owner(  # interrupted but NOT an opp run
         owner=user, workspace=workspace, source="web",
         driver_heartbeat_at=timezone.now() - timedelta(seconds=300),
@@ -671,7 +688,7 @@ def test_resume_interrupted_non_member_404(non_member_client):
 
 
 @pytest.mark.django_db
-def test_resume_interrupted_relaunches_graceful_cancel(member_client, monkeypatch):
+def test_resume_interrupted_relaunches_graceful_cancel(owner_client, monkeypatch):
     # The common deploy path: SIGTERM → turn marked error:'cancelled (...)'.
     # The bulk sweep must resume it (resumable_after_deploy, not interrupted).
     from datetime import timedelta
@@ -679,7 +696,7 @@ def test_resume_interrupted_relaunches_graceful_cancel(member_client, monkeypatc
     from django.utils import timezone
 
     from apps.sessions.models import Message, Session
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     s = Session.create_with_owner(
         owner=user, workspace=workspace, source="web",
         opp_slug="bednet-spot-check", opp_run_id="20260604-2058",
@@ -739,13 +756,13 @@ def _make_canopy_dispatched(workspace, user, *, opp_run_id, turn_id="turn-1"):
 
 
 @pytest.mark.django_db
-def test_resume_interrupted_survives_one_sessions_dispatch_failure(member_client, monkeypatch):
+def test_resume_interrupted_survives_one_sessions_dispatch_failure(owner_client, monkeypatch):
     """One bad session must not abort the sweep. Before this fix, DispatchError
     propagated out of the loop as an unhandled 500 and every session after the
     failing one was left unresumed AND unreported."""
     from apps.canopy.run_dispatch import DispatchError
 
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     _make_interrupted(workspace, user, opp_run_id="20260604-0001")
     _make_interrupted(workspace, user, opp_run_id="20260604-0002")
 
@@ -768,12 +785,12 @@ def test_resume_interrupted_survives_one_sessions_dispatch_failure(member_client
 
 
 @pytest.mark.django_db
-def test_resume_interrupted_reports_the_failing_sessions_identity(member_client, monkeypatch):
+def test_resume_interrupted_reports_the_failing_sessions_identity(owner_client, monkeypatch):
     """A silent failure is the thing being fixed — the response must name which
     run did not restart, or the sweep's caller cannot act on it."""
     from apps.canopy.run_dispatch import DispatchError
 
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     s = _make_interrupted(workspace, user, opp_run_id="20260604-0003")
     monkeypatch.setattr(
         "apps.canopy.run_dispatch.start_turn",
@@ -788,14 +805,14 @@ def test_resume_interrupted_reports_the_failing_sessions_identity(member_client,
 @pytest.mark.django_db
 @override_settings(**_CANOPY_ON)
 def test_resume_interrupted_does_not_redispatch_a_run_canopy_still_owns(
-    member_client, monkeypatch,
+    owner_client, monkeypatch,
 ):
     """The re-dispatch loop. A dispatched run sits `pending` with a beat that
     goes stale in 90s, so resumable_after_deploy matches it on every deploy —
     the sweep that dispatched it would keep re-dispatching it forever."""
     from unittest import mock
 
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     s = _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0004")
     dispatched = []
     monkeypatch.setattr(
@@ -825,13 +842,13 @@ def test_resume_interrupted_does_not_redispatch_a_run_canopy_still_owns(
 @pytest.mark.django_db
 @override_settings(**_CANOPY_ON)
 def test_resume_interrupted_still_resumes_a_run_whose_canopy_turn_died(
-    member_client, monkeypatch,
+    owner_client, monkeypatch,
 ):
     """The skip must be narrow: a canopy turn that FAILED is exactly what the
     self-heal exists for. Skipping it too would disable the sweep outright."""
     from unittest import mock
 
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0005")
     dispatched = []
     monkeypatch.setattr(
@@ -853,7 +870,7 @@ def test_resume_interrupted_still_resumes_a_run_whose_canopy_turn_died(
 @pytest.mark.django_db
 @override_settings(**_CANOPY_ON)
 def test_resume_interrupted_does_not_resume_on_an_unreachable_canopy(
-    member_client, monkeypatch,
+    owner_client, monkeypatch,
 ):
     """UNKNOWN is not permission to act. canopy may still be executing the turn;
     resuming on a guess double-executes the run."""
@@ -861,7 +878,7 @@ def test_resume_interrupted_does_not_resume_on_an_unreachable_canopy(
 
     from apps.canopy.client import CanopyError
 
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0006")
     dispatched = []
     monkeypatch.setattr(
@@ -878,7 +895,7 @@ def test_resume_interrupted_does_not_resume_on_an_unreachable_canopy(
 @pytest.mark.django_db
 @override_settings(**_CANOPY_CONFIGURED_BUT_UNFLAGGED)
 def test_resume_interrupted_consults_canopy_only_when_the_flag_is_on(
-    member_client, monkeypatch,
+    owner_client, monkeypatch,
 ):
     """Flag off ⇒ the sweep behaves exactly as it did before this PR. canopy is
     fully wired here, so the settings default is the only thing guarding it."""
@@ -887,7 +904,7 @@ def test_resume_interrupted_consults_canopy_only_when_the_flag_is_on(
     from django.conf import settings
 
     assert settings.CANOPY_BASE_URL and settings.CANOPY_SIGNING_KEY
-    client, workspace, user = member_client
+    client, workspace, user = owner_client
     _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0007")
     dispatched = []
     monkeypatch.setattr(

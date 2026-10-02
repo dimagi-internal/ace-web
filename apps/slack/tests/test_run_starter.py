@@ -147,7 +147,11 @@ def test_a_dispatch_failure_is_reported_to_slack_not_swallowed():
     from apps.canopy.client import CanopyError
 
     user, ws = _fixture()
-    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(403, "nope")):
+    # The requester preflight passes (canopy resolved them as a user); the
+    # DISPATCH is what fails. A preflight failure is a different, earlier
+    # refusal that mints nothing — covered by the preflight tests below.
+    with mock.patch("apps.canopy.run_dispatch.preflight_run_actor"), \
+         mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(403, "nope")):
         with pytest.raises(run_starter.RunStartError) as exc:
             run_starter.start_run_from_slack(
                 slug_or_link="opp-a", user=user, workspace=ws,
@@ -225,3 +229,121 @@ def test_a_missing_drive_service_account_is_reported_not_swallowed():
             )
     assert "Drive" in str(exc.value)
     assert not OppWorkspace.objects.filter(slug__startswith="another").exists()
+
+
+# --------------------------------------------------------------------------
+# The requester preflight: a Slack run is dispatched AS the requester, so a
+# requester canopy knows only as a contact (confined to ask-only) must be
+# refused before anything is minted — the same check seeded-run and resume
+# make (ace-web#845/#846). Before it, the run was created, Slack said
+# "Kicking off…", and the turn sat `pending` forever.
+# --------------------------------------------------------------------------
+
+
+class _Principal:
+    def __init__(self, is_contact):
+        self.is_contact = is_contact
+
+
+def _assert_nothing_minted(ws):
+    assert Session.objects.count() == 0
+    assert Message.objects.count() == 0
+    assert OppWorkspace.objects.filter(workspace=ws).count() == 1  # the fixture's only
+
+
+@override_settings(**CANOPY_ON)
+def test_a_contact_requester_is_refused_and_nothing_is_created():
+    user, ws = _fixture()
+    with mock.patch("apps.canopy.client.act_as", return_value=_Principal(True)) as act_as, \
+         mock.patch("apps.canopy.run_dispatch.start_turn") as start:
+        with pytest.raises(run_starter.RunRequesterRefused) as exc:
+            run_starter.start_run_from_slack(slug_or_link="opp-a", user=user, workspace=ws)
+
+    act_as.assert_called_once_with("slacker@dimagi.com")
+    start.assert_not_called()
+    _assert_nothing_minted(ws)
+    assert exc.value.code == "run_actor_unresolvable"
+    # Who, why, what to do — the reader is a person in Slack.
+    msg = str(exc.value)
+    assert "slacker@dimagi.com" in msg
+    assert "contact" in msg
+    assert "canopy user account" in msg
+    assert "Nothing was created" in msg
+
+
+@override_settings(ACE_DRIVE_SA_KEY_JSON=PROD_SA_KEY, **CANOPY_ON)
+def test_a_contact_requester_creates_no_opp_from_an_idea_either():
+    user, ws = _fixture()
+    with mock.patch("apps.canopy.client.act_as", return_value=_Principal(True)), \
+         mock.patch("apps.opps.drive_client.get_drive_client") as get_drive, \
+         mock.patch("apps.canopy.run_dispatch.start_turn") as start:
+        with pytest.raises(run_starter.RunRequesterRefused):
+            run_starter.start_run_from_slack(
+                slug_or_link="idea: a new thing", user=user, workspace=ws,
+            )
+    get_drive.assert_not_called()  # refused before Drive is even touched
+    start.assert_not_called()
+    _assert_nothing_minted(ws)
+
+
+@override_settings(**CANOPY_ON)
+def test_an_unreachable_canopy_refuses_with_the_unverified_message():
+    from apps.canopy.client import CanopyError
+
+    user, ws = _fixture()
+    with mock.patch("apps.canopy.client.act_as", side_effect=CanopyError(503, "down")), \
+         mock.patch("apps.canopy.run_dispatch.start_turn") as start:
+        with pytest.raises(run_starter.RunRequesterRefused) as exc:
+            run_starter.start_run_from_slack(slug_or_link="opp-a", user=user, workspace=ws)
+
+    start.assert_not_called()
+    _assert_nothing_minted(ws)
+    assert exc.value.code == "run_actor_unverified"
+    msg = str(exc.value)
+    assert "slacker@dimagi.com" in msg and "503" in msg
+    assert "couldn't check" in msg and "Nothing was created" in msg
+
+
+@override_settings(**CANOPY_ON)
+def test_a_canopy_user_requester_runs_as_before():
+    user, ws = _fixture()
+    with mock.patch("apps.canopy.client.act_as", return_value=_Principal(False)), \
+         mock.patch("apps.canopy.run_dispatch.start_turn") as start:
+        slug, run_id = run_starter.start_run_from_slack(
+            slug_or_link="opp-a", user=user, workspace=ws,
+        )
+    session = Session.objects.get(opp_slug="opp-a", opp_run_id=run_id)
+    assistant = Message.objects.get(session=session, role="assistant")
+    start.assert_called_once_with(assistant.id)  # no actor: the requester owns the run
+    assert session.owner == user
+
+
+@override_settings(**CANOPY_ON)
+def test_the_slash_command_replies_with_the_refusal_and_opens_no_thread():
+    """End to end through `/ace run`: the requester sees why, ephemerally, and
+    no parent card is posted, no SlackRunThread is created."""
+    from apps.slack.models import SlackInstallation, SlackRunThread, SlackUserLink
+    from apps.slack.verbs_run import handle_run
+
+    user, ws = _fixture()
+    inst = SlackInstallation.objects.create(
+        slack_team_id="T1", slack_team_name="Dimagi",
+        bot_user_id="U_BOT", ace_workspace=ws, installed_by_user=user,
+    )
+    link = SlackUserLink.objects.create(
+        installation=inst, slack_user_id="U_S", ace_user=user,
+        slack_email=user.email, slack_real_name="S",
+    )
+    with mock.patch("apps.canopy.client.act_as", return_value=_Principal(True)), \
+         mock.patch("apps.slack.verbs_run._get_client") as get_client:
+        resp = handle_run(
+            installation=inst, user_link=link, rest="opp-a",
+            channel_id="C1", trigger_id="tg",
+        )
+
+    assert resp["response_type"] == "ephemeral"
+    assert resp["text"].startswith(":x: ")
+    assert "contact" in resp["text"] and user.email in resp["text"]
+    get_client.return_value.post_message.assert_not_called()
+    assert not SlackRunThread.objects.exists()
+    _assert_nothing_minted(ws)

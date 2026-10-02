@@ -356,6 +356,13 @@ CANOPY_TRANSCRIPT_MAX_BYTES = env.int("CANOPY_TRANSCRIPT_MAX_BYTES", default=64 
 # human caller can only ever attribute a run to themselves. Comma-separated.
 ACE_AGENT_IDENTITIES = env.list("ACE_AGENT_IDENTITIES", default=["ace@dimagi-ai.com"])
 
+# Who, besides workspace owners and staff, may call the post-deploy sweep
+# (POST /w/{ws}/sessions/resume-interrupted). The sweep dispatches every
+# interrupted run AS ITS OWNER, so it is a system action, not a member action.
+# Name the deploy PAT's user here if it is not an owner of the swept workspace.
+# Comma-separated emails; empty by default.
+ACE_RESUME_SWEEP_CALLERS = env.list("ACE_RESUME_SWEEP_CALLERS", default=[])
+
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships
 # are the actual access-control gate; the domain filter is preserved as a

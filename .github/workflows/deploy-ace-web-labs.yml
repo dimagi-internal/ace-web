@@ -253,8 +253,13 @@ jobs:
         # Guarded so a deploy never fails on this: if the PAT/URL aren't
         # configured yet it logs a warning and moves on. To arm it, set:
         #   secret ACE_WEB_DEPLOY_PAT  — a PAT (mint via /ace:ace-web-pat-mint)
-        #                                whose owner is a member of the target
-        #                                workspace
+        #                                whose user is an OWNER of the target
+        #                                workspace (or staff, or named in the
+        #                                service's ACE_RESUME_SWEEP_CALLERS).
+        #                                The sweep resumes every run as its
+        #                                owner, so a plain member gets 403
+        #                                resume_sweep_forbidden (logged below
+        #                                as a warning; the deploy still passes).
         #   var    ACE_WEB_RESUME_URL  — full URL of the bulk endpoint, e.g.
         #     https://<host>/ace/api/w/<workspace-slug>/sessions/resume-interrupted
         env:

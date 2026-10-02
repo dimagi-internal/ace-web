@@ -44,6 +44,56 @@ class RunStartError(Exception):
     pass
 
 
+class RunRequesterRefused(RunStartError):
+    """The Slack requester cannot execute a run in canopy, so none was minted.
+
+    ``code`` mirrors the problem+json ``extras.code`` the web routes return for
+    the same refusal (``run_actor_unresolvable`` / ``run_actor_unverified``).
+    """
+
+    def __init__(self, message: str, *, code: str, email: str):
+        self.code, self.email = code, email
+        super().__init__(message)
+
+
+def _preflight_requester(user) -> None:
+    """Refuse BEFORE minting anything when a run for the Slack requester could
+    not execute — the same check ``seed_run_for_opp`` and ``resume_run`` make
+    (``run_dispatch.preflight_run_actor``, ace-web#845/#846).
+
+    The run is dispatched as the requester (correct: they caused it). But a
+    requester canopy knows only as a contact gets a turn canopy confines to
+    ask-only, so without this the run was created, Slack said "Kicking off…",
+    and the turn sat ``pending`` forever. The messages are written for the
+    person reading them in Slack: who, why, and what to do.
+    """
+    from apps.canopy.run_dispatch import (
+        RunActorUnresolvable,
+        RunActorUnverified,
+        preflight_run_actor,
+    )
+
+    email = (getattr(user, "email", "") or "").strip()
+    try:
+        preflight_run_actor(email)
+    except RunActorUnresolvable as exc:
+        raise RunRequesterRefused(
+            f"I can't start this run for {email}: canopy knows that address only "
+            "as a contact, and a contact can ask questions but cannot run "
+            "anything, so the run would never execute. Nothing was created. Ask "
+            f"an ACE admin to give {email} a canopy user account, then try again.",
+            code="run_actor_unresolvable", email=email,
+        ) from exc
+    except RunActorUnverified as exc:
+        raise RunRequesterRefused(
+            f"I couldn't check {email} with canopy ({exc.detail}), so I didn't "
+            "start the run: I can't tell whether it would execute. Nothing was "
+            "created. Try again in a few minutes; if it keeps failing, tell the "
+            "ACE team canopy is unreachable.",
+            code="run_actor_unverified", email=email,
+        ) from exc
+
+
 def _is_pdd_link(text: str) -> bool:
     return text.startswith("https://docs.google.com/document/")
 
@@ -116,12 +166,19 @@ def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, st
     bound to it, and injects `Run /ace:run <slug>/<run_id>.`.
 
     Either way the run then gets a pending assistant turn, dispatched
-    through ``apps.canopy.run_dispatch.start_turn``.
+    through ``apps.canopy.run_dispatch.start_turn`` as the requester.
+
+    Before anything is minted the requester is resolved in canopy
+    (``_preflight_requester``); one canopy cannot run for raises
+    ``RunRequesterRefused`` (a ``RunStartError``, so Slack shows its message).
     """
     if not slug_or_link:
         raise RunStartError("missing opp slug or PDD link")
 
     if _is_idea(slug_or_link) or _is_pdd_link(slug_or_link):
+        # Before create_opp: a refused requester must not leave an opp folder,
+        # a session or a kickoff message behind.
+        _preflight_requester(user)
         from apps.opps.opp_creator import CreateOppError, create_opp
         idea_text = _extract_idea(slug_or_link) if _is_idea(slug_or_link) else ""
         pdd_text = ""
@@ -189,6 +246,9 @@ def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, st
     ).exists()
     if not opp_exists:
         raise RunStartError(f"no opp `{slug}` in workspace `{workspace.slug}`")
+
+    # Before the Session and its messages exist (see _preflight_requester).
+    _preflight_requester(user)
 
     run_id = _mint_run_id()
     session = Session.create_with_owner(
