@@ -648,7 +648,9 @@ def test_resume_run_routes_through_the_canopy_dispatch_seam(member_client, monke
         opp_slug="bednet-spot-check", opp_run_id="20260604-2058",
     )
     called = []
-    monkeypatch.setattr("apps.canopy.run_dispatch.start_turn", lambda mid: called.append(mid))
+    monkeypatch.setattr(
+        "apps.canopy.run_dispatch.start_turn", lambda mid, actor=None: called.append(mid),
+    )
     # Belt and braces: a regression to calling the subprocess directly would
     # otherwise spawn a REAL detached `manage.py drive_turn` in CI.
     spawned = []
@@ -912,7 +914,7 @@ def test_resume_run_reports_a_dispatch_failure_as_a_problem_not_a_500(
     )
     monkeypatch.setattr(
         "apps.canopy.run_dispatch.start_turn",
-        lambda mid: (_ for _ in ()).throw(DispatchError("canopy 403: nope")),
+        lambda mid, actor=None: (_ for _ in ()).throw(DispatchError("canopy 403: nope")),
     )
     resp = client.post(f"/api/w/{workspace.slug}/sessions/{s.slug}/resume")
     assert resp.status_code == 502

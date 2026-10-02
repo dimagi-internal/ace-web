@@ -95,6 +95,14 @@ class Session(models.Model):
     # matches ace's real shape (one turn per run, many runs at once).
     # Empty = this run has never been dispatched to canopy.
     canopy_session_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # WHO holds `canopy_session_id` in canopy — the email of the principal that
+    # created it. canopy makes a web session private to its creator, and a turn
+    # sent into a session the agent's owner/admin started runs in that
+    # session's FULL profile (canopy `session_writer`). So a resume by someone
+    # other than the holder must not reuse it: it gets a canopy session of its
+    # own, created as the person who clicked (apps/canopy/run_dispatch.py).
+    # Empty = the run's owner (every session dispatched before this existed).
+    canopy_session_actor = models.EmailField(blank=True, default="")
 
     # The HUMAN this run was started for, when the owner is an agent identity
     # acting on their behalf (apps/opps/attribution.py). `owner` stays the

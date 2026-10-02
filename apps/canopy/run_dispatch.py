@@ -92,14 +92,40 @@ def actor_email(session) -> str:
     """The person this run is FOR — its owner, whose command ace-web is carrying
     out. canopy resolves them to their account or their contact; there is no
     fallback identity, because a run attributed to someone else is a run that
-    lies about who asked. No owner, no run."""
+    lies about who asked. No owner, no run.
+
+    This is the actor for work nobody clicked: the run's first turn (its owner
+    started it), the post-deploy sweep continuing it, and the background reads
+    (progress, transcripts). A turn a PERSON causes — a resume — names its own
+    actor instead (``dispatch_turn(actor=...)``)."""
     email = (getattr(session.owner, "email", "") or "").strip()
     if not email:
         raise DispatchError("this run has no owner to act for")
     return email
 
 
-def _run_metadata(session) -> dict:
+def _norm(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def _turn_actor_email(session, actor) -> str:
+    """Who THIS turn is dispatched as: ``actor`` when a person caused it, else
+    the run's owner (``actor_email``)."""
+    if actor is None:
+        return actor_email(session)
+    email = (getattr(actor, "email", "") or "").strip()
+    if not email:
+        raise DispatchError("the person resuming this run has no email to act as")
+    return email
+
+
+def _canopy_session_holder(session) -> str:
+    """The principal ``session.canopy_session_id`` belongs to in canopy. Blank
+    ``canopy_session_actor`` predates the column, when only owners dispatched."""
+    return session.canopy_session_actor or actor_email(session)
+
+
+def _run_metadata(session, requested_by: str = "") -> dict:
     """The opaque bag canopy filters its session list on. `origin_key` mirrors
     apps/canopy/api.py's server-side derivation exactly — it is what scopes
     canopy's list to ONE ace workspace, so it must not drift."""
@@ -112,10 +138,12 @@ def _run_metadata(session) -> dict:
         meta["opp_run_id"] = session.opp_run_id
     if session.opp_step_skill:
         meta["opp_step_skill"] = session.opp_step_skill
-    if getattr(session, "requested_by", ""):
-        # Who ASKED for the run (attribution) — the owner, which canopy acts
-        # as, may be an agent identity carrying a human's request.
-        meta["requested_by"] = session.requested_by
+    requested_by = requested_by or getattr(session, "requested_by", "")
+    if requested_by:
+        # Who ASKED (attribution) — the owner, which canopy acts as, may be an
+        # agent identity carrying a human's request; for a resume someone
+        # clicked, it is the clicker.
+        meta["requested_by"] = requested_by
     return meta
 
 
@@ -150,8 +178,23 @@ def _fail(assistant_message, detail: str) -> None:
     )
 
 
-def dispatch_turn(assistant_message_id: int) -> str:
+def dispatch_turn(assistant_message_id: int, *, actor=None) -> str:
     """Enqueue the canopy Turn that executes this assistant turn.
+
+    ``actor`` is the person who CAUSED this turn (a resume someone clicked);
+    canopy runs the turn with that person's own authority. ``None`` means no
+    person did — the run's first turn, or the post-deploy sweep continuing a
+    run its owner already started — and the turn runs as the owner.
+
+    Why the actor never borrows the owner's canopy session: canopy makes a web
+    session private to its creator, and a turn sent into a session that the
+    agent's owner/admin started runs in that session's FULL profile
+    (canopy-web ``session_writer``). Sending a member's resume into an
+    ace@-owned session would therefore hand them ACE's whole authority — the
+    gap this parameter closes. So a turn whose actor is not the holder of
+    ``canopy_session_id`` gets a canopy session of its OWN, and the old one is
+    stopped as its holder (cancelling a dead turn is not acting with its
+    authority).
 
     Returns the canopy turn id, or "" when run execution is disabled (in which
     case the caller keeps its legacy subprocess path). Raises DispatchError on
@@ -172,10 +215,11 @@ def dispatch_turn(assistant_message_id: int) -> str:
     session = assistant.session
 
     try:
-        person = client.act_as(actor_email(session))
+        email = _turn_actor_email(session, actor)
+        person = client.act_as(email)
 
         canopy_session_id = session.canopy_session_id
-        if canopy_session_id:
+        if canopy_session_id and _norm(_canopy_session_holder(session)) == _norm(email):
             # A resume declares the previous turn dead. Tell canopy, or the stale
             # turn keeps holding one_executing_turn_per_session and this send
             # queues behind a turn that will never finish.
@@ -184,12 +228,23 @@ def dispatch_turn(assistant_message_id: int) -> str:
             except client.CanopyError:
                 log.warning("canopy stop failed for session %s; continuing", canopy_session_id)
         else:
+            if canopy_session_id:
+                # Someone else holds the run's canopy session. Retire its dead
+                # turn as THEM (a stop, never a send), then start this turn in
+                # a session of the actor's own — see the docstring.
+                _stop_as_holder(session, canopy_session_id)
+            is_owner = _norm(email) == _norm(actor_email(session))
+            base = session.title or f"ace-run: {session.opp_slug}/{session.opp_run_id}"
             created = person.create_session(
-                title=session.title or f"ace-run: {session.opp_slug}/{session.opp_run_id}",
-                metadata=_run_metadata(session),
+                title=base if is_owner else f"{base} — resumed by {email}",
+                metadata=_run_metadata(session, requested_by="" if is_owner else email),
             )
             canopy_session_id = str(created["id"])
-            Session.objects.filter(pk=session.pk).update(canopy_session_id=canopy_session_id)
+            Session.objects.filter(pk=session.pk).update(
+                canopy_session_id=canopy_session_id,
+                # Blank for the owner keeps the legacy reading ("the owner").
+                canopy_session_actor="" if is_owner else email,
+            )
 
         sent = person.send(
             canopy_session_id,
@@ -216,16 +271,33 @@ def dispatch_turn(assistant_message_id: int) -> str:
     return str(turn_id)
 
 
-def start_turn(assistant_message_id: int) -> None:
+def _stop_as_holder(session, canopy_session_id: str) -> None:
+    """Best-effort: cancel the turn left in ``canopy_session_id`` as the
+    principal that holds it. A failure only means a dead turn lingers in a
+    session nothing will send to again — it cannot block the new turn, which
+    runs in a different session."""
+    try:
+        client.act_as(_canopy_session_holder(session)).stop(canopy_session_id)
+    except (client.CanopyError, DispatchError) as exc:
+        log.warning("canopy stop as holder failed for session %s: %s", canopy_session_id, exc)
+
+
+def start_turn(assistant_message_id: int, *, actor=None) -> None:
     """The ONE entry point every run caller uses. Routes to canopy when run
     execution is on, and to the legacy in-process subprocess when it is not.
+
+    ``actor``: the person who caused this turn, when one did (a resume they
+    clicked) — see ``dispatch_turn``. Callers with no such person (a run's
+    first turn, which its owner started; the post-deploy sweep) omit it and the
+    turn runs as the run's owner. Ignored on the legacy subprocess path, which
+    does not go through canopy.
 
     Imported through the module (not `from ... import start_turn_subprocess`)
     so the existing monkeypatches on
     `apps.sessions.turn_driver.start_turn_subprocess` keep working.
     """
     if enabled():
-        dispatch_turn(assistant_message_id)
+        dispatch_turn(assistant_message_id, actor=actor)
         return
     from apps.sessions import turn_driver
 
