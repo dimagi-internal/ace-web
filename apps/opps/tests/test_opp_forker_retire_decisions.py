@@ -55,7 +55,7 @@ def test_fork_at_commcare_leaves_no_live_row_at_or_after_the_fork():
     parsed = _fork()
     leaked = [
         r["id"] for r in _live(parsed["decisions"])
-        if _decision_row_ordinal(r["phase"]) >= COMMCARE_ORDINAL
+        if (_decision_row_ordinal(r["phase"]) or 0) >= COMMCARE_ORDINAL
     ]
     assert leaked == []
 
