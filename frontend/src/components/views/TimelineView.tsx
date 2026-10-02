@@ -306,7 +306,10 @@ function EventTitle({
     const encStep = event.step_skill ? encodeURIComponent(event.step_skill) : "";
     return (
       <Link
-        to={`/w/${workspaceSlug}/opps/${encOpp}${encStep ? `/runs/r1/steps/${encStep}` : ""}`}
+        // The event names no run, so the step link is the run-less form
+        // (latest run). It used to hard-code `/runs/r1/`, the flat-layout
+        // synthetic id, which 404s on every multi-run opp.
+        to={`/w/${workspaceSlug}/opps/${encOpp}${encStep ? `/steps/${encStep}` : ""}`}
         className="text-sm text-foreground hover:text-primary hover:underline"
       >
         {event.title}

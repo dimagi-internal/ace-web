@@ -21,7 +21,7 @@ interface Props {
 }
 
 /**
- * The Workbench's right pane: chats about the selected step, backed by
+ * The Chat tab of the Phases step drawer: chats about the open step, backed by
  * canopy-hosted chat (a canopy Session seeded with `opp_slug`/`opp_run_id`/
  * `opp_step_skill`, so canopy's own session list can be filtered to "this
  * run"). Selecting a chat populates the bottom section with a live
@@ -34,7 +34,7 @@ interface Props {
  * type into, a flow canopy's "Discuss this step" (`createCanopySession`
  * below) now covers end to end.
  */
-export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Props) {
+export function StepChatPane({ slug, runId, skill, skillDisplayName }: Props) {
   const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
   const canopyStatus = useCanopyStatus();
   const canopyEnabled = Boolean(canopyStatus?.enabled);
@@ -71,7 +71,7 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
     () => ({
       resource: `opp://${slug}/${runId}`,
       backing_tool: "apps_opps_api_get_step",
-      // The Workbench shows ONE step at a time, so the selection is that step.
+      // The step drawer shows ONE step at a time, so the selection is that step.
       visible_ids: [skill],
       filters: {
         workspace_slug: workspaceSlug,
@@ -82,6 +82,8 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
       // Descriptive only, so the agent can say the step's name the way the
       // reader sees it rather than echoing a slug back at them.
       step_display_name: skillDisplayName ?? skill,
+      // The canopy page key (apps/canopy/grant.py PAGE_SCOPES), not a tab
+      // name — it stays "opp-workbench" though the Workbench tab is gone.
       surface: "opp-workbench",
     }),
     [workspaceSlug, slug, runId, skill, skillDisplayName],

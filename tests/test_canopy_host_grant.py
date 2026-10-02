@@ -159,7 +159,10 @@ def test_off_by_default_the_token_endpoint_refuses_and_discovery_404s(host_key):
     ("/ace/w/team/opps/field-hep", "opp-workbench"),
     ("/ace/w/team/opps/field-hep/runs/r1", "opp-workbench"),
     ("/ace/w/team/opps/field-hep/runs/r1/steps/idea-to-pdd", "opp-workbench"),
+    # The run-less step link (latest run) — the same Phases page.
+    ("/ace/w/team/opps/field-hep/steps/idea-to-pdd", "opp-workbench"),
     ("/w/team/opps/field-hep/", "opp-workbench"),
+    ("/ace/w/team/opps/field-hep/steps", ""),
     ("/ace/w/team/opps", ""),
     ("/ace/w/team/opps/compare/a/b", ""),
     ("/ace/w/team/opps/field-hep/compare", ""),

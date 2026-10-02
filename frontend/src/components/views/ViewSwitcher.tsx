@@ -2,7 +2,6 @@ import {
   Clock,
   Film,
   Layers,
-  LayoutGrid,
   ListTree,
   Workflow,
 } from "lucide-react";
@@ -24,7 +23,6 @@ import { cn } from "@/lib/utils";
 export const VIEW_KINDS = [
   "hierarchy",
   "timeline",
-  "workbench",
   "phase",
   "story",
   "runs",
@@ -57,7 +55,6 @@ interface Props<K extends string> {
 const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   hierarchy: ListTree,
   timeline: Clock,
-  workbench: LayoutGrid,
   phase: Layers,
   story: Film,
   runs: Workflow,

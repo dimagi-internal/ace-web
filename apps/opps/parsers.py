@@ -136,3 +136,13 @@ class Decision:
     # Canonical schema: ACE ``lib/decisions-schema.ts`` (v4 block).
     evidence_basis: str = "stated"
     conflict_signals: list[str] = field(default_factory=list)
+    # The id of the row that REPLACED this one, when this row is history: a
+    # later row corrected it in-run (ace#1421), or a fork retired it because
+    # the fork re-runs its phase (ace#2582 / ace-web#848). "" for a live row.
+    # A superseded row is never a live choice — the Phases decisions panel
+    # folds it under its successor as an earlier version, and the public
+    # summary drops it (``apps/opps/summary.py`` ``_read_decisions``).
+    #
+    # NOT carried by ``canopy_agent_runs`` (0.1.4's row parser drops the key),
+    # so ``framework_reader.attach_superseded_by`` reads it ace-side.
+    superseded_by: str = ""

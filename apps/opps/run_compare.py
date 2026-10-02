@@ -138,8 +138,19 @@ def _header(snapshot: dict) -> dict:
         "started_at": run.get("started_at"),
         "completed_at": run.get("completed_at"),
         "steps_run": sum(1 for s in steps if isinstance(s, dict) and _ran(s)),
-        "decision_count": len(run.get("decisions") or []),
+        "decision_count": len(_live_decisions(snapshot)),
     }
+
+
+def _live_decisions(snapshot: dict) -> list[dict]:
+    """The run's decisions minus history rows (``superseded_by`` set): a row
+    a later row corrected, or one a fork retired under a renamed id — which
+    would otherwise read as a decision the later run newly made."""
+    return [
+        d
+        for d in _run(snapshot).get("decisions") or []
+        if isinstance(d, dict) and d.get("id") and not d.get("superseded_by")
+    ]
 
 
 def build_run_compare(base: dict, head: dict) -> dict:
@@ -147,8 +158,8 @@ def build_run_compare(base: dict, head: dict) -> dict:
     phases = _phase_meta(base, head)
     order = _phase_order(phases)
 
-    base_decisions = {d.get("id"): d for d in _run(base).get("decisions") or [] if d.get("id")}
-    head_decisions = {d.get("id"): d for d in _run(head).get("decisions") or [] if d.get("id")}
+    base_decisions = {d.get("id"): d for d in _live_decisions(base)}
+    head_decisions = {d.get("id"): d for d in _live_decisions(head)}
 
     new_decisions = [
         _decision_row(d, phases) for k, d in head_decisions.items() if k not in base_decisions

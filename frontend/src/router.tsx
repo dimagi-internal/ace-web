@@ -13,7 +13,7 @@ import TemplatesPage from "./pages/TemplatesPage";
 import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
 import OppSummaryPage from "./pages/OppSummaryPage";
-import OppWorkbenchPage from "./pages/OppWorkbenchPage";
+import OppRunPage from "./pages/OppRunPage";
 import RunComparePage from "./pages/RunComparePage";
 import { SessionStructurePage } from "./pages/SessionStructurePage";
 import SessionsPage from "./pages/SessionsPage";
@@ -55,12 +55,16 @@ export const router = createBrowserRouter(
               element: <OppComparePage />,
             },
             { path: "opps/:slug/compare", element: <RunComparePage /> },
-            { path: "opps/:slug", element: <OppWorkbenchPage /> },
-            { path: "opps/:slug/runs/:runId", element: <OppWorkbenchPage /> },
+            { path: "opps/:slug", element: <OppRunPage /> },
+            { path: "opps/:slug/runs/:runId", element: <OppRunPage /> },
+            // Step deep links open the step's detail inside Phases. The
+            // run-less form resolves to the latest run (for links that know
+            // the step but not the run, e.g. the activity timeline).
             {
               path: "opps/:slug/runs/:runId/steps/:skill",
-              element: <OppWorkbenchPage />,
+              element: <OppRunPage />,
             },
+            { path: "opps/:slug/steps/:skill", element: <OppRunPage /> },
             { path: "sessions", element: <SessionsPage /> },
             { path: "videos", element: <VideosListPage /> },
             { path: "videos/library", element: <MediaLibraryPage /> },

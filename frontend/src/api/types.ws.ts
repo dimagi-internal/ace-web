@@ -330,6 +330,14 @@ export interface Decision {
    * disagreed with the others.
    */
   conflict_signals: string[];
+  /**
+   * Set when this row is HISTORY: the id of the row that replaced it — a
+   * later row that corrected it in-run (ace#1421), or the live row a fork
+   * re-runs after retiring this one under a renamed id (ace#2582). A
+   * superseded row is never a live choice; see `splitSuperseded`. Absent or
+   * "" on a live row (and on snapshots cached before the field existed).
+   */
+  superseded_by?: string;
 }
 
 export interface Run {

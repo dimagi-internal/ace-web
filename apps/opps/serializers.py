@@ -243,6 +243,9 @@ def serialize_decision(d: Decision) -> dict:
         "override_reasoning": d.override_reasoning,
         "evidence_basis": d.evidence_basis,
         "conflict_signals": list(d.conflict_signals),
+        # getattr: a snapshot cached before the field existed deserialises
+        # without it — degrade to "live" rather than raise.
+        "superseded_by": getattr(d, "superseded_by", "") or "",
     }
 
 

@@ -28,10 +28,12 @@ import {
 } from "@/components/views/decisions/decisionsReducer";
 import { useAffectedDocs } from "@/components/views/decisions/useAffectedDocs";
 import { computeForkPoint } from "@/components/views/decisions/forkPoint";
+import { liveDecisions } from "@/components/views/decisions/supersession";
 import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
 import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
 import { PhaseRail } from "@/components/views/PhaseRail";
 import { PresenceStrip } from "@/components/views/PresenceStrip";
+import { StepDrawer } from "@/components/views/StepDrawer";
 import { Glossed } from "@/components/glossary/Glossed";
 import {
   phasesFinishedAt,
@@ -73,6 +75,14 @@ interface Props {
     | null
   >;
   onRemoteDecisionRevert?: React.MutableRefObject<((data: { row_id: string }) => void) | null>;
+  /** The step whose detail is open (`/runs/<run>/steps/<skill>`), if any. The
+   *  page owns it because it lives in the URL PATH, not a query param. */
+  openSkill?: string | null;
+  /** Address of a step's detail — rendered as a real link on each skill row,
+   *  so it can be opened in a new tab or copied. */
+  stepHref?: (skill: string, phase: string) => string;
+  /** Close the step detail; `phase`, when given, is the phase to land on. */
+  onCloseStep?: (phase?: string) => void;
 }
 
 /**
@@ -102,14 +112,16 @@ export function asOfCursor(step: Step, running: boolean): Step {
 }
 
 /**
- * Vertical phase list on the left; click a phase to expand a detail
- * panel on the right showing the skills in that phase. Click a skill
- * to drill into the same StepDetailPane the Workbench uses.
+ * THE per-run view. Vertical phase list on the left; click a phase to see its
+ * decisions and skills in the middle; the run's flow on the right. Open a
+ * skill's detail ("Open step") and the right column becomes that step —
+ * artifacts previewed in place, eval, and chats about it (`StepDrawer`).
  *
- * Pure snapshot-driven — no extra API calls. Replaces both the broken
- * React-Flow DAG and the earlier 8-card phase grid.
+ * The step detail replaced the retired Workbench tab, which existed mostly to
+ * host it: its URL (`/runs/<run>/steps/<skill>`) is unchanged and now opens
+ * here.
  */
-export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisionEdit, sendDecisionRevert, onRemoteDecisionEdit, onRemoteDecisionRevert }: Props) {
+export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisionEdit, sendDecisionRevert, onRemoteDecisionEdit, onRemoteDecisionRevert, openSkill = null, stepHref, onCloseStep }: Props) {
   const phases = useMemo(
     () => [...snapshot.phases].sort((a, b) => a.ordinal - b.ordinal),
     [snapshot.phases],
@@ -195,10 +207,15 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
     }
   }
 
-  const allDecisions = useMemo(
+  // Every row in the log, history included — only the decisions panel reads
+  // this (it folds superseded rows under their successor). Everything that
+  // COUNTS or ACTS on decisions (tiles, fork point, affected docs, export,
+  // the per-skill drawer) reads `allDecisions`: the live choices only.
+  const allRows = useMemo(
     () => snapshot.current_run.decisions ?? [],
     [snapshot.current_run.decisions],
   );
+  const allDecisions = useMemo(() => liveDecisions(allRows), [allRows]);
   const affectedDocs = useAffectedDocs({
     decisions: allDecisions,
     edits: editState.buffer,
@@ -319,6 +336,25 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
   const selectedPhaseInfo = selectedPhase
     ? (phases.find((p) => p.name === selectedPhase) ?? null)
     : null;
+
+  // The open step. Never during a replay: its detail is the run's FINAL
+  // artifacts and eval, which a replay must not show before the cursor
+  // reaches them.
+  const openStep =
+    openSkill && !replay.active
+      ? (snapshot.current_run.steps.find((s) => s.skill_name === openSkill) ?? null)
+      : null;
+  // A step link names no phase — open the one the step lives in, so its row
+  // is on screen beside the detail.
+  useEffect(() => {
+    if (openStep && openStep.phase !== selectedPhase) setSelectedPhase(openStep.phase);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openStep?.skill_name]);
+  const pickPhase = (name: string) => {
+    // Picking another phase puts the open step out of view: close it.
+    if (openStep && openStep.phase !== name && onCloseStep) onCloseStep(name);
+    else setSelectedPhase(name);
+  };
   // While replaying, the open phase follows the cursor: the audience watches
   // the run move between phases rather than having to drive it by hand.
   useEffect(() => {
@@ -374,16 +410,17 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
   // Decisions as they land. In a replay a decision appears when the skill
   // that made it finishes; one with no skill of its own in this run lands
   // when its phase's last step does. Out of replay, all of them.
-  const shownDecisions = useMemo<Decision[]>(() => {
-    if (!replay.active || !replay.timeline) return allDecisions;
+  const shownRows = useMemo<Decision[]>(() => {
+    if (!replay.active || !replay.timeline) return allRows;
     const finishedPhases = phasesFinishedAt(replay.timeline, replay.beat.index);
     const runSkills = new Set(snapshot.current_run.steps.map((st) => st.skill_name));
-    return allDecisions.filter((d) =>
+    return allRows.filter((d) =>
       d.skill && runSkills.has(d.skill)
         ? replay.reveal.done.has(d.skill)
         : finishedPhases.has(d.phase),
     );
-  }, [allDecisions, replay.active, replay.timeline, replay.beat.index, replay.reveal, snapshot.current_run.steps]);
+  }, [allRows, replay.active, replay.timeline, replay.beat.index, replay.reveal, snapshot.current_run.steps]);
+  const shownDecisions = useMemo(() => liveDecisions(shownRows), [shownRows]);
   const decisionsBySkill = useMemo(() => {
     const m = new Map<string, Decision[]>();
     for (const d of shownDecisions) {
@@ -505,7 +542,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
                       steps={shownStepsByPhase.get(phase.name) ?? []}
                       decisions={phaseDecisions}
                       isSelected={selectedPhase === phase.name}
-                      onClick={() => setSelectedPhase(phase.name)}
+                      onClick={() => pickPhase(phase.name)}
                     />
                   </div>
                 </li>
@@ -538,7 +575,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
               <div className="flex-1 overflow-y-auto px-4 pb-6">
                 <DecisionsPanel
                   phase={selectedPhaseInfo.name}
-                  decisions={shownDecisions}
+                  decisions={shownRows}
                   savedOverrides={savedOverrides}
                   editBuffer={editingDisabled ? undefined : editState.buffer}
                   onEdit={
@@ -606,8 +643,12 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
                             >
                               <PhaseSkillRow
                                 step={step}
-                                oppSlug={oppSlug}
-                                runId={snapshot.current_run.run_id}
+                                detailHref={
+                                  !replay.active && stepHref
+                                    ? stepHref(step.skill_name, step.phase)
+                                    : undefined
+                                }
+                                detailOpen={openStep?.skill_name === step.skill_name}
                                 autoOpen={isCurrent}
                                 decisions={decisionsBySkill.get(step.skill_name)}
                                 runLive={runLive}
@@ -641,6 +682,15 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
               justRevealed={justRevealed}
             />
           </aside>
+        ) : openStep && onCloseStep ? (
+          <StepDrawer
+            key={openStep.skill_name}
+            workspaceSlug={workspaceSlug}
+            oppSlug={oppSlug}
+            runId={runId}
+            step={openStep}
+            onClose={() => onCloseStep()}
+          />
         ) : (
           <aside
             aria-label="Flow"

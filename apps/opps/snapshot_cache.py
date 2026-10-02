@@ -104,7 +104,11 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #   v16 — RunDetail gained ``release_check`` (the plugin's release-check
 #        verdict). A warm v15 entry would show a release-ready run as never
 #        checked until its Drive files next changed.
-_KEY_VERSION = "v16"
+#   v17 — Decision gained ``superseded_by`` (read ace-side because
+#        canopy-agent-runs drops it). A warm v16 entry would keep serving
+#        corrected / fork-retired rows as live choices on the Phases
+#        decisions panel until decisions.yaml next changed.
+_KEY_VERSION = "v17"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

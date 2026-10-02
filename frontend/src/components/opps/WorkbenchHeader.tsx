@@ -12,6 +12,7 @@ import type {
 } from "../../api/types.ws";
 import { Button } from "canopy-ui/ui";
 import { cn } from "@/lib/utils";
+import { liveDecisions } from "@/components/views/decisions/supersession";
 import { CostRollupCard } from "./CostRollupCard";
 import { DeleteOppDialog } from "./DeleteOppDialog";
 import { RunSelector } from "./RunSelector";
@@ -70,7 +71,11 @@ export function WorkbenchHeader({
   // was kept" pile — high count is fine. Build a breakdown for the chip
   // tooltip so a hover tells you which phases need attention without a
   // tab-switch.
-  const decisionsSummary = useMemo(() => summarizeDecisions(run.decisions ?? []), [run.decisions]);
+  // Live choices only — a superseded row is history, not a decision to count.
+  const decisionsSummary = useMemo(
+    () => summarizeDecisions(liveDecisions(run.decisions ?? [])),
+    [run.decisions],
+  );
 
   // Bump every 30s so the relative "X ago" label stays current without
   // having to wait for an explicit re-render. setInterval is safe here

@@ -203,7 +203,7 @@ CORE_SURFACES = [
 
 
 # View-mode tabs to probe on each opp's workbench page.
-OPP_VIEW_MODES = ["phase", "workbench", "heatmap", "diff"]
+OPP_VIEW_MODES = ["phase", "runs"]
 
 
 def discover_opps(ctx) -> list[str]:

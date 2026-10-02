@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ChevronRight, PanelRight } from "lucide-react";
 
 import type { Decision, Step } from "@/api/types.ws";
 import { Glossed } from "@/components/glossary/Glossed";
@@ -18,8 +18,12 @@ import {
 
 interface Props {
   step: Step;
-  oppSlug: string;
-  runId: string;
+  /** Address of this step's detail (`…/runs/<run>/steps/<skill>`), opened in
+   *  the Phases step drawer. Omitted during a replay, which must not show a
+   *  step's final artifacts early. */
+  detailHref?: string;
+  /** This step's detail is the one open beside the list. */
+  detailOpen?: boolean;
   /** Replay: the cursor is on this step, so open the drawer without a click —
    *  the Producer / QA / Eval sections are the thing worth watching land.
    *  Only rows this opened are auto-closed again; a row someone opened by
@@ -47,8 +51,8 @@ interface Props {
  */
 export function PhaseSkillRow({
   step,
-  oppSlug,
-  runId,
+  detailHref,
+  detailOpen = false,
   autoOpen = false,
   decisions = [],
   runLive = false,
@@ -66,11 +70,19 @@ export function PhaseSkillRow({
       openedByReplay.current = false;
     }
   }, [autoOpen]);
-  const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
   const judgeScorePct = step.judge?.score_pct ?? step.judge?.score ?? null;
 
   return (
-    <div className={cn("rounded border", open ? "border-border bg-card" : "border-transparent")}>
+    <div
+      className={cn(
+        "rounded border",
+        detailOpen
+          ? "border-primary/60 bg-card ring-1 ring-primary/30"
+          : open
+            ? "border-border bg-card"
+            : "border-transparent",
+      )}
+    >
       <button
         type="button"
         onClick={() => {
@@ -128,14 +140,18 @@ export function PhaseSkillRow({
               <EvalSection step={step} finished={finished} />
             </>
           )}
-          <div className="mt-3 flex items-center gap-3 border-t border-border pt-2 text-[11px]">
-            <Link
-              to={`/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(step.skill_name)}?view=workbench`}
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-            >
-              Open in Workbench <ExternalLink className="h-3 w-3" />
-            </Link>
-          </div>
+          {detailHref && (
+            <div className="mt-3 flex items-center gap-3 border-t border-border pt-2 text-[11px]">
+              <Link
+                to={detailHref}
+                aria-current={detailOpen ? "page" : undefined}
+                className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+              >
+                <PanelRight className="h-3 w-3" />
+                {detailOpen ? "Details open" : "Open details"}
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>

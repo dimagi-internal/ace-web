@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import * as canopyApi from "@/canopy/api";
 import { useCanopyStatus } from "@/canopy/useCanopyStatus";
-import { WorkbenchChatPane } from "@/components/opps/WorkbenchChatPane";
+import { StepChatPane } from "@/components/opps/StepChatPane";
 
 vi.mock("@/canopy/CanopyChatPanel", () => ({
   CanopyChatPanel: ({ sessionId }: { sessionId: string }) => (
@@ -18,7 +18,7 @@ vi.mock("@/canopy/useCanopyStatus", () => ({
 
 const useCanopyStatusMock = vi.mocked(useCanopyStatus);
 
-describe("WorkbenchChatPane — canopy is unreachable/disabled", () => {
+describe("StepChatPane — canopy is unreachable/disabled", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -30,7 +30,7 @@ describe("WorkbenchChatPane — canopy is unreachable/disabled", () => {
         <Routes>
           <Route
             path="/w/:workspaceSlug/opps/:slug"
-            element={<WorkbenchChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
+            element={<StepChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
           />
         </Routes>
       </MemoryRouter>,
@@ -39,7 +39,7 @@ describe("WorkbenchChatPane — canopy is unreachable/disabled", () => {
   });
 });
 
-describe("WorkbenchChatPane — canopy hosted chat", () => {
+describe("StepChatPane — canopy hosted chat", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     useCanopyStatusMock.mockReturnValue({
@@ -66,7 +66,7 @@ describe("WorkbenchChatPane — canopy hosted chat", () => {
         <Routes>
           <Route
             path="/w/:workspaceSlug/opps/:slug"
-            element={<WorkbenchChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
+            element={<StepChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
           />
         </Routes>
       </MemoryRouter>,
@@ -95,7 +95,7 @@ describe("WorkbenchChatPane — canopy hosted chat", () => {
         <Routes>
           <Route
             path="/w/:workspaceSlug/opps/:slug"
-            element={<WorkbenchChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
+            element={<StepChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
           />
         </Routes>
       </MemoryRouter>,
@@ -120,7 +120,7 @@ describe("WorkbenchChatPane — canopy hosted chat", () => {
         <Routes>
           <Route
             path="/w/:workspaceSlug/opps/:slug"
-            element={<WorkbenchChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
+            element={<StepChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
           />
         </Routes>
       </MemoryRouter>,
@@ -137,7 +137,7 @@ describe("WorkbenchChatPane — canopy hosted chat", () => {
   });
 });
 
-describe("WorkbenchChatPane — telling the agent what is on screen", () => {
+describe("StepChatPane — telling the agent what is on screen", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     useCanopyStatusMock.mockReturnValue({
@@ -155,7 +155,7 @@ describe("WorkbenchChatPane — telling the agent what is on screen", () => {
           <Route
             path="/w/:workspaceSlug/opps/:slug"
             element={
-              <WorkbenchChatPane
+              <StepChatPane
                 slug="opp-a"
                 runId={runId}
                 skill={skill}
@@ -252,7 +252,7 @@ describe("WorkbenchChatPane — telling the agent what is on screen", () => {
           <Route
             path="/w/:workspaceSlug/opps/:slug"
             element={
-              <WorkbenchChatPane
+              <StepChatPane
                 slug="opp-a"
                 runId="run-001"
                 skill="connect-setup"
