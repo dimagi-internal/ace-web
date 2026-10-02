@@ -11,6 +11,7 @@ from ninja import Path, Router
 from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
 from apps.api.errors import (
+    TYPE_CONFLICT,
     TYPE_NOT_FOUND,
     TYPE_UPSTREAM,
     TYPE_VALIDATION,
@@ -375,12 +376,16 @@ def interrupted_runs(
     return JsonResponse({"items": interrupted_runs_in_workspace(workspace)})
 
 
-def resume_session_run(session) -> dict | None:
+def resume_session_run(session, *, sender=None) -> dict | None:
     """Re-launch an interrupted ACE opp run on its EXISTING session + run_id by
     appending a fresh ``/ace:run <slug>/<run_id>`` resume turn (the orchestrator
     picks up from run_state.yaml where it died). Returns
     {assistant_message_id, command, slug} or None if the session isn't a
     resumable ACE opp run (ad-hoc chats have no run_state to resume from).
+
+    ``sender`` is the person who asked for the resume; the appended user turn
+    records them. ``None`` — the post-deploy sweep, which nobody clicked —
+    records the run's owner, whose run it is continuing.
 
     The caller spawns the driver for assistant_message_id. Monkeypatch target
     in contract tests."""
@@ -412,7 +417,8 @@ def resume_session_run(session) -> dict | None:
             Message.objects.filter(session=session).aggregate(m=models.Max("turn_index"))["m"] or 0
         ) + 1
         Message.objects.create(
-            session=session, turn_index=next_idx, role="user", sender_user=session.owner,
+            session=session, turn_index=next_idx, role="user",
+            sender_user=sender if sender is not None else session.owner,
             content={"text": command}, plaintext=command, status="complete",
             completed_at=timezone.now(),
         )
@@ -440,6 +446,13 @@ def resume_interrupted(
     the post-deploy hook: after a rollout drains the tasks driving live runs,
     this relaunches them from run_state.yaml. Single serial call → no
     double-spawn race.
+
+    SYSTEM-initiated, so each run continues AS ITS OWNER — deliberately unlike
+    ``resume_run``. Nobody chose these runs: the sweep restarts what a deploy
+    killed, inside ``resumable_after_deploy``'s 30-min window, with the fixed
+    resume command, so the authority is the owner's who started the run. The
+    caller (the deploy PAT) is not the person the run is for, and acting as it
+    would re-attribute every run in the workspace to the deploy identity.
 
     Best-effort per session, never all-or-nothing: a session that cannot be
     restarted is reported in ``failed`` and the sweep carries on. Anything that
@@ -475,10 +488,11 @@ def resume_interrupted(
             # hard_kill shape. Reconciling refreshes that beat as a side effect.
             skipped.append({"slug": s.slug, "opp_run_id": s.opp_run_id, "state": state})
             continue
-        res = resume_session_run(s)
+        res = resume_session_run(s)  # no sender: the sweep, not a person
         if res is None:
             continue
         try:
+            # No actor: the turn runs as the run's owner (see docstring).
             run_dispatch.start_turn(res["assistant_message_id"])
         except run_dispatch.DispatchError as exc:
             log.warning("resume dispatch failed for %s: %s", s.slug, exc.detail)
@@ -522,6 +536,17 @@ def resume_run(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
 ) -> HttpResponse:
+    """Resume one run AS THE PERSON WHO CLICKED, never as its owner.
+
+    Any workspace member may resume any run here, so running the turn as the
+    owner let a member execute with the owner's authority — and, since
+    canopy-web#1044 resolves ACE's own login to the agent, with ACE's full
+    authority on an ace@-owned run. Partner workspaces hold external reviewers
+    as members, so that reached outsiders. Now canopy applies the clicker's
+    own authority: a member gets a member's access; someone canopy knows only
+    as a contact is refused here (409) before anything is written — the same
+    preflight a seeded run gets (ace-web#845).
+    """
     from django.http import JsonResponse
 
     from apps.canopy import run_dispatch
@@ -530,13 +555,38 @@ def resume_run(
     session = _load_session_in_workspace(slug, workspace)
     if session is None:
         raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
-    res = resume_session_run(session)
+    if not (session.opp_run_id and session.opp_slug):
+        raise ProblemError(
+            422, "Not a resumable ACE opp run (no opp_run_id)", type_=TYPE_VALIDATION,
+        )
+    clicker = request.user
+    # BEFORE resume_session_run: a refused resume must not append a turn or
+    # retire the dead one.
+    try:
+        run_dispatch.preflight_run_actor((getattr(clicker, "email", "") or "").strip())
+    except run_dispatch.RunActorUnresolvable as exc:
+        raise ProblemError(
+            409,
+            "You cannot execute runs in canopy",
+            type_=TYPE_CONFLICT,
+            detail=str(exc),
+            extras={"code": "run_actor_unresolvable", "email": exc.email},
+        ) from exc
+    except run_dispatch.RunActorUnverified as exc:
+        raise ProblemError(
+            502,
+            "Could not verify you in canopy",
+            type_=TYPE_UPSTREAM,
+            detail=str(exc),
+            extras={"code": "run_actor_unverified", "email": exc.email},
+        ) from exc
+    res = resume_session_run(session, sender=clicker)
     if res is None:
         raise ProblemError(
             422, "Not a resumable ACE opp run (no opp_run_id)", type_=TYPE_VALIDATION,
         )
     try:
-        run_dispatch.start_turn(res["assistant_message_id"])
+        run_dispatch.start_turn(res["assistant_message_id"], actor=clicker)
     except run_dispatch.DispatchError as exc:
         # The turn is already marked errored by the dispatcher. Say so in
         # problem+json rather than as a bare 500 with no machine-readable cause.

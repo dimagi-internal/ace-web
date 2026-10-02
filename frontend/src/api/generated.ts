@@ -611,6 +611,13 @@ export interface paths {
          *     this relaunches them from run_state.yaml. Single serial call → no
          *     double-spawn race.
          *
+         *     SYSTEM-initiated, so each run continues AS ITS OWNER — deliberately unlike
+         *     ``resume_run``. Nobody chose these runs: the sweep restarts what a deploy
+         *     killed, inside ``resumable_after_deploy``'s 30-min window, with the fixed
+         *     resume command, so the authority is the owner's who started the run. The
+         *     caller (the deploy PAT) is not the person the run is for, and acting as it
+         *     would re-attribute every run in the workspace to the deploy identity.
+         *
          *     Best-effort per session, never all-or-nothing: a session that cannot be
          *     restarted is reported in ``failed`` and the sweep carries on. Anything that
          *     raises here is a *self-heal* failing, and aborting the whole sweep on the
@@ -632,7 +639,19 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Resume one interrupted run */
+        /**
+         * Resume one interrupted run
+         * @description Resume one run AS THE PERSON WHO CLICKED, never as its owner.
+         *
+         *     Any workspace member may resume any run here, so running the turn as the
+         *     owner let a member execute with the owner's authority — and, since
+         *     canopy-web#1044 resolves ACE's own login to the agent, with ACE's full
+         *     authority on an ace@-owned run. Partner workspaces hold external reviewers
+         *     as members, so that reached outsiders. Now canopy applies the clicker's
+         *     own authority: a member gets a member's access; someone canopy knows only
+         *     as a contact is refused here (409) before anything is written — the same
+         *     preflight a seeded run gets (ace-web#845).
+         */
         readonly post: operations["apps_sessions_api_resume_run"];
         readonly delete?: never;
         readonly options?: never;

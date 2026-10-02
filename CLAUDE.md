@@ -477,6 +477,15 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `turn_driver.start_turn_subprocess` (local `claude -p` via `CLIBackend`).
   Monkeypatch `apps.sessions.turn_driver.start_turn_subprocess`, not
   `run_dispatch`, in tests. Plan: `docs/plans/2026-07-26-run-convergence-ace-side.md`.
+  **Who a turn runs as:** the run's owner by default (its first turn; the
+  post-deploy sweep, which nobody clicked). A turn a PERSON causes passes
+  `start_turn(..., actor=request.user)` — today `POST /sessions/{slug}/resume`,
+  which preflights the clicker (409 `run_actor_unresolvable` for a canopy
+  contact) and dispatches into a canopy session the clicker owns, never the
+  owner's: a turn sent into an owner/admin-started canopy session runs in its
+  FULL profile (canopy `session_writer`), so reusing it would hand any member
+  ACE's authority. `Session.canopy_session_actor` records who holds
+  `canopy_session_id` (blank = owner).
   **Active runs** (`frontend/src/components/ActiveRuns.tsx`, PRs #755/#756) shows
   in-progress ACE runs however they started (inbound email, schedule, laptop),
   reading canopy's `/api/harness/sessions` feed PLUS turn events — the harness
