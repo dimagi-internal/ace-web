@@ -80,11 +80,17 @@ class _Copier:
         # this map is what points the clone at its own copies afterwards.
         self.ids: dict[str, str] = {}
         self.file_ids: dict[str, str] = {}
+        # Every YAML file copied, as (copy id, name, mime type), in copy order:
+        # the files whose verbatim text may name source ids (see
+        # _point_state_at_copies).
+        self.yaml_copies: list[tuple[str, str, str]] = []
 
     def file(self, f: DriveFile, dest_folder_id: str) -> None:
         new_id = self.drive.copy_file(f.id, dest_folder_id, f.name)
         self.ids[f.id] = new_id
         self.file_ids[f.id] = new_id
+        if f.name.endswith(_YAML_SUFFIXES):
+            self.yaml_copies.append((new_id, f.name, f.mime_type))
         self.copied += 1
         if self.copied % _PROGRESS_EVERY == 0:
             self.record.files_copied = self.copied
@@ -215,6 +221,9 @@ def _copy(drive, record, source, target, opp_slug, run_id, owner,
         existing_runs = dst_runs or _child(drive.list_files(dst_opp_id), "runs", folder=True)
         dst_runs_id = existing_runs.id if existing_runs else drive.create_folder(dst_opp_id, "runs")
         dst_run_id = drive.create_folder(dst_runs_id, run_id)
+        # Only the RUN's YAML is rewritten: opp-level files are shared by every
+        # later clone of this opp into the target, and carry no run file ids.
+        run_yaml_from = len(copier.yaml_copies)
 
         run_children = drive.list_files(src_run.id)
         state = _child(run_children, _RUN_STATE, folder=False)
@@ -225,7 +234,7 @@ def _copy(drive, record, source, target, opp_slug, run_id, owner,
         copier.ids[src_run.id] = dst_run_id
         copier.ids.setdefault(src_opp.id, dst_opp_id)
         _carry_link_sharing(drive, copier.file_ids)
-        _point_state_at_copies(drive, dst_run_id, copier.ids)
+        _point_state_at_copies(drive, copier.yaml_copies[run_yaml_from:], copier.ids)
     except Exception as exc:
         record.status = "error"
         record.error = f"{type(exc).__name__}: {exc}"[:2000]
@@ -266,8 +275,11 @@ def clone_run(
     return copy()
 
 
-# The run's YAML state files, rewritten to name the clone's own copies.
-_STATE_FILES = (_RUN_STATE, "decisions.yaml")
+# The copied files rewritten to name the clone's own copies: every YAML file in
+# the run — run_state.yaml and decisions.yaml, and the indexes that list files
+# by id (each previews/<output>/_previews.yaml, Phase 6's capture manifest).
+_YAML_SUFFIXES = (".yaml", ".yml")
+_GOOGLE_NATIVE = "application/vnd.google-apps."
 
 
 def _carry_link_sharing(drive: DriveClient, file_ids: dict[str, str]) -> int:
@@ -285,17 +297,22 @@ def _carry_link_sharing(drive: DriveClient, file_ids: dict[str, str]) -> int:
     return carried
 
 
-def _point_state_at_copies(drive: DriveClient, dst_run_id: str, ids: dict[str, str]) -> int:
-    """Replace every source Drive id in the copied state files with its copy.
+def _point_state_at_copies(
+    drive: DriveClient, yaml_copies: list[tuple[str, str, str]], ids: dict[str, str]
+) -> int:
+    """Replace every source Drive id in the copied YAML files with its copy.
 
-    The state is copied verbatim, so it names the SOURCE run's files: on the
-    first Spark clone all eight documents on the reviewer-facing summary
+    The run is copied verbatim, so its YAML names the SOURCE run's files: on
+    the first Spark clone all eight documents on the reviewer-facing summary
     (PDD, work order, build memo, five training docs) opened the source
     workspace's Docs — reviewers would have read and commented on another
-    workspace's files. 99 ids / 125 occurrences in that run_state. Ids of
-    files the clone deliberately leaves behind (comms-logs) stay pointing at
-    the source, which is Dimagi-only."""
-    if not ids:
+    workspace's files. 99 ids / 125 occurrences in that run_state. The preview
+    indexes had the same fault and a worse symptom (ace-web#851): the viewer
+    drops a frame whose id is outside the run's own tree, so every
+    screenshot-backed output on the clone showed nothing. Ids of files the
+    clone deliberately leaves behind (comms-logs) stay pointing at the source,
+    which is Dimagi-only."""
+    if not ids or not yaml_copies:
         return 0
     # Whole ids only, in ONE pass: a plain per-id str.replace rewrites an id
     # that is a prefix of another (and can re-rewrite an id it just wrote).
@@ -304,14 +321,13 @@ def _point_state_at_copies(drive: DriveClient, dst_run_id: str, ids: dict[str, s
         + r")(?![\w-])"
     )
     replaced = 0
-    children = {f.name: f for f in drive.list_files(dst_run_id)}
-    for name in _STATE_FILES:
-        f = children.get(name)
-        if f is None or f.mime_type == _FOLDER_MIME:
-            continue
-        text = drive.get_content(f.id, f.mime_type).content
+    for file_id, _name, mime_type in yaml_copies:
+        text = drive.get_content(file_id, mime_type).content
         new, n = pattern.subn(lambda m: ids[m.group(1)], text)
         if n:
-            drive.update_file(f.id, new, "text/yaml")
+            # A plain YAML file keeps its own media type; a Google Doc holding
+            # YAML is updated from text/yaml, as it always was.
+            write_as = "text/yaml" if mime_type.startswith(_GOOGLE_NATIVE) else mime_type
+            drive.update_file(file_id, new, write_as or "text/yaml")
             replaced += n
     return replaced

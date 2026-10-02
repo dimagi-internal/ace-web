@@ -367,3 +367,100 @@ def test_copies_keep_their_originals_link_sharing(drive, source_ws, target_ws, o
         drive.file_id(f"{base}/videos/v1.mp4"),
     ])
     assert list(roles.values()) == ["commenter", "reader", None]
+
+
+# --- the clone's preview indexes point at its own frames (ace-web#851) -------
+
+SHOTS = "6-qa-and-training/screenshots"
+PREVIEWS = "4-connect/previews/connect-opportunity"
+MANIFEST = "6-qa-and-training/app-screenshot-capture_manifest.yaml"
+DST_RUN = f"SPARK/spark-facilitator/runs/{RUN}"
+
+
+@pytest.fixture
+def previews_drive(drive):
+    """Give the SOURCE run a previews folder and a Phase 6 capture manifest that
+    name their frames by id, as ACE's capture skills write them."""
+    run = drive.folder_id(SRC_RUN)
+    phase = drive.create_folder(run, "4-connect")
+    pfolder = drive.create_folder(drive.create_folder(phase, "previews"), "connect-opportunity")
+    overview = drive.upload_file(pfolder, "01-overview.png", "png", "image/png")
+    verification = drive.upload_file(pfolder, "02-verification.png", "png", "image/png")
+    drive.upload_file(pfolder, "_previews.yaml", (
+        "captured_by: output-preview-capture\n"
+        "phase: connect-setup\n"
+        "output_key: connect.opportunity\n"
+        "items:\n"
+        f"  - file_id: {overview}\n    name: 01-overview.png\n"
+        f"  - file_id: {verification}\n    name: 02-verification.png\n"
+    ), "application/x-yaml")
+    shot = drive.file_id(f"{SRC_RUN}/{SHOTS}/s1.png")
+    drive.upload_file(drive.folder_id(f"{SRC_RUN}/6-qa-and-training"),
+                      "app-screenshot-capture_manifest.yaml", (
+        "journeys:\n  - journey_id: journey-learn-pass\n    app: learn\n    status: pass\n"
+        f"captures:\n  - journey_id: journey-learn-pass\n    file_id: {shot}\n"
+    ), "application/x-yaml")
+    return drive
+
+
+def _text(drive, path):
+    return drive.get_content(drive.file_id(path), "application/x-yaml").content
+
+
+def _names_id(text, file_id):
+    """Whole-id match: fake ids are ``fake-N``, so ``fake-5`` is inside ``fake-55``."""
+    import re
+    return re.search(rf"(?<![\w-]){re.escape(file_id)}(?![\w-])", text) is not None
+
+
+def test_preview_indexes_name_the_clones_own_frames(previews_drive, source_ws, target_ws, owner):
+    # The first Spark clone showed no screenshots for any of 12 outputs: every
+    # copied _previews.yaml still named the SOURCE run's frames, and the viewer
+    # drops an id outside the run's own tree.
+    drive = previews_drive
+    src_overview = drive.file_id(f"{SRC_RUN}/{PREVIEWS}/01-overview.png")
+    src_shot = drive.file_id(f"{SRC_RUN}/{SHOTS}/s1.png")
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+
+    index = _text(drive, f"{DST_RUN}/{PREVIEWS}/_previews.yaml")
+    assert _names_id(index, drive.file_id(f"{DST_RUN}/{PREVIEWS}/01-overview.png"))
+    assert _names_id(index, drive.file_id(f"{DST_RUN}/{PREVIEWS}/02-verification.png"))
+    assert not _names_id(index, src_overview)
+    # The rest of the index is what was copied.
+    assert index.startswith("captured_by: output-preview-capture\nphase: connect-setup\n")
+
+    manifest = _text(drive, f"{DST_RUN}/{MANIFEST}")
+    assert _names_id(manifest, drive.file_id(f"{DST_RUN}/{SHOTS}/s1.png"))
+    assert not _names_id(manifest, src_shot)
+
+    # And the viewer now shows them: what ace-web reads off the clone.
+    from apps.opps.output_previews import load_output_previews
+    records = load_output_previews(drive, drive.folder_id(DST_RUN))
+    by_source = {r["source"]: r for r in records}
+    assert [i["name"] for i in by_source["index"]["items"]] == [
+        "01-overview.png", "02-verification.png",
+    ]
+    assert len(by_source["legacy"]["items"]) == 1
+
+
+def test_preview_rewrite_leaves_the_source_and_uncopied_ids_alone(
+    previews_drive, source_ws, target_ws, owner
+):
+    # Negative control: the source index is never written, and an id the clone
+    # deliberately leaves behind (a comms-log) has no copy to point at.
+    drive = previews_drive
+    left_behind = drive.file_id(f"{SRC_RUN}/comms-log/llo-invite.md")
+    src_index = f"{SRC_RUN}/{PREVIEWS}/_previews.yaml"
+    drive.update_file(drive.file_id(src_index),
+                      _text(drive, src_index) + f"note_id: {left_behind}\n", "application/x-yaml")
+    before = _text(drive, src_index)
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+    assert _text(drive, src_index) == before
+    copied = _text(drive, f"{DST_RUN}/{PREVIEWS}/_previews.yaml")
+    assert f"note_id: {left_behind}\n" in copied
+    # A copied index keeps its own media type (it is a plain YAML file, not a Doc).
+    f = next(f for f in drive.list_files(drive.folder_id(f"{DST_RUN}/{PREVIEWS}"))
+             if f.name == "_previews.yaml")
+    assert f.mime_type == "application/x-yaml"
