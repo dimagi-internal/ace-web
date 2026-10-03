@@ -2883,3 +2883,33 @@ def test_get_opp_passes_refresh_through(member_client, monkeypatch):
     assert seen["refresh"] is True
     client.get("/api/w/ws1/opps/opp-1")
     assert seen["refresh"] is False
+
+
+@pytest.mark.django_db
+def test_confirming_a_decision_is_recorded_distinctly_from_a_change(
+    client, reaction_workspace,
+):
+    """"Confirm" on the review page writes the value already in force with
+    ``confirmed: true`` — a sign-off the page shows as "confirmed by", not
+    as a change. Confirming the AI default keeps the row (it is not a
+    revert), and the plugin still binds nothing new from it."""
+    resp = _edit(client, value="30 days", confirm=True)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["confirmed"] is True
+    assert body["is_revert"] is False
+    assert body["override"] == "30 days"
+
+    rows = _overrides_rows(reaction_workspace)
+    assert rows[0]["confirmed"] is True
+    assert rows[0]["override"] == rows[0]["ai_default"] == "30 days"
+
+    # A later CHANGE supersedes the confirmation and keeps it in history.
+    body = _edit(client, value="14 days").json()
+    assert body["confirmed"] is False
+    assert body["history"][0]["confirmed"] is True
+
+
+@pytest.mark.django_db
+def test_an_edit_without_confirm_is_not_a_confirmation(client, reaction_workspace):
+    assert _edit(client).json()["confirmed"] is False

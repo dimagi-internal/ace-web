@@ -3,6 +3,8 @@ import type { OppSummaryPayload } from "@/api/oppSummary";
 interface Props {
   opp: OppSummaryPayload["opp"];
   cycleGrade?: OppSummaryPayload["cycle_grade"];
+  /** Column width — the decisions tab widens the whole page, hero included. */
+  widthClass?: string;
 }
 
 const STATUS_LABEL: Record<OppSummaryPayload["opp"]["status"], string> = {
@@ -40,13 +42,13 @@ const STATUS_DATE_PREFIX: Record<OppSummaryPayload["opp"]["status"], string> = {
  * ``--status-ok`` token; matches the way Connect treats live state in
  * its own headers.
  */
-export function SummaryHero({ opp, cycleGrade }: Props) {
+export function SummaryHero({ opp, cycleGrade, widthClass = "max-w-3xl" }: Props) {
   const formattedEnd = formatEndDate(opp.end_date);
   const showGrade = opp.status === "closed" && cycleGrade?.letter;
 
   return (
     <header className="border-b border-border">
-      <div className="mx-auto max-w-3xl px-6 pt-16 pb-14">
+      <div className={`mx-auto ${widthClass} px-4 pt-16 pb-14 sm:px-6`}>
         <div className="mb-6 flex items-center gap-4 text-xs">
           <span
             className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/50 px-2.5 py-1 font-medium text-foreground"

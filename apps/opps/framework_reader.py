@@ -55,6 +55,7 @@ from apps.opps.attribution import creator_label
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.drive_export import read_prose
 from apps.opps.output_previews import load_output_previews
+from apps.opps.parsers import decision_extras
 from apps.opps.release_check import load_release_check
 
 log = logging.getLogger(__name__)
@@ -177,15 +178,16 @@ def _read_state(client: DriveClient, run_children: list[DriveFile]) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def attach_superseded_by(client: DriveClient, run_children: list[DriveFile], decisions) -> None:
-    """Stamp each mapped ``Decision`` with its row's ``superseded_by``.
+def attach_row_extras(client: DriveClient, run_children: list[DriveFile], decisions) -> None:
+    """Stamp each mapped ``Decision`` with the row fields canopy drops.
 
     ``canopy_agent_runs`` (pinned 0.1.4) parses ``decisions.yaml`` into a
-    Decision that has no ``superseded_by`` field — the key is dropped by its
-    row parser — so a row a later row corrected (ace#1421), or one a fork
-    retired (ace#2582, ace-web#848), reached the Phases decisions panel
-    indistinguishable from a live choice. The public summary never had this
-    bug only because it reads ``decisions.yaml`` itself
+    Decision with no ``superseded_by`` field — and none of the optional
+    review fields (``parsers.DECISION_EXTRA_FIELDS``: ``review_ask``,
+    ``plain``, ``audience`` …) — so a row a later row corrected (ace#1421),
+    or one a fork retired (ace#2582, ace-web#848), reached the Phases
+    decisions panel indistinguishable from a live choice. The public summary
+    never had this bug only because it reads ``decisions.yaml`` itself
     (``summary._read_decisions``).
 
     One extra read of a file the store has just read through the SAME client,
@@ -193,7 +195,8 @@ def attach_superseded_by(client: DriveClient, run_children: list[DriveFile], dec
     POSITION, using the store's own row filter (a mapping with a non-empty
     ``id``), because ids are not guaranteed unique in a hand-edited log; it
     falls back to matching by id if the two lists disagree. Best effort: any
-    failure leaves every row live, which is what the panel showed before.
+    failure leaves every row live and un-annotated, which is what the panel
+    showed before.
     """
     if not decisions:
         return
@@ -216,17 +219,24 @@ def attach_superseded_by(client: DriveClient, run_children: list[DriveFile], dec
         return
     rows = [r for r in raw if isinstance(r, dict) and str(r.get("id") or "").strip()]
 
-    def _by(row: dict) -> str:
-        return str(row.get("superseded_by") or "").strip()
+    def _stamp(d, row: dict | None) -> None:
+        row = row or {}
+        d.superseded_by = str(row.get("superseded_by") or "").strip()
+        for key, value in decision_extras(row).items():
+            setattr(d, key, value)
 
     ids = [str(r.get("id")).strip() for r in rows]
     if ids == [d.id for d in decisions]:
         for d, row in zip(decisions, rows, strict=True):
-            d.superseded_by = _by(row)
+            _stamp(d, row)
         return
-    by_id = {str(r.get("id")).strip(): _by(r) for r in rows}
+    by_id = {str(r.get("id")).strip(): r for r in rows}
     for d in decisions:
-        d.superseded_by = by_id.get(d.id, "")
+        _stamp(d, by_id.get(d.id))
+
+
+#: Back-compat name — the function used to stamp only ``superseded_by``.
+attach_superseded_by = attach_row_extras
 
 
 def _run_folders_and_states(
@@ -447,7 +457,7 @@ def load_opp_run_via_store(
     pdd_body = read_prose(client, pdd_file) if pdd_file else ""
 
     rd = fm.map_run_detail(fw_run, folder_id=run_folder_id, run_state=state_data)
-    attach_superseded_by(client, run_children, rd.decisions)
+    attach_row_extras(client, run_children, rd.decisions)
     # Framework canonicalizes mode to review|auto; ace keeps the literal.
     rd.mode = state_data.get("mode") or rd.mode
     # Screenshots of the run's outputs. Reuses the recursive run-tree listing
@@ -544,7 +554,7 @@ def load_opp_flat_via_store(
     fw_run = store.get_run(slug, _FlatRunClient.RUN_ID)
 
     rd = fm.map_run_detail(fw_run, folder_id=opp_folder.id, run_state=state_data)
-    attach_superseded_by(client, opp_children, rd.decisions)
+    attach_row_extras(client, opp_children, rd.decisions)
     # Framework canonicalizes mode to review|auto; ace keeps the literal.
     rd.mode = state_data.get("mode") or rd.mode
     # Flat layout: the legacy ``_load_opp_flat`` reads current_phase/current_step

@@ -1,7 +1,10 @@
 import { ChevronRight } from "lucide-react";
 
 import type { Decision } from "@/api/types.ws";
-import { DecisionDetailFields } from "@/components/opps/decisions/DecisionDetailFields";
+import {
+  DETAIL_GRID,
+  DecisionDetailFields,
+} from "@/components/opps/decisions/DecisionDetailFields";
 import { EvidenceBadge } from "@/components/opps/decisions/EvidenceBadge";
 import { cn } from "@/lib/utils";
 
@@ -13,21 +16,34 @@ import { cn } from "@/lib/utils";
  * The Workbench is the reference implementation for reading and changing
  * decisions (Jonathan, 2026-08-14: *"the workbench is what I remember and
  * what I want to replicate for the decisions"*), so the public surface
- * renders THIS, rather than a lookalike that reads differently: the same
- * row anatomy, the same status-chip derivation, the same overridden tint,
- * the same detail grid and type scale.
+ * renders THIS, rather than a lookalike that reads differently.
+ *
+ * ## The collapsed row says what was decided, in full (2026-10-03)
+ *
+ * It used to be `monospace id | ellipsized question | → ellipsized answer
+ * | INFERRED | AI-DEFAULT | ⌄`, so learning anything meant expanding every
+ * row — and expanding one left its own header truncated, so the full
+ * question and answer never appeared at all (Jonathan's review). Now:
+ *
+ * - the question and the answer in force WRAP, never truncate — on a wide
+ *   screen they sit side by side, at phone width they stack;
+ * - `plain`, when ACE wrote one, sits under the answer as the one-line
+ *   plain-language summary;
+ * - the id is demoted to the detail ("Raised by");
+ * - chips appear only when they say something: no chip for the
+ *   always-present `ai-default` state, `inferred` moved to the detail,
+ *   and `conflicting` is a quiet note rather than a badge.
  *
  * Callers supply what genuinely differs:
  *
  * - `optionsSlot` — the editor (or static pills), wired to that surface's
  *   write path;
- * - `badges` — extra chips in the header (the Workbench's staged-edit
- *   marker, the summary's comment count and attribution);
+ * - `badges` — extra chips (the Workbench's staged-edit marker, the
+ *   summary's comment count and attribution);
  * - `children` — extra blocks under the detail grid (history, discussion).
  *
- * Open state is CONTROLLED. The summary needs to open a specific row from
- * its "worth your eye" jump list; a row that owned its own state could
- * not be opened from outside.
+ * Open state is CONTROLLED, so a caller can open a specific row from
+ * outside (the summary's confirm cards do).
  */
 export function DecisionRow({
   decision,
@@ -40,6 +56,8 @@ export function DecisionRow({
   badges,
   anchorId,
   pending = false,
+  statusChip = true,
+  muted = false,
   children,
 }: {
   decision: Decision;
@@ -56,84 +74,102 @@ export function DecisionRow({
   anchorId?: string;
   /** Staged in a buffer but not durable yet — the Workbench's case. */
   pending?: boolean;
+  /**
+   * Draw the `overridden` chip. The summary turns it off: its own
+   * "changed by <name>" badge says the same thing, with a name.
+   */
+  statusChip?: boolean;
+  /** History (a superseded row): drawn quieter, never tinted as a choice. */
+  muted?: boolean;
   children?: React.ReactNode;
 }) {
   // "Overridden" = the effective answer differs from the AI default,
-  // whether committed on the run, saved to Drive, or staged. Colors the
-  // row so a human's choices read at a glance against the ai-default
-  // majority.
+  // whether committed on the run, saved to Drive, or staged.
   const isOverridden = effectiveValue !== decision.ai_default;
 
-  // Status chip: derived from the EFFECTIVE state, not a passthrough of
-  // `decision.status` — otherwise the chip keeps reading ai-default while
-  // a pick already highlights a different pill.
-  const effectiveIsAiDefault = !isOverridden && !effectiveReason;
-  const chipLabel = effectiveIsAiDefault
-    ? "ai-default"
+  // Derived from the EFFECTIVE state, not a passthrough of
+  // `decision.status`. The AI default (no override, no reason) gets NO chip:
+  // it is the normal case, so a chip on every row carried no signal.
+  const chip = !isOverridden && !effectiveReason
+    ? null
     : pending
-      ? "overridden · pending"
-      : "overridden";
-  const tone = effectiveIsAiDefault
-    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-    : pending
-      ? "border-violet-500/40 bg-violet-500/10 text-violet-400"
-      : "border-sky-500/40 bg-sky-500/10 text-sky-400";
+      ? { label: "overridden · pending", tone: "border-violet-500/40 bg-violet-500/10 text-violet-400" }
+      : { label: "overridden", tone: "border-sky-500/40 bg-sky-500/10 text-sky-400" };
 
-  const rowTint = isOverridden
-    ? pending
-      ? "border-l-2 border-violet-500/60 bg-sky-500/15"
-      : "bg-sky-500/15"
-    : "";
+  const rowTint =
+    isOverridden && !muted
+      ? pending
+        ? "border-l-2 border-violet-500/60 bg-sky-500/15"
+        : "bg-sky-500/15"
+      : "";
+
+  const plain = decision.plain?.trim();
 
   return (
-    <div id={anchorId} className={cn("scroll-mt-24", rowTint)}>
+    <div id={anchorId} className={cn("scroll-mt-24", rowTint, muted && "opacity-75")}>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs hover:bg-accent/40"
+        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-1 px-4 py-2.5 text-left hover:bg-accent/40 md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)_auto]"
       >
-        {/* Width discipline. Every one of these truncates, and `truncate`
-            resolves a flex item's `min-width:auto` to 0 — so in a narrow
-            column (the summary's max-w-3xl, vs the Workbench's full-width
-            pane) the QUESTION, the one thing a reader is here for, is the
-            item that collapses to nothing. The id is capped, the answer
-            yields, and the question keeps a floor. */}
         <span
-          className="max-w-[8rem] shrink-0 truncate font-mono text-[10px] text-muted-foreground/70"
-          title={decision.id}
-        >
-          {decision.id}
-        </span>
-        <span
-          className="min-w-[10rem] flex-1 truncate text-foreground"
-          title={decision.question}
+          className={cn(
+            "text-[13px] leading-snug [overflow-wrap:anywhere]",
+            muted ? "text-muted-foreground" : "text-foreground",
+          )}
         >
           {decision.question}
         </span>
-        <span className="hidden shrink truncate text-[11px] text-muted-foreground sm:block sm:max-w-[260px]">
-          → <span className="font-medium text-foreground">{effectiveValue}</span>
-        </span>
-        {badges}
-        <EvidenceBadge basis={decision.evidence_basis} />
-        <span
-          className={cn(
-            "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
-            tone,
+        <span className="col-start-1 row-start-2 flex min-w-0 flex-col gap-1 md:col-start-2 md:row-start-1">
+          <span className="text-[13px] leading-snug [overflow-wrap:anywhere]">
+            <span aria-hidden className="mr-1 text-muted-foreground/60">
+              →
+            </span>
+            <span
+              className={cn(
+                "font-medium",
+                muted
+                  ? "text-muted-foreground line-through decoration-muted-foreground/40"
+                  : "text-foreground",
+              )}
+            >
+              {effectiveValue || "—"}
+            </span>
+          </span>
+          {plain && (
+            <span className="text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
+              {plain}
+            </span>
           )}
-        >
-          {chipLabel}
+          {(badges || decision.evidence_basis === "conflicting" || (statusChip && chip)) && (
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {badges}
+              <EvidenceBadge basis={decision.evidence_basis} />
+              {statusChip && chip && (
+                <span
+                  className={cn(
+                    "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                    chip.tone,
+                  )}
+                >
+                  {chip.label}
+                </span>
+              )}
+            </span>
+          )}
         </span>
         <ChevronRight
+          aria-hidden
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            "col-start-2 row-start-1 mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform md:col-start-3",
             open ? "rotate-90 text-foreground" : "",
           )}
         />
       </button>
       {open && (
-        <div className="animate-in fade-in slide-in-from-top-1 border-t border-border/40 bg-background/30 px-4 pb-3 pt-3 text-[11px] duration-150">
-          <div className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2">
+        <div className="animate-in fade-in slide-in-from-top-1 border-t border-border/40 bg-background/30 px-4 pb-3 pt-3 text-[12px] duration-150">
+          <div className={DETAIL_GRID}>
             <DecisionDetailFields
               decision={decision}
               effectiveValue={effectiveValue}

@@ -149,16 +149,6 @@ def _maximal_state_yaml() -> str:
     apps["learn"]["released_build_id"] = "5b403ead83ed410b85b9083fe3835d5c"
     apps["deliver"]["released_build_id"] = "b08533bdf26a48a295a362ff204fb88d"
     state["phases"]["ocs-setup"]["products"]["ocs_chatbot"]["published_version"] = 3
-    # The run's build memo (ace#2371 / ace-web#767), in the exact shape
-    # `skills/build-memo` step 6 writes. Incomplete on purpose, so the
-    # frozen key set covers a populated `gaps[]`.
-    state["phases"]["connect-setup"]["products"]["connect"]["build_memo"] = {
-        "file_id": "fake-memo",
-        "title": "Build memo",
-        "web_view_link": "https://docs.google.com/document/d/fake-memo/edit",
-        "complete": False,
-        "gaps": ["4-connect/connect-opp-setup.md: section missing"],
-    }
     state["blocker_dispositions"] = {
         "phase3_entity_state_fidelity": {
             "phase": "commcare-setup",
@@ -503,7 +493,6 @@ def _maximal_tree() -> dict:
 #: are not. Encoded here rather than defaulted in the fake so that
 #: "maximal" means "every fact declared", not "every fact assumed".
 _MAXIMAL_LINK_SHARING = {
-    "fake-memo": True,
     "fake-pdd": False,
     "fake-wo": False,
     "fake-learnings": False,
@@ -592,12 +581,6 @@ PUBLIC_PAYLOAD_KEYS = frozenset({
     # authored none — the auditor must read absence as "this run has no
     # claims", not as a missing section.
     "claims",
-    # The run's build memo, carried as CONTENT (ace-web#767) — the review
-    # artifact the PDD names: "humans review the memo and spot-check the
-    # apps, rather than reviewing every screen." `null` on every run
-    # before ace#2371 — the auditor must read absence as "this run has no
-    # memo", not as a missing section.
-    "build_memo",
     "design",
     "apps",
     # The producing phase's verdict on `apps`. Added with ace#1867 /
@@ -682,11 +665,6 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
         "workspace_slug", "slug", "run_id", "display_name",
         "description", "status", "end_date",
     }),
-    # `body` is the memo's markdown (Drive's `text/markdown` export,
-    # verbatim); `null` when the pointer exists but the text could not be
-    # read. `complete` is null when the run did not say. `gaps` is what
-    # the memo itself says it is missing — never presented as complete.
-    "build_memo": frozenset({"title", "url", "access", "complete", "gaps", "body"}),
     # The claim set is the DENOMINATOR, so `counts` has to name every way
     # a claim can go — an UNMET one must appear as an accusation rather
     # than as an absence. `error` is set when the file could not be read:
@@ -806,6 +784,12 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
         "question", "ai_default", "override", "options_considered", "source",
         "status", "notes", "override_reasoning", "evidence_basis",
         "conflict_signals",
+        # A superseded row is SERVED (hidden by default behind the page's
+        # history toggle) and never counted in `total` / `counts`.
+        "superseded_by",
+        # Optional review fields (ACE 2026-10) — "" on a row that lacks them.
+        "review_ask", "confirm_reason", "plain", "check_at",
+        "correct_looks_like", "audience", "scope", "enforcement",
     }),
     "reactions": frozenset({"total", "by_decision"}),
     "workbench": frozenset({"url", "access"}),
@@ -998,7 +982,7 @@ def test_reaction_and_edit_rows_keep_their_wire_names(payload):
     for edit in payload["decision_edits"].values():
         assert set(edit) == {
             "override", "reasoning", "decided_by_name", "decided_by_verified",
-            "decided_at", "source_run_id", "is_revert", "history",
+            "decided_at", "source_run_id", "is_revert", "confirmed", "history",
         }
 
 

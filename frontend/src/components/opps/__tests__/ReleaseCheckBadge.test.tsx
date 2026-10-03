@@ -22,8 +22,34 @@ describe("ReleaseCheckBadge", () => {
   it("shows blockers and how to fix them", () => {
     render(<ReleaseCheckBadge check={base} />);
     fireEvent.click(screen.getByRole("button", { name: /Not ready · 1 blocker/ }));
+    // An older verdict with no plain fields: its detail and fix lead.
     expect(screen.getByText("Deck scored 4.66")).toBeInTheDocument();
-    expect(screen.getByText("Fix: Re-render")).toBeInTheDocument();
+    expect(screen.getByText("Re-render")).toBeInTheDocument();
+    expect(screen.getByText("Next step:")).toBeInTheDocument();
+    expect(screen.queryByText("Technical detail")).not.toBeInTheDocument();
+  });
+
+  it("leads with the plain summary and action, keeping the internal text behind a toggle", () => {
+    render(
+      <ReleaseCheckBadge
+        check={{
+          ...base,
+          blockers: [{
+            ...base.blockers[0],
+            summary: "The training deck failed its quality review.",
+            action: "Re-render the deck, then run the release check again.",
+          }],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Not ready · 1 blocker/ }));
+    const lead = screen.getByText("The training deck failed its quality review.");
+    const owner = screen.getByText("training-deck-render");
+    expect(lead.compareDocumentPosition(owner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Re-render the deck, then run the release check again.")).toBeInTheDocument();
+    // The internal detail is kept, but demoted.
+    expect(screen.getByText("Technical detail")).toBeInTheDocument();
+    expect(screen.getByText("Deck scored 4.66")).toBeInTheDocument();
   });
 
   it("a READY dry run is not ready", () => {

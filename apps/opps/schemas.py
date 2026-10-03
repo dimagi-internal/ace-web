@@ -378,6 +378,9 @@ class DecisionEditIn(StrictModel):
     reasoning: Annotated[str, Field(max_length=4000)] | None = None
     reviewer: Annotated[str, Field(max_length=120)] | None = None
     reviewer_email: Annotated[str, Field(max_length=254)] | None = None
+    #: A CONFIRMATION of ``value`` (the answer already in force) rather than
+    #: a change — recorded distinctly so the page can say "confirmed by".
+    confirm: bool = False
 
 
 class DecisionEditHistoryOut(StrictModel):
@@ -388,6 +391,7 @@ class DecisionEditHistoryOut(StrictModel):
     decided_by_name: str = ""
     decided_by_verified: bool = False
     decided_at: str = ""
+    confirmed: bool = False
 
 
 class DecisionEditOut(StrictModel):
@@ -406,6 +410,8 @@ class DecisionEditOut(StrictModel):
     decided_at: str = ""
     source_run_id: str = ""
     is_revert: bool = False
+    #: True when this row records a reviewer confirming the value in force.
+    confirmed: bool = False
     history: list[DecisionEditHistoryOut] = []
 
 

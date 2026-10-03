@@ -25,7 +25,10 @@ log = logging.getLogger(__name__)
 
 VERDICT_NAME = "release-check_verdict.yaml"
 REPORT_NAME = "release-check_report.md"
-_ITEM_FIELDS = ("id", "area", "owner", "detail", "fix")
+#: ``summary`` / ``action`` are the plain-language sentence and next step ACE
+#: adds per item (2026-10); older verdicts carry only ``detail`` / ``fix``,
+#: and the dialog falls back to those.
+_ITEM_FIELDS = ("id", "area", "owner", "detail", "fix", "summary", "action")
 _MAX_ITEMS = 50
 
 

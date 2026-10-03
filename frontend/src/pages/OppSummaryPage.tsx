@@ -15,14 +15,14 @@ import {
 import type { ReactionSubmit } from "@/components/opps/summary/DecisionReactions";
 import {
   DecisionsReview,
-  isFlagged,
+  confirmationCounts,
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionsReview";
-import { BuildMemo } from "@/components/opps/summary/BuildMemo";
 import { ClaimsSection } from "@/components/opps/summary/ClaimsSection";
 import { DeepQaSection } from "@/components/opps/summary/DeepQaSection";
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
+import { cn } from "@/lib/utils";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
 import {
   AccessUnknownTag,
@@ -423,7 +423,7 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, claims, build_memo, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
+    opp, claims, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
     walkthroughs, dashboards, synthetic, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
     stage, decisions, viewer,
   } = payload;
@@ -459,14 +459,18 @@ export default function OppSummaryPage() {
   const openQuestionCount = open_questions?.items.length ?? 0;
   const hasReviewSurface = Boolean(decisions) || openQuestionCount > 0;
   const showOverview = !hasReviewSurface || tab === "overview";
-  // Counted from the ROWS, through the same predicate the Decisions tab
-  // uses — not from `decisions.counts`. Those counts come from the run's
-  // own decisions.yaml, so a reviewer's edit (which lives in
-  // `decision_edits`) never reached them and the headline under-reported
-  // against the tab directly below it (ace-web#771).
-  const needsEye = decisions
-    ? decisions.rows.filter((d) => isFlagged(d, edits[d.id])).length
-    : 0;
+  // What the reviewer is asked to DO: the recommended confirmations still
+  // waiting. Counted from the rows + edits through the same predicate the
+  // Decisions tab uses, so the two can never disagree (ace-web#771). This
+  // replaced "N need your eye", which counted ACE's own uncertainty
+  // (conflicting sources) rather than anything the reviewer must act on.
+  const confirm = decisions
+    ? confirmationCounts(decisions.rows, edits)
+    : { total: 0, outstanding: 0 };
+  // The decisions tab is a dense two-column list and uses a wide screen;
+  // the Overview stays a reading column. One width for the whole page so
+  // the hero, tabs and body share a left edge.
+  const width = tab === "decisions" && hasReviewSurface ? "max-w-6xl" : "max-w-3xl";
   const tabs: ViewTab<SummaryTab>[] = [
     { kind: "overview", label: "Overview", icon: FileText },
     {
@@ -482,7 +486,12 @@ export default function OppSummaryPage() {
       {/* Top utility bar — display name on the left (human-readable),
           run id on the right (technical reference). */}
       <div className="border-b border-border">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-3 text-xs">
+        <div
+          className={cn(
+            "mx-auto flex items-center justify-between gap-4 px-4 py-3 text-xs sm:px-6",
+            width,
+          )}
+        >
           <div className="truncate text-muted-foreground">{opp.display_name}</div>
           <div className="font-mono tracking-tight text-muted-foreground/70">
             run {opp.run_id}
@@ -490,7 +499,7 @@ export default function OppSummaryPage() {
         </div>
       </div>
 
-      <SummaryHero opp={opp} cycleGrade={cycle_grade} />
+      <SummaryHero opp={opp} cycleGrade={cycle_grade} widthClass={width} />
 
       {hasReviewSurface && (
         <div className="border-b border-border">
@@ -498,15 +507,16 @@ export default function OppSummaryPage() {
             current={tab}
             tabs={tabs}
             onChange={setTab}
-            className="mx-auto max-w-3xl px-6"
+            className={cn("mx-auto px-4 sm:px-6", width)}
           />
         </div>
       )}
 
-      <main className="mx-auto max-w-3xl space-y-14 px-6 py-14">
+      {/* 16px gutters on a phone (px-4), more from sm up. */}
+      <main className={cn("mx-auto space-y-14 px-4 py-14 sm:px-6", width)}>
         {showOverview && (
           <>
-          {/* "What changed because you asked" — ABOVE the memo, because
+          {/* "What changed because you asked" — first, because
               it answers a returning reviewer's first question: did the
               thing I asked for happen. Before this the page showed 105
               decisions and zero claims, which is the inverse of the
@@ -516,18 +526,6 @@ export default function OppSummaryPage() {
           {claims && (
             <SummarySection title="What changed because you asked">
               <ClaimsSection claims={claims} />
-            </SummarySection>
-          )}
-
-          {/* Build memo — the FIRST thing in the design/review area, as
-              content, because the PDD makes it the review artifact:
-              "humans review the memo and spot-check the apps, rather than
-              reviewing every screen" (ace-web#767). Absent entirely on a
-              run without one — every run before ace#2371 — so those pages
-              render exactly as before, with no placeholder. */}
-          {build_memo && (
-            <SummarySection title="Build memo">
-              <BuildMemo memo={build_memo} showAccessTags={showAccessTags} />
             </SummarySection>
           )}
 
@@ -563,8 +561,8 @@ export default function OppSummaryPage() {
                     51: the decisions broke down 30 stated / 17 inferred
                     / 4 conflicting / 0 changed. A subordinate clause
                     reads as a subset, so each number now names its own
-                    population and only `needsEye` — a genuine subset of
-                    the decisions — stays attached to them. */}
+                    population and only the confirmations still to make —
+                    a genuine subset of the decisions — stay attached. */}
                 <p className="max-w-md text-[0.975rem] leading-[1.7] text-muted-foreground">
                   {decisions ? (
                     <>
@@ -572,9 +570,11 @@ export default function OppSummaryPage() {
                         decisions.total === 1 ? "call" : "calls"
                       } ACE made building this run. `}
                       <span className="text-foreground">
-                        {needsEye > 0
-                          ? `${needsEye} need your eye.`
-                          : "React to any of them."}
+                        {confirm.outstanding > 0
+                          ? `${confirm.outstanding} recommended to confirm before launch.`
+                          : confirm.total > 0
+                            ? `All ${confirm.total} recommended confirmations are answered.`
+                            : "React to any of them."}
                       </span>
                       {openQuestionCount > 0 &&
                         ` Separately, ${openQuestionCount} open ${

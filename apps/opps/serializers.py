@@ -20,7 +20,13 @@ from typing import Any
 
 from django.conf import settings
 
-from apps.opps.parsers import Decision, JudgeVerdict, OppManifest, QAResult
+from apps.opps.parsers import (
+    DECISION_EXTRA_FIELDS,
+    Decision,
+    JudgeVerdict,
+    OppManifest,
+    QAResult,
+)
 from apps.opps.previews import build_preview
 from apps.opps.sync import (
     ArtifactRef,
@@ -246,6 +252,9 @@ def serialize_decision(d: Decision) -> dict:
         # getattr: a snapshot cached before the field existed deserialises
         # without it — degrade to "live" rather than raise.
         "superseded_by": getattr(d, "superseded_by", "") or "",
+        # Optional review fields (``parsers.DECISION_EXTRA_FIELDS``); same
+        # getattr posture — a stale snapshot serves them as "".
+        **{k: getattr(d, k, "") or "" for k in DECISION_EXTRA_FIELDS},
     }
 
 

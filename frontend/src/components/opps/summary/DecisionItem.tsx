@@ -24,6 +24,8 @@ export interface DecisionEditSubmit {
   reasoning?: string;
   reviewer?: string;
   reviewer_email?: string;
+  /** A CONFIRMATION of `value` (the answer in force), not a change. */
+  confirm?: boolean;
 }
 
 /**
@@ -76,7 +78,10 @@ export function DecisionItem({
   canSubmit,
   onReact,
   onEdit,
+  tags,
 }: {
+  /** Extra header chips from the caller (e.g. "internal"). */
+  tags?: React.ReactNode;
   decision: ReviewDecision;
   open: boolean;
   onToggle: () => void;
@@ -104,7 +109,8 @@ export function DecisionItem({
   // AI default. Same order the Workbench panel uses.
   const answer = edit?.override || decision.override || decision.ai_default;
   const reason = edit ? edit.reasoning : (decision.override_reasoning ?? "");
-  const humanChanged = !!edit && !edit.is_revert;
+  const confirmed = !!edit?.confirmed;
+  const humanChanged = !!edit && !edit.is_revert && !confirmed;
 
   /** Returns false when the change did not save — see `onCommit`'s contract. */
   async function commit(value: string, reasoning: string): Promise<boolean> {
@@ -140,8 +146,10 @@ export function DecisionItem({
       onToggle={onToggle}
       anchorId={`decision-${decision.id}`}
       optionsLabel="Pick option"
+      statusChip={false}
       badges={
         <>
+          {tags}
           {reactions.length > 0 && (
             <span
               className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground"
@@ -151,7 +159,15 @@ export function DecisionItem({
               {reactions.length}
             </span>
           )}
-          {(humanChanged || decision.status === "overridden") && (
+          {confirmed && (
+            <span
+              className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400"
+              title={`confirmed${edit?.decided_by_name ? ` by ${edit.decided_by_name}` : ""}`}
+            >
+              {edit?.decided_by_name ? `confirmed by ${edit.decided_by_name}` : "confirmed"}
+            </span>
+          )}
+          {(humanChanged || (!confirmed && decision.status === "overridden")) && (
             <span
               className="shrink-0 rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-400"
               title={

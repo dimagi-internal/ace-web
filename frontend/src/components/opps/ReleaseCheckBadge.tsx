@@ -99,22 +99,52 @@ function ItemList({
     <section className="mb-4">
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
       <ul className="flex flex-col gap-2">
-        {items.map((it, i) => (
-          <li
-            key={it.id ?? i}
-            className={cn(
-              "rounded border px-3 py-2 text-sm",
-              tone === "rose" ? "border-rose-500/30 bg-rose-500/5" : "border-amber-500/30 bg-amber-500/5",
-            )}
-          >
-            <div className="flex items-baseline gap-2 text-[11px] text-muted-foreground">
-              {it.area && <span className="font-semibold uppercase tracking-wider">{it.area}</span>}
-              {it.owner && <span className="font-mono">{it.owner}</span>}
-            </div>
-            {it.detail && <p className="mt-0.5 text-foreground">{it.detail}</p>}
-            {it.fix && <p className="mt-1 text-xs text-muted-foreground">Fix: {it.fix}</p>}
-          </li>
-        ))}
+        {items.map((it, i) => {
+          // Lead with ACE's plain sentence and next step when the verdict
+          // carries them (2026-10); older verdicts only have the internal
+          // `detail` / `fix`, which then lead instead. Skill ids and area
+          // chips are reference, so they sit on a small muted line, and the
+          // internal text stays reachable rather than being dropped.
+          const lead = it.summary || it.detail;
+          const next = it.action || it.fix;
+          const technical = [
+            it.summary && it.detail ? it.detail : null,
+            it.action && it.fix ? `Fix: ${it.fix}` : null,
+          ].filter(Boolean) as string[];
+          return (
+            <li
+              key={it.id ?? i}
+              className={cn(
+                "rounded border px-3 py-2 text-sm",
+                tone === "rose" ? "border-rose-500/30 bg-rose-500/5" : "border-amber-500/30 bg-amber-500/5",
+              )}
+            >
+              {lead && <p className="leading-snug text-foreground">{lead}</p>}
+              {next && (
+                <p className="mt-1 text-[13px] leading-snug text-muted-foreground">
+                  <span className="font-medium text-foreground">Next step: </span>
+                  {next}
+                </p>
+              )}
+              {(it.area || it.owner) && (
+                <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 text-[10px] text-muted-foreground/70">
+                  {it.area && <span className="uppercase tracking-wider">{it.area}</span>}
+                  {it.owner && <span className="font-mono">{it.owner}</span>}
+                </p>
+              )}
+              {technical.length > 0 && (
+                <details className="mt-1 text-[11px] text-muted-foreground/70">
+                  <summary className="cursor-pointer select-none">Technical detail</summary>
+                  {technical.map((t, j) => (
+                    <p key={j} className="mt-0.5 font-mono [overflow-wrap:anywhere]">
+                      {t}
+                    </p>
+                  ))}
+                </details>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

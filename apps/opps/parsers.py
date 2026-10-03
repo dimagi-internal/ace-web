@@ -146,3 +146,52 @@ class Decision:
     # NOT carried by ``canopy_agent_runs`` (0.1.4's row parser drops the key),
     # so ``framework_reader.attach_superseded_by`` reads it ace-side.
     superseded_by: str = ""
+    # Review-surface fields (ACE, 2026-10). All OPTIONAL — older logs lack
+    # them and render without them. Like ``superseded_by`` these are not
+    # carried by ``canopy_agent_runs``, so ``framework_reader`` reads them
+    # ace-side (``attach_row_extras``); the public summary reads its own.
+    #
+    # ``review_ask: recommended-confirmation`` + ``confirm_reason`` put a row
+    # in the summary's "Recommended to confirm before launch" group; ``plain``
+    # is a one-line plain-language restatement; ``check_at`` /
+    # ``correct_looks_like`` say where and how to verify it; ``audience``
+    # (``partner`` | ``internal``, absent = partner) hides internal rows by
+    # default; ``scope`` / ``enforcement`` describe rule rows.
+    review_ask: str = ""
+    confirm_reason: str = ""
+    plain: str = ""
+    check_at: str = ""
+    correct_looks_like: str = ""
+    audience: str = ""
+    scope: str = ""
+    enforcement: str = ""
+
+
+#: The optional review-surface fields on a decisions row, in one place so
+#: the three readers (summary, framework_reader, serializer) can't drift.
+DECISION_EXTRA_FIELDS: tuple[str, ...] = (
+    "review_ask",
+    "confirm_reason",
+    "plain",
+    "check_at",
+    "correct_looks_like",
+    "audience",
+    "scope",
+    "enforcement",
+)
+
+
+def decision_extras(raw: dict) -> dict[str, str]:
+    """The optional review fields of one raw decisions.yaml row, as strings.
+
+    A missing or non-scalar value reads as ``""`` — the row then renders
+    exactly as an older log's would.
+    """
+    out: dict[str, str] = {}
+    for key in DECISION_EXTRA_FIELDS:
+        value = raw.get(key)
+        if value is None or isinstance(value, (dict, list)):
+            out[key] = ""
+        else:
+            out[key] = str(value).strip()
+    return out

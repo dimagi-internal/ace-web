@@ -20,8 +20,6 @@ const BASE: OppSummaryPayload = {
   // Null on every run that authored no claims — most of them — and the
   // section must then not render at all.
   claims: null,
-  // Null on every run before ace#2371 — the page must draw nothing for it.
-  build_memo: null,
   design: {
     docs: [
       { title: "Program Design Document", url: "https://docs/pdd", access: "public" },
@@ -104,6 +102,11 @@ async function openDecisionsTab() {
   fireEvent.click(await screen.findByText("Review the decisions"));
 }
 
+/** Rows start collapsed; open one by its question, the way a reader would. */
+async function openRow(question: string) {
+  fireEvent.click(await screen.findByText(question));
+}
+
 describe("OppSummaryPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -120,39 +123,6 @@ describe("OppSummaryPage", () => {
     expect(await screen.findByText("Program Design Document")).toBeTruthy();
   });
 
-  it("draws nothing for a build memo on a run that has none", async () => {
-    // Every run before ace#2371. No section, no "Not created" row.
-    renderWith(BASE);
-    await screen.findByText("Program Design Document");
-    expect(screen.queryByText("Build memo")).toBeNull();
-    expect(screen.queryByText("Open in Google Docs")).toBeNull();
-  });
-
-  it("renders the build memo's content first, ahead of the design docs", async () => {
-    renderWith({
-      ...BASE,
-      build_memo: {
-        title: "Build memo",
-        url: "https://docs.google.com/document/d/memo/edit",
-        access: "public",
-        complete: false,
-        gaps: ["Learn memo absent"],
-        body:
-          "# Build memo — Spark · run 20260813-2126\n\nIntro.\n\n" +
-          "## 1\\. Every \\[ACE\\] latitude\n\n" +
-          "| # | Where to spot-check |\n| :---- | :---- |\n| 1 | Deliver → Visit |\n",
-      },
-    });
-    const heading = await screen.findByText("Build memo");
-    const design = screen.getByText("Design");
-    expect(
-      heading.compareDocumentPosition(design) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(screen.getByRole("table")).toBeTruthy();
-    expect(screen.getByText("Deliver → Visit")).toBeTruthy();
-    expect(screen.getByText("Learn memo absent")).toBeTruthy();
-  });
-
   // ─── "What changed because you asked" (ace#2420) ──────────────────
 
   it("draws nothing for claims on a run that authored none", async () => {
@@ -163,7 +133,7 @@ describe("OppSummaryPage", () => {
     expect(screen.queryByText("What changed because you asked")).toBeNull();
   });
 
-  it("puts the claim set ABOVE the build memo — it is a returning reviewer's first question", async () => {
+  it("puts the claim set ABOVE the design docs — it is a returning reviewer's first question", async () => {
     renderWith({
       ...BASE,
       claims: {
@@ -206,19 +176,11 @@ describe("OppSummaryPage", () => {
           ],
         }],
       },
-      build_memo: {
-        title: "Build memo",
-        url: "https://docs.google.com/document/d/memo/edit",
-        access: "public",
-        complete: true,
-        gaps: [],
-        body: "# Build memo\n\nIntro.\n",
-      },
     });
     const claims = await screen.findByText("What changed because you asked");
-    const memo = screen.getByText("Build memo");
+    const design = screen.getByText("Design");
     expect(
-      claims.compareDocumentPosition(memo) & Node.DOCUMENT_POSITION_FOLLOWING,
+      claims.compareDocumentPosition(design) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     // The unmet one accuses rather than going missing, and the bar she
     // set herself is marked as hers.
@@ -584,29 +546,208 @@ describe("OppSummaryPage", () => {
     expect(screen.getByText("Phase 4")).toBeTruthy();
   });
 
-  it("opens the contested rows in their phase, and leaves the routine ones collapsed", async () => {
+  it("shows every row's question and answer in full without expanding it", async () => {
+    // Jonathan, 2026-10-03: the row used to be an ellipsized one-liner, so
+    // learning anything meant expanding every row. Phases now start open
+    // and a collapsed row carries the full question and the answer in force.
     renderWith(TWO_PHASES);
     await openDecisionsTab();
-    // The conflicting row is expanded IN its phase section, so its
-    // competing signals are on screen at first paint.
-    expect(screen.getAllByText("A contested call").length).toBeGreaterThan(0);
-    expect(await screen.findByText("source A says X")).toBeTruthy();
-    // The phase with nothing contested stays collapsed, so 40 routine
-    // rows can't bury the 2 that need an eye.
-    expect(screen.queryByText("A settled call")).toBeNull();
+    expect(await screen.findByText("A settled call")).toBeTruthy();
+    expect(screen.getByText("A contested call")).toBeTruthy();
+    expect(screen.getAllByText("the pick").length).toBe(2);
+    // …but the detail is still one click away, not on screen at first paint.
+    expect(screen.queryByText("source A says X")).toBeNull();
+    // A phase still collapses.
     fireEvent.click(screen.getByText("Connect setup"));
-    expect(screen.getByText("A settled call")).toBeTruthy();
+    expect(screen.queryByText("A settled call")).toBeNull();
   });
 
-  it("jumps to a flagged row rather than rendering it twice", async () => {
+  it("notes conflicting sources quietly, with no call to action or count", async () => {
     renderWith(TWO_PHASES);
     await openDecisionsTab();
-    // One entry in the "worth your eye" list + the row itself in its
-    // phase — the list is a jump list, and clicking it lands on the row.
-    const hits = screen.getAllByText("A contested call");
-    expect(hits.length).toBe(2);
-    fireEvent.click(hits[0]);
+    expect(await screen.findByText("ACE's sources disagreed")).toBeTruthy();
+    expect(screen.queryByText(/need your eye/i)).toBeNull();
+    expect(screen.queryByText(/worth your eye/i)).toBeNull();
+    expect(screen.queryByText(/resolved a conflict/i)).toBeNull();
+    // The always-present ai-default chip is gone.
+    expect(screen.queryByText("ai-default")).toBeNull();
+    await openRow("A contested call");
     expect(screen.getByText("source A says X")).toBeTruthy();
+  });
+
+  it("keeps the full question and answer visible when a row is expanded", async () => {
+    // The bug: expanding `pilot-scope-window` left its header truncated
+    // with an ellipsis, so the full question/answer never appeared. Nothing
+    // in the header may clip any more.
+    const q = "Which slice of the FCAP arc does the pilot cover, given the facilitator cadence?";
+    const a = "Goal Setting subphase, FCAP steps 1-7, ending before the Proposal Generator";
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 1,
+        counts: { stated: 0, inferred: 1, conflicting: 0, overridden: 0 },
+        rows: [{
+          ...DECISION, id: "pilot-scope-window", question: q, ai_default: a,
+          options_considered: [a, "Full FCAP arc"], evidence_basis: "inferred",
+        }],
+      },
+    });
+    await openDecisionsTab();
+    await openRow(q);
+    const header = screen.getByText(q).closest("button")!;
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+    expect(header.textContent).toContain(a);
+    for (const el of header.querySelectorAll("*")) {
+      expect(el.getAttribute("class") ?? "").not.toMatch(/\btruncate\b/);
+    }
+  });
+
+  it("shows ACE's plain-language summary under the answer when it wrote one", async () => {
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 1,
+        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
+        rows: [{ ...DECISION, plain: "Workers cover the first seven steps only." }],
+      },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("Workers cover the first seven steps only.")).toBeTruthy();
+  });
+
+  // ── Recommended confirmations (ACE `review_ask`, 2026-10) ──────────
+
+  const ASKS: OppSummaryPayload = {
+    ...BASE,
+    decisions: {
+      total: 3,
+      counts: { stated: 3, inferred: 0, conflicting: 0, overridden: 0 },
+      rows: [
+        {
+          ...DECISION,
+          id: "window",
+          question: "Which slice does the pilot cover?",
+          ai_default: "Goal Setting",
+          options_considered: ["Goal Setting", "Full arc"],
+          review_ask: "recommended-confirmation",
+          confirm_reason: "Only Spark knows the facilitator cadence.",
+          check_at: "Learn module 1",
+        },
+        { ...DECISION, id: "routine", question: "A routine call" },
+        {
+          ...DECISION,
+          id: "internal-rule",
+          question: "An internal rule",
+          audience: "internal",
+        },
+        {
+          ...DECISION,
+          id: "old-one",
+          question: "An earlier version",
+          superseded_by: "routine",
+        },
+      ],
+    },
+  };
+
+  it("leads with the recommended confirmations, once, with why", async () => {
+    renderWith(ASKS);
+    await openDecisionsTab();
+    expect(await screen.findByText("Recommended to confirm before launch")).toBeTruthy();
+    expect(screen.getByText("Only Spark knows the facilitator cadence.")).toBeTruthy();
+    expect(screen.getByText("Learn module 1")).toBeTruthy();
+    // One decision, one home — not repeated in its phase below.
+    expect(screen.getAllByText("Which slice does the pilot cover?").length).toBe(1);
+    const heading = screen.getByText("Recommended to confirm before launch");
+    const choices = screen.getByText("Choices ACE made");
+    expect(
+      heading.compareDocumentPosition(choices) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("hides internal and replaced rows until asked", async () => {
+    renderWith(ASKS);
+    await openDecisionsTab();
+    expect(await screen.findByText("A routine call")).toBeTruthy();
+    expect(screen.queryByText("An internal rule")).toBeNull();
+    expect(screen.queryByText("An earlier version")).toBeNull();
+
+    fireEvent.click(screen.getByText(/Show 1 internal/));
+    expect(screen.getByText("An internal rule")).toBeTruthy();
+    expect(screen.getByText("internal")).toBeTruthy();
+
+    fireEvent.click(screen.getByText(/Show 1 replaced/));
+    expect(screen.getByText("An earlier version")).toBeTruthy();
+    expect(screen.getByText(/replaced — no longer in force/)).toBeTruthy();
+  });
+
+  it("records a Confirm distinctly from a change", async () => {
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue({
+      decision_id: "window",
+      override: "Goal Setting",
+      reasoning: "",
+      decided_by_name: "Enock",
+      decided_by_verified: false,
+      decided_at: "2026-10-03T10:00:00+00:00",
+      source_run_id: "20260813-2126",
+      is_revert: false,
+      confirmed: true,
+      history: [],
+    });
+    renderWith(ASKS);
+    await openDecisionsTab();
+    const confirm = await screen.findByRole("button", { name: "Confirm" });
+    // A name is needed first, as for any anonymous write.
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Enock" } });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][3]).toBe("window");
+    expect(post.mock.calls[0][4]).toMatchObject({
+      value: "Goal Setting", confirm: true, reviewer: "Enock",
+    });
+    expect(await screen.findByText("Confirmed by Enock")).toBeTruthy();
+    expect(screen.getByText(/All 1 answered/)).toBeTruthy();
+  });
+
+  it("lets a reviewer change a recommended row instead of confirming it", async () => {
+    renderWith(ASKS);
+    await openDecisionsTab();
+    fireEvent.click(await screen.findByText("Change it"));
+    expect(screen.getByRole("button", { name: /Full arc/ })).toBeTruthy();
+  });
+
+  it("counts the confirmations still to make in the Overview headline", async () => {
+    renderWith(ASKS);
+    expect(
+      await screen.findByText(/1 recommended to confirm before launch\./),
+    ).toBeTruthy();
+    expect(screen.queryByText(/need your eye/)).toBeNull();
+  });
+
+  it("counts a confirmed or changed row as answered, and a revert as not", async () => {
+    const edit = (over: Partial<api.PublicDecisionEdit>): api.PublicDecisionEdit => ({
+      override: "Goal Setting",
+      reasoning: "",
+      decided_by_name: "Enock",
+      decided_by_verified: false,
+      decided_at: "2026-10-03T10:00:00+00:00",
+      source_run_id: "20260813-2126",
+      is_revert: false,
+      history: [],
+      ...over,
+    });
+    const { unmount } = renderWith({
+      ...ASKS, decision_edits: { window: edit({ confirmed: true }) },
+    });
+    expect(
+      await screen.findByText(/All 1 recommended confirmations are answered\./),
+    ).toBeTruthy();
+    unmount();
+    renderWith({ ...ASKS, decision_edits: { window: edit({ is_revert: true }) } });
+    expect(
+      await screen.findByText(/1 recommended to confirm before launch\./),
+    ).toBeTruthy();
   });
 
   // ── The response affordance ─────────────────────────────────────
@@ -629,76 +770,8 @@ describe("OppSummaryPage", () => {
     },
   };
 
-  it("counts a reviewer's own edit in the Overview's 'need your eye' tally", async () => {
-    // ace-web#771. The row itself has always rendered an edit correctly
-    // (DecisionItem prefers edit.override and badges it "changed by
-    // <name>"), and the Decisions tab's per-phase tallies count it. The
-    // Overview headline did not: it read `counts.conflicting +
-    // counts.overridden` straight off the API, and `counts` is built
-    // from the RUN's decisions.yaml — a human edit lives in
-    // `decision_edits`, so it could never reach that number.
-    //
-    // The visible cost is two numbers on one page disagreeing: the
-    // headline said "1 need your eye" while the tab below it flagged 2.
-    // A reviewer who has just changed a call and is told the page still
-    // counts only ACE's own conflicts reasonably concludes the edit was
-    // dropped.
-    renderWith({
-      ...BASE,
-      decisions: {
-        total: 2,
-        counts: { stated: 1, inferred: 0, conflicting: 1, overridden: 0 },
-        rows: [
-          {
-            ...DECISION,
-            id: "loud-one",
-            question: "A contested call",
-            evidence_basis: "conflicting",
-            conflict_signals: ["source A says X"],
-          },
-          { ...DECISION, id: "edited-one", question: "A call a reviewer changed" },
-        ],
-      },
-      decision_edits: {
-        "edited-one": {
-          override: "Per-component rates, not a single band",
-          reasoning: "each component sets its own rate",
-          decided_by_name: "Sophie Feintuch",
-          decided_by_verified: false,
-          decided_at: "2026-09-14T17:34:03+00:00",
-          source_run_id: "20260813-2126",
-          is_revert: false,
-          history: [],
-        },
-      },
-    });
-    expect(await screen.findByText(/2 need your eye\./)).toBeTruthy();
-  });
-
-  it("does not count a REVERT as something needing an eye", async () => {
-    // Putting the AI's answer back is the one edit that resolves rather
-    // than raises — `is_revert` rows are excluded, matching the
-    // per-phase tally's own rule.
-    renderWith({
-      ...BASE,
-      decisions: {
-        total: 1,
-        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
-        rows: [{ ...DECISION, id: "reverted-one" }],
-      },
-      decision_edits: {
-        "reverted-one": {
-          override: "the pick",
-          reasoning: "put it back",
-          decided_by_name: "Sophie Feintuch",
-          decided_by_verified: false,
-          decided_at: "2026-09-14T17:34:03+00:00",
-          source_run_id: "20260813-2126",
-          is_revert: true,
-          history: [],
-        },
-      },
-    });
+  it("says 'React to any of them' when nothing is asked of the reviewer", async () => {
+    renderWith(CONFLICTED);
     expect(await screen.findByText(/React to any of them\./)).toBeTruthy();
   });
 
@@ -732,8 +805,8 @@ describe("OppSummaryPage", () => {
     });
     renderWith(CONFLICTED);
     await openDecisionsTab();
+    await openRow("A contested call");
 
-    // Conflicting rows open expanded, so the reply box is one click away.
     fireEvent.click(await screen.findByText(/Say what you.d want to know/));
     fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
       target: { value: "The later date is right." },
@@ -778,6 +851,7 @@ describe("OppSummaryPage", () => {
     const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
     renderWith(CONFLICTED);
     await openDecisionsTab();
+    await openRow("A contested call");
 
     // Pick a different option. Nothing has left the browser yet — the
     // name is asked at submit, never as a gate before someone can click.
@@ -805,6 +879,7 @@ describe("OppSummaryPage", () => {
     const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
     renderWith(CONFLICTED);
     await openDecisionsTab();
+    await openRow("A contested call");
     fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
     expect((screen.getByText("Save this answer") as HTMLButtonElement).disabled).toBe(
       true,
@@ -819,6 +894,7 @@ describe("OppSummaryPage", () => {
     const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
     renderWith({ ...CONFLICTED, viewer: { is_member: true } });
     await openDecisionsTab();
+    await openRow("A contested call");
     fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
     expect(screen.queryByLabelText("Your name")).toBeNull();
     expect(screen.queryByText("Save this answer")).toBeNull();
@@ -833,6 +909,7 @@ describe("OppSummaryPage", () => {
     const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
     renderWith(CONFLICTED);
     await openDecisionsTab();
+    await openRow("A contested call");
 
     fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
     fireEvent.change(screen.getByLabelText("Your name"), {
@@ -877,6 +954,7 @@ describe("OppSummaryPage", () => {
       },
     });
     await openDecisionsTab();
+    await openRow("A contested call");
 
     expect(await screen.findByText(/changed by Anne Kuhlmann/)).toBeTruthy();
     // The self-reported marker is shown, never enforced.
@@ -894,6 +972,7 @@ describe("OppSummaryPage", () => {
     );
     renderWith(CONFLICTED);
     await openDecisionsTab();
+    await openRow("A contested call");
     fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
     fireEvent.change(screen.getByLabelText("Your name"), {
       target: { value: "Anne Kuhlmann" },
@@ -910,6 +989,7 @@ describe("OppSummaryPage", () => {
     );
     renderWith(CONFLICTED);
     await openDecisionsTab();
+    await openRow("A contested call");
     fireEvent.click(await screen.findByText(/Say what you.d want to know/));
     fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
       target: { value: "one more thought" },
@@ -937,6 +1017,7 @@ describe("OppSummaryPage", () => {
       },
     });
     await openDecisionsTab();
+    await openRow("A contested call");
     expect(await screen.findByText("We start in October, not September.")).toBeTruthy();
     expect(screen.getByText(/Anne Kuhlmann/)).toBeTruthy();
   });

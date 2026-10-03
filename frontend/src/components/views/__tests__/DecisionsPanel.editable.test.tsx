@@ -44,6 +44,14 @@ function statusChip() {
   return chips[0];
 }
 
+/** The AI default is the normal state, so it carries NO chip (2026-10-03). */
+function expectNoStatusChip() {
+  const chips = screen
+    .queryAllByText(/ai-default|overridden/i)
+    .filter((el) => /uppercase/.test(el.className));
+  expect(chips).toHaveLength(0);
+}
+
 describe("DecisionsPanel — edit mode", () => {
   it("renders read-only options when no onEdit prop", () => {
     render(<DecisionsPanel phase="design" decisions={[dec()]} />);
@@ -211,12 +219,12 @@ describe("DecisionsPanel — edit mode", () => {
     );
   });
 
-  it("chip reads ai-default (emerald) when nothing is staged or overridden", () => {
+  it("draws no status chip when nothing is staged or overridden", () => {
+    // The always-present ai-default chip carried no signal (Jonathan,
+    // 2026-10-03) — the un-chipped row IS the AI default.
     render(<DecisionsPanel phase="design" decisions={[dec()]} />);
     fireEvent.click(screen.getByText("Decisions").closest("button")!);
-    const chip = statusChip();
-    expect(chip.textContent).toMatch(/^ai-default$/i);
-    expect(chip.className).toMatch(/emerald/);
+    expectNoStatusChip();
   });
 
   it("chip reads overridden (sky) for a committed run override", () => {
@@ -248,7 +256,7 @@ describe("DecisionsPanel — edit mode", () => {
     expect(chip.className).toMatch(/violet/);
   });
 
-  it("chip falls back to ai-default when the buffered edit equals the default with no reason", () => {
+  it("chip disappears when the buffered edit equals the default with no reason", () => {
     render(
       <DecisionsPanel
         phase="design"
@@ -259,9 +267,7 @@ describe("DecisionsPanel — edit mode", () => {
       />,
     );
     fireEvent.click(screen.getByText("Decisions").closest("button")!);
-    const chip = statusChip();
-    expect(chip.textContent).toMatch(/^ai-default$/i);
-    expect(chip.className).toMatch(/emerald/);
+    expectNoStatusChip();
   });
 
   it("pill click flips the chip to pending and updates the header value (integration with reducer)", () => {
@@ -291,9 +297,9 @@ describe("DecisionsPanel — edit mode", () => {
     // Header `→ value` follows the staged pick. The value renders in the
     // header summary and the pill; assert at least the summary updated.
     expect(screen.getAllByText("FLWs in rural Tanzania").length).toBeGreaterThanOrEqual(2);
-    // Revert restores AI-DEFAULT.
+    // Revert restores the AI default — and with it, no chip.
     fireEvent.click(screen.getByRole("button", { name: /^revert$/i }));
-    expect(statusChip().textContent).toMatch(/^ai-default$/i);
+    expectNoStatusChip();
   });
 
   it("saved override renders as overridden (sky) and drives the header value", () => {

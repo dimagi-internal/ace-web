@@ -4,7 +4,7 @@ import type { Decision } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
 
 /**
- * The `evidence_basis` chip — how well-grounded a decision's default is.
+ * The collapsed row's note about how a decision's default was grounded.
  *
  * Shared by the Workbench's `DecisionsPanel` and the public run-summary
  * review surface. It lives here rather than inline in either because the
@@ -12,8 +12,12 @@ import { cn } from "@/lib/utils";
  * ACE's decisions-log schema v4: if the meaning of "conflicting" changes,
  * exactly one component should have to move.
  *
- * `stated` renders nothing — the un-badged row is the normal case, and a
- * badge on every row would carry no signal.
+ * Only `conflicting` says anything in the collapsed row, and it says it as
+ * a quiet NOTE, not a call to action (Jonathan, 2026-10-03): that ACE's
+ * sources disagreed is ACE's uncertainty, not something the reviewer must
+ * act on. `inferred` is the normal case for a third of the rows, so a chip
+ * on each carried no signal — it is shown in the expanded detail instead
+ * ("Evidence basis"), as is `stated` by its absence.
  */
 export function EvidenceBadge({
   basis,
@@ -22,32 +26,17 @@ export function EvidenceBadge({
   basis: Decision["evidence_basis"];
   className?: string;
 }) {
-  if (basis === "conflicting") {
-    return (
-      <span
-        className={cn(
-          "inline-flex shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400",
-          className,
-        )}
-        title="The sources disagreed — this default resolved a contested fork"
-      >
-        <AlertTriangle className="h-3 w-3" />
-        conflicting
-      </span>
-    );
-  }
-  if (basis === "inferred") {
-    return (
-      <span
-        className={cn(
-          "shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
-          className,
-        )}
-        title="Extrapolated beyond what the source directly states"
-      >
-        inferred
-      </span>
-    );
-  }
-  return null;
+  if (basis !== "conflicting") return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 text-[11px] text-amber-400/90",
+        className,
+      )}
+      title="ACE's sources disagreed on this one, and it picked a side — open the row to see both readings"
+    >
+      <AlertTriangle className="h-3 w-3" aria-hidden />
+      ACE's sources disagreed
+    </span>
+  );
 }
