@@ -160,6 +160,11 @@ class Decision:
     review_ask: str = ""
     confirm_reason: str = ""
     plain: str = ""
+    # ``plain_question`` / ``plain_value`` (ACE docs/decisions-contract.md):
+    # the partner-facing question and the display value. ``ai-default``
+    # stays the exact option string; these only change what is SHOWN.
+    plain_question: str = ""
+    plain_value: str = ""
     check_at: str = ""
     correct_looks_like: str = ""
     audience: str = ""
@@ -173,6 +178,8 @@ DECISION_EXTRA_FIELDS: tuple[str, ...] = (
     "review_ask",
     "confirm_reason",
     "plain",
+    "plain_question",
+    "plain_value",
     "check_at",
     "correct_looks_like",
     "audience",

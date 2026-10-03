@@ -185,7 +185,8 @@ def test_first_reaction_creates_a_schema_shaped_record():
     assert record["reviewer_email"] == "anne@example.org"
     assert record["channel"] == "other"
     assert record["against_run"] == "20260813-2126"
-    assert "self-reported" in record["artifact"]
+    # Writers are signed-in members now (2026-10-03); the record says so.
+    assert "signed-in workspace member" in record["artifact"]
     assert len(record["items"]) == 1
     item = record["items"][0]
     assert set(item) == ITEM_KEYS

@@ -67,6 +67,7 @@ import yaml
 from apps.opps.summary import (
     ACCESS_ADMIN,
     ACCESS_PUBLIC,
+    ACCESS_REVIEWER,
     ACCESS_UNKNOWN,
     build_summary_payload,
 )
@@ -513,7 +514,7 @@ _MAXIMAL_LINK_SHARING_BY_PATH = {
 }
 
 
-def _build(*, viewer_is_member: bool = True) -> dict:
+def _build(*, viewer_is_member: bool = True, tenancy: dict | None = None) -> dict:
     drive = FakeDriveClient.from_tree(_maximal_tree())
     for file_id, shared in _MAXIMAL_LINK_SHARING.items():
         drive.set_link_shared(file_id, shared)
@@ -523,6 +524,7 @@ def _build(*, viewer_is_member: bool = True) -> dict:
     payload = build_summary_payload(
         drive, workspace=ws, opp_slug=OPP_SLUG, run_id=RUN_ID,
         viewer_is_member=viewer_is_member,
+        tenancy=tenancy,
     )
     assert payload is not None, "the maximal fixture must always build a payload"
     return payload
@@ -788,7 +790,8 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
         # history toggle) and never counted in `total` / `counts`.
         "superseded_by",
         # Optional review fields (ACE 2026-10) — "" on a row that lacks them.
-        "review_ask", "confirm_reason", "plain", "check_at",
+        "review_ask", "confirm_reason", "plain", "plain_question", "plain_value",
+        "check_at",
         "correct_looks_like", "audience", "scope", "enforcement",
     }),
     "reactions": frozenset({"total", "by_decision"}),
@@ -1023,9 +1026,12 @@ def test_every_link_bearing_object_declares_its_access(anon_payload):
             continue
         checked += 1
         assert "access" in node, f"{path} carries a link but declares no access"
-        assert node["access"] in (ACCESS_PUBLIC, ACCESS_ADMIN, ACCESS_UNKNOWN), (
+        assert node["access"] in (
+            ACCESS_PUBLIC, ACCESS_ADMIN, ACCESS_UNKNOWN, ACCESS_REVIEWER,
+        ), (
             f"{path} declares access={node['access']!r}, "
-            f"which is none of ACCESS_PUBLIC / ACCESS_ADMIN / ACCESS_UNKNOWN"
+            f"which is none of ACCESS_PUBLIC / ACCESS_ADMIN / ACCESS_UNKNOWN / "
+            f"ACCESS_REVIEWER"
         )
     # Belt and braces: a walker that silently matched nothing would make
     # this test pass on an empty payload.
@@ -1213,3 +1219,64 @@ def test_workbench_url_is_relative_and_therefore_must_carry_the_mount(settings):
         f"{url!r} is relative and does not carry the deployment mount, so it "
         "resolves against the origin and 404s for every anonymous reader"
     )
+
+
+# ─── (g) `admin only` means "a reviewer never gets this" (2026-10-03) ───
+
+
+#: An opp with its OWN tenancy whose Connect org is the fixture's, whose
+#: HQ space is NOT the one the fixture's apps live in, and whose Labs is
+#: opened to a partner domain.
+_OWN_TENANCY = {
+    "hq_domain": "turmeric-space",
+    "connect_pm_org": "turmeric-pm",
+    "connect_holding_org": "ai-demo-space",
+    "labs_allowed_domains": ["@partner.org"],
+}
+#: The shared tenants `dimagi-team`'s opps were built in (migration 0006).
+_SHARED_TENANCY = {
+    "hq_domain": "connect-ace-prod",
+    "connect_holding_org": "ace-nm-org",
+    "ocs_team": "connect-ace",
+    "labs_allowed_domains": ["@dimagi.com", "@dimagi-ai.com"],
+}
+
+
+def test_links_inside_the_opps_own_tenancy_carry_no_admin_tag():
+    """Jonathan: "admin only was meant to mean you needed to be dimagi
+    because the things weren't properly isolated. That is no longer true
+    and you should expect access." `/ace:release` invites reviewers into
+    the opp's own HQ space, Connect org and ace-web workspace; Labs opens
+    to `labs_allowed_domains`. Inside the own tenancy ⇒ `reviewer` (no
+    tag); a URL OUTSIDE it (the apps still in `connect-ace-prod`) and the
+    OCS team console stay `admin`."""
+    p = _build(viewer_is_member=False, tenancy=_OWN_TENANCY)
+    assert p["connect"]["opportunity"]["access"] == ACCESS_REVIEWER
+    assert {d["access"] for d in p["dashboards"]} == {ACCESS_REVIEWER}
+    assert p["solicitation"]["access"] == ACCESS_REVIEWER
+    assert p["workbench"]["access"] == ACCESS_REVIEWER
+    # Outside the opp's own HQ space: a reviewer is never invited there.
+    assert {a["access"] for a in p["apps"]} == {ACCESS_ADMIN}
+    # Reviewers use the public chatbot, never the team console.
+    assert p["assistant"]["access"] == ACCESS_ADMIN
+    # A measured Drive file that is not anyone-with-link is the run's
+    # documents, which reviewers of an own-tenancy opp receive at release…
+    assert p["open_questions"]["access"] == ACCESS_REVIEWER
+    # …while a measured anyone-with-link file still reads `public`.
+    assert {d["access"] for d in p["training"]["docs"]} <= {ACCESS_PUBLIC, ACCESS_REVIEWER}
+
+
+def test_the_shared_hq_space_never_counts_as_an_opps_own():
+    p = _build(viewer_is_member=False, tenancy={**_OWN_TENANCY, "hq_domain": "connect-ace-prod"})
+    assert {a["access"] for a in p["apps"]} == {ACCESS_ADMIN}
+
+
+@pytest.mark.parametrize("tenancy", [_SHARED_TENANCY, None, {}])
+def test_shared_or_unknown_tenancy_keeps_every_gated_link_internal(tenancy):
+    """A shared-tenancy opp (e.g. `dimagi-team`) — or one whose tenancy is
+    unknown — is not released to outside reviewers, so its gated links stay
+    `admin only`, and nothing is `reviewer`."""
+    p = _build(viewer_is_member=False, tenancy=tenancy)
+    assert ACCESS_REVIEWER not in {node.get("access") for _, node in _dicts(p)}
+    assert p["workbench"]["access"] == ACCESS_ADMIN
+    assert p["connect"]["opportunity"]["access"] == ACCESS_ADMIN

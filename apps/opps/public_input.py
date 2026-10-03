@@ -1,11 +1,11 @@
-"""Input hygiene for the public run summary's WRITE surfaces.
+"""Input hygiene for the run summary's WRITE surfaces.
 
-The public per-run summary has no login and cannot get one — a partner
-cannot self-serve an ace-web account, and requiring one is a barrier in
-front of speculative work whose whole point is that engaging with it
-should be cheap. So everything a partner writes from that page arrives
-unauthenticated, and every one of those endpoints needs the same four
-things before the payload is allowed anywhere near Drive:
+Since 2026-10-03 every write on the summary (change, confirm, comment)
+needs a signed-in workspace MEMBER — ``apps.opps.api._member_reviewer``
+refuses anyone else with 401/403, and the identity on every write is the
+session's (``Reviewer.verified`` is always True there). Jonathan: "no
+anonymous editing at all." What stays here is the hygiene every payload
+needs before it is allowed near Drive:
 
 * **control characters stripped** — they survive YAML round-trips and
   render as mojibake in the doc a human eventually reads;
@@ -14,24 +14,7 @@ things before the payload is allowed anywhere near Drive:
   "the frontend escapes it" is not the whole story. Silently mangling a
   reviewer's words is worse than refusing them;
 * **length capped before any Drive round-trip**, so an oversized body
-  costs one 400 and not a read-modify-write of a Drive file;
-* **an identity**, which is where the two surfaces differ and why this
-  module owns `resolve_reviewer` rather than each endpoint doing it.
-
-`resolve_reviewer` is the single answer to "who is writing this?":
-
-* **Signed in ⇒ never anonymous.** The session (or Bearer PAT) identity
-  wins outright and the body's self-reported name is ignored. Asking a
-  signed-in member to type their name is both noise and an invitation to
-  type someone else's.
-* **Not signed in ⇒ a required self-reported name**, asked at submit and
-  never as a gate before they can start typing.
-
-The distinction is carried into the store as `verified`, so a reader can
-always tell which kind of identity stands behind a change. That — plus
-history and reversibility — is what makes an unauthenticated write
-surface safe, in the same way it is what makes a Google Doc with
-anyone-with-link editing safe. It is not permission.
+  costs one 400 and not a read-modify-write of a Drive file.
 """
 from __future__ import annotations
 
@@ -111,13 +94,9 @@ def clean_text(
 
 @dataclass(frozen=True)
 class Reviewer:
-    """Who made a change, and whether we actually know that.
-
-    ``verified`` is the only field that distinguishes a signed-in member
-    from a partner who typed a name into a box. It is recorded, shown, and
-    never used to decide whether the write is allowed — reviewer 2 changing
-    reviewer 1's answer and Dimagi changing either is the same act.
-    """
+    """Who made a change. ``verified`` is recorded on the row; the summary's
+    write endpoints only ever produce verified reviewers (the session user),
+    while the Workbench's buffered path builds its own."""
 
     email: str
     name: str
@@ -131,18 +110,10 @@ class Reviewer:
 def session_identity_is_trustworthy(request) -> bool:
     """Can we ATTRIBUTE this write to the session's user?
 
-    These endpoints are ``csrf_exempt`` (django-ninja's default) because
-    they must accept a genuinely anonymous POST. That is fine for the
-    write itself — anyone may edit — but it would let a third-party page
-    make a signed-in member's browser file a change under THEIR name.
-    Nothing is gained that an anonymous post couldn't already do except
-    the attribution, and attribution is the whole safety mechanism here.
-
-    So the session identity is claimed only when the request also passes
-    Django's normal CSRF check. Failing that we fall back to the
-    anonymous path (which then requires a typed name) rather than
-    rejecting: degrading to "tell us who you are" keeps the surface
-    usable, and rejecting would punish a member for a missing cookie.
+    These endpoints are ``csrf_exempt`` at the router, so without this a
+    third-party page could make a signed-in member's browser file a change
+    under THEIR name. A member write that fails Django's normal CSRF check
+    is therefore refused (403) by ``_member_reviewer``.
     """
     from django.middleware.csrf import CsrfViewMiddleware
 
@@ -151,20 +122,3 @@ def session_identity_is_trustworthy(request) -> bool:
     ) is None
 
 
-def resolve_reviewer(
-    user, *, reviewer: str | None, reviewer_email: str | None,
-) -> Reviewer:
-    """Session identity if there is one; else the self-reported name.
-
-    A signed-in caller's typed name is deliberately discarded rather than
-    merged: two names on one change is worse than one.
-    """
-    if user is not None and getattr(user, "is_authenticated", False):
-        email = collapse(getattr(user, "email", "") or "")
-        name = collapse(getattr(user, "display_name", "") or "") or email
-        return Reviewer(email=email, name=name, verified=True)
-    return Reviewer(
-        email=clean_email(reviewer_email) or "",
-        name=clean_name(reviewer),
-        verified=False,
-    )

@@ -190,6 +190,7 @@ def test_review_fields_reach_the_serialized_snapshot():
         "    review_ask: recommended-confirmation\n"
         "    confirm_reason: The partner decides this.\n"
         "    plain: Workers deliver a service.\n"
+        "    plain_value: A service visit\n"
         "    audience: internal\n"
         "  - id: d2\n"
         "    phase: 1-design\n"
@@ -203,6 +204,7 @@ def test_review_fields_reach_the_serialized_snapshot():
     assert rows["d1"]["review_ask"] == "recommended-confirmation"
     assert rows["d1"]["confirm_reason"] == "The partner decides this."
     assert rows["d1"]["plain"] == "Workers deliver a service."
+    assert rows["d1"]["plain_value"] == "A service visit"
     assert rows["d1"]["audience"] == "internal"
     assert rows["d2"]["review_ask"] == "" and rows["d2"]["plain"] == ""
 

@@ -1789,6 +1789,8 @@ def test_review_fields_pass_through_and_default_to_empty():
         "    review_ask: recommended-confirmation\n"
         "    confirm_reason: Only the partner knows the cadence.\n"
         "    plain: The pilot covers the first seven steps.\n"
+        "    plain_question: How much of the programme does the pilot cover?\n"
+        "    plain_value: The first seven steps\n"
         "    check_at: Learn module 1\n"
         "    correct_looks_like: Seven steps listed\n"
         "    audience: partner\n"
@@ -1808,12 +1810,17 @@ def test_review_fields_pass_through_and_default_to_empty():
     assert rows["window"]["review_ask"] == "recommended-confirmation"
     assert rows["window"]["confirm_reason"] == "Only the partner knows the cadence."
     assert rows["window"]["plain"] == "The pilot covers the first seven steps."
+    assert rows["window"]["plain_question"] == "How much of the programme does the pilot cover?"
+    assert rows["window"]["plain_value"] == "The first seven steps"
+    # The exact option string is untouched — display fields only.
+    assert rows["window"]["ai_default"] == "Goal Setting"
     assert rows["window"]["check_at"] == "Learn module 1"
     assert rows["window"]["correct_looks_like"] == "Seven steps listed"
     assert (rows["rule"]["audience"], rows["rule"]["scope"], rows["rule"]["enforcement"]) == (
         "internal", "worker", "gap",
     )
-    for key in ("review_ask", "confirm_reason", "plain", "check_at",
+    for key in ("review_ask", "confirm_reason", "plain", "plain_question", "plain_value",
+                "check_at",
                 "correct_looks_like", "audience", "scope", "enforcement"):
         assert rows["legacy"][key] == ""
 

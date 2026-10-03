@@ -113,7 +113,9 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        ``superseded_by``), and release-check items gained ``summary`` /
 #        ``action``. A warm v17 entry would serve rows without them until
 #        decisions.yaml next changed.
-_KEY_VERSION = "v18"
+#   v19 — Decision gained ``plain_question`` / ``plain_value`` (display
+#        fields). A warm v18 entry would serve rows without them.
+_KEY_VERSION = "v19"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

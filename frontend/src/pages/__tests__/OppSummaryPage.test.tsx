@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/api/oppSummary";
 import type { OppSummaryPayload } from "@/api/oppSummary";
-import { rememberIdentity } from "@/components/opps/decisions/reviewerIdentity";
 import OppSummaryPage from "@/pages/OppSummaryPage";
 
 const BASE: OppSummaryPayload = {
@@ -110,12 +109,6 @@ async function openRow(question: string) {
 describe("OppSummaryPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    // The reviewer's name is remembered in localStorage so working
-    // through several rows costs one typing — which means it leaks
-    // between tests in this file unless cleared. Written through the
-    // same helper the app uses: the test env's storage stub has no
-    // `.clear()`.
-    rememberIdentity({ name: "", email: "" });
   });
 
   it("links the design docs a reviewer is meant to comment on", async () => {
@@ -615,7 +608,8 @@ describe("OppSummaryPage", () => {
     expect(await screen.findByText("Workers cover the first seven steps only.")).toBeTruthy();
   });
 
-  // ── Recommended confirmations (ACE `review_ask`, 2026-10) ──────────
+  // ── Confirm before launch (ACE `review_ask`, 2026-10) ────────────
+  // The SAME row as every other decision, pinned on top — not a card.
 
   const ASKS: OppSummaryPayload = {
     ...BASE,
@@ -649,20 +643,26 @@ describe("OppSummaryPage", () => {
       ],
     },
   };
+  const MEMBER = { viewer: { is_member: true } };
 
-  it("leads with the recommended confirmations, once, with why", async () => {
+  it("pins the confirm-before-launch rows on top, as ordinary rows", async () => {
     renderWith(ASKS);
     await openDecisionsTab();
-    expect(await screen.findByText("Recommended to confirm before launch")).toBeTruthy();
-    expect(screen.getByText("Only Spark knows the facilitator cadence.")).toBeTruthy();
-    expect(screen.getByText("Learn module 1")).toBeTruthy();
-    // One decision, one home — not repeated in its phase below.
-    expect(screen.getAllByText("Which slice does the pilot cover?").length).toBe(1);
-    const heading = screen.getByText("Recommended to confirm before launch");
+    // The first match is the pinned section's own header.
+    const pinned = (await screen.findAllByText("Confirm before launch"))[0];
     const choices = screen.getByText("Choices ACE made");
     expect(
-      heading.compareDocumentPosition(choices) & Node.DOCUMENT_POSITION_FOLLOWING,
+      pinned.compareDocumentPosition(choices) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    // Same row component: its header is the shared toggle button, carrying
+    // the marker and the reason in the row itself.
+    const row = screen.getByText("Which slice does the pilot cover?").closest("button")!;
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    expect(row.textContent).toContain("Confirm before launch");
+    expect(row.textContent).toContain("Only Spark knows the facilitator cadence.");
+    expect(row.textContent).toContain("Learn module 1");
+    // One decision, one home.
+    expect(screen.getAllByText("Which slice does the pilot cover?").length).toBe(1);
   });
 
   it("hides internal and replaced rows until asked", async () => {
@@ -681,40 +681,32 @@ describe("OppSummaryPage", () => {
     expect(screen.getByText(/replaced — no longer in force/)).toBeTruthy();
   });
 
-  it("records a Confirm distinctly from a change", async () => {
+  it("lets a member Confirm any row, recorded distinctly from a change", async () => {
     const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue({
       decision_id: "window",
       override: "Goal Setting",
       reasoning: "",
       decided_by_name: "Enock",
-      decided_by_verified: false,
+      decided_by_verified: true,
       decided_at: "2026-10-03T10:00:00+00:00",
       source_run_id: "20260813-2126",
       is_revert: false,
       confirmed: true,
       history: [],
     });
-    renderWith(ASKS);
+    renderWith({ ...ASKS, ...MEMBER });
     await openDecisionsTab();
-    const confirm = await screen.findByRole("button", { name: "Confirm" });
-    // A name is needed first, as for any anonymous write.
-    expect((confirm as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Enock" } });
-    fireEvent.click(confirm);
+    await openRow("Which slice does the pilot cover?");
+    fireEvent.click(screen.getByRole("button", { name: /^Confirm: Goal Setting/ }));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(post.mock.calls[0][3]).toBe("window");
-    expect(post.mock.calls[0][4]).toMatchObject({
-      value: "Goal Setting", confirm: true, reviewer: "Enock",
-    });
-    expect(await screen.findByText("Confirmed by Enock")).toBeTruthy();
-    expect(screen.getByText(/All 1 answered/)).toBeTruthy();
-  });
+    expect(post.mock.calls[0][4]).toEqual({ value: "Goal Setting", confirm: true });
+    expect(await screen.findByText(/All 1 answered/)).toBeTruthy();
+    expect(screen.getAllByText(/confirmed by Enock/i).length).toBeGreaterThan(0);
 
-  it("lets a reviewer change a recommended row instead of confirming it", async () => {
-    renderWith(ASKS);
-    await openDecisionsTab();
-    fireEvent.click(await screen.findByText("Change it"));
-    expect(screen.getByRole("button", { name: /Full arc/ })).toBeTruthy();
+    // …and the same Confirm is on a routine row too.
+    await openRow("A routine call");
+    expect(screen.getByRole("button", { name: /^Confirm: the pick/ })).toBeTruthy();
   });
 
   it("counts the confirmations still to make in the Overview headline", async () => {
@@ -730,7 +722,7 @@ describe("OppSummaryPage", () => {
       override: "Goal Setting",
       reasoning: "",
       decided_by_name: "Enock",
-      decided_by_verified: false,
+      decided_by_verified: true,
       decided_at: "2026-10-03T10:00:00+00:00",
       source_run_id: "20260813-2126",
       is_revert: false,
@@ -750,10 +742,56 @@ describe("OppSummaryPage", () => {
     ).toBeTruthy();
   });
 
-  // ── The response affordance ─────────────────────────────────────
-  // #708 shipped 42 decisions with no way to say anything about any of
-  // them, which is the skim-and-agree failure the log exists to fix,
-  // just in a nicer shape.
+  // ── Plain-language display fields (ACE decisions-contract) ──────────
+
+  it("prefers plain_question / plain_value, keeping the exact wording in the detail", async () => {
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 1,
+        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
+        rows: [{
+          ...DECISION,
+          question: "Which FLW amount within the PDD's proposed band is configured?",
+          ai_default: "7500",
+          options_considered: ["7500", "10000"],
+          plain_question: "What should a facilitator be paid per verified meeting?",
+          plain_value: "7,500 MWK",
+          plain: "The middle of the proposed band.",
+        }],
+      },
+    });
+    await openDecisionsTab();
+    const q = await screen.findByText("What should a facilitator be paid per verified meeting?");
+    const header = q.closest("button")!;
+    expect(header.textContent).toContain("7,500 MWK");
+    expect(header.textContent).toContain("The middle of the proposed band.");
+    expect(header.textContent).not.toContain("Which FLW amount");
+    fireEvent.click(q);
+    expect(screen.getByText("Exact question")).toBeTruthy();
+    expect(screen.getByText("Which FLW amount within the PDD's proposed band is configured?")).toBeTruthy();
+    expect(screen.getByText("Exact option")).toBeTruthy();
+  });
+
+  it("never lets a plain value mask a human change", async () => {
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 1,
+        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 1 },
+        rows: [{
+          ...DECISION, ai_default: "7500", override: "9000", status: "overridden",
+          plain_value: "7,500 MWK", options_considered: ["7500", "9000"],
+        }],
+      },
+    });
+    await openDecisionsTab();
+    const header = (await screen.findByText("A question")).closest("button")!;
+    expect(header.textContent).toContain("9000");
+    expect(header.textContent).not.toContain("7,500 MWK");
+  });
+
+  // ── Members write; everyone reads ───────────────────────────────
 
   const CONFLICTED: OppSummaryPayload = {
     ...BASE,
@@ -776,12 +814,9 @@ describe("OppSummaryPage", () => {
   });
 
   it("keeps the review surface one URL away, not one link away", async () => {
-    // A partner gets ONE link. The decisions live on a tab of the same
-    // page, so pointing someone at them is still that link + ?tab=.
     renderWith(CONFLICTED);
     expect(await screen.findByText("Overview")).toBeTruthy();
     expect(screen.getByText("Decisions")).toBeTruthy();
-    // Overview first — the decisions body is not on screen yet.
     expect(screen.queryByText("A contested call")).toBeNull();
     await openDecisionsTab();
     await screen.findByText("Design");
@@ -795,7 +830,59 @@ describe("OppSummaryPage", () => {
     expect(screen.queryByText("Review the decisions")).toBeNull();
   });
 
-  it("lets a partner react to ONE decision row, and requires a name", async () => {
+  it("is read-only for anyone not signed in as a member — no name fields, no write controls", async () => {
+    // Jonathan, 2026-10-03: "no anonymous editing at all".
+    const edit = vi.spyOn(api, "postDecisionEdit");
+    const react = vi.spyOn(api, "postDecisionReaction");
+    renderWith({ ...ASKS, ...CONFLICTED, decisions: ASKS.decisions });
+    await openDecisionsTab();
+    expect(await screen.findByText(/Sign in to confirm, change or comment/)).toBeTruthy();
+    await openRow("Which slice does the pilot cover?");
+    expect(screen.queryByLabelText("Your name")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Confirm:/ })).toBeNull();
+    // Options are shown, but as static pills, not buttons.
+    expect(screen.queryByRole("button", { name: /Full arc/ })).toBeNull();
+    expect(screen.getByText("Full arc")).toBeTruthy();
+    // "Sign in" replaces both the editor and the comment box.
+    expect(screen.getByText("Sign in to edit")).toBeTruthy();
+    expect(screen.getByText("Sign in to comment")).toBeTruthy();
+    expect(screen.queryByText(/Think we got this wrong/)).toBeNull();
+    const href = screen.getByText("Sign in to edit").closest("a")!.getAttribute("href")!;
+    expect(href).toMatch(/\/auth\/login\/\?next=/);
+    expect(edit).not.toHaveBeenCalled();
+    expect(react).not.toHaveBeenCalled();
+  });
+
+  const EDIT = {
+    decision_id: "loud-one",
+    override: "the other one",
+    reasoning: "",
+    decided_by_name: "Anne Kuhlmann",
+    decided_by_verified: true,
+    decided_at: "2026-08-14T10:00:00+00:00",
+    source_run_id: "20260813-2126",
+    is_revert: false,
+    history: [],
+  };
+
+  it("lets a member change an answer click-and-done, with no name and no Save", async () => {
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
+    renderWith({ ...CONFLICTED, ...MEMBER });
+    await openDecisionsTab();
+    await openRow("A contested call");
+    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0].slice(0, 4)).toEqual([
+      "dimagi-team", "spark-facilitator", "20260813-2126", "loud-one",
+    ]);
+    // The body carries no identity — the server takes the session's.
+    expect(post.mock.calls[0][4]).toEqual({ value: "the other one", reasoning: undefined });
+    expect(screen.queryByLabelText("Your name")).toBeNull();
+    expect(screen.queryByText("Save this answer")).toBeNull();
+    expect(await screen.findByText(/changed by Anne Kuhlmann/)).toBeTruthy();
+  });
+
+  it("lets a member comment on one row, as themselves", async () => {
     const post = vi.spyOn(api, "postDecisionReaction").mockResolvedValue({
       decision_id: "loud-one",
       reviewer: "Anne Kuhlmann",
@@ -803,143 +890,31 @@ describe("OppSummaryPage", () => {
       received_at: "2026-08-14",
       feedback_ref: "20260814-public-anne-kuhlmann/loud-one",
     });
-    renderWith(CONFLICTED);
+    renderWith({ ...CONFLICTED, ...MEMBER });
     await openDecisionsTab();
     await openRow("A contested call");
-
     fireEvent.click(await screen.findByText(/Say what you.d want to know/));
     fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
       target: { value: "The later date is right." },
     });
-    // Name is required — an unattributable comment can't be answered or
-    // credited, which is the whole value of the ledger it lands in.
-    expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Your name"), {
-      target: { value: "Anne Kuhlmann" },
-    });
+    expect(screen.queryByLabelText("Your name")).toBeNull();
     fireEvent.click(screen.getByText("Send"));
-
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(post.mock.calls[0].slice(0, 4)).toEqual([
-      "dimagi-team", "spark-facilitator", "20260813-2126", "loud-one",
-    ]);
-    // …and it shows up immediately, rather than after the 60s read cache.
+    expect(post.mock.calls[0][4]).toEqual({ comment: "The later date is right." });
     expect(await screen.findByText("The later date is right.")).toBeTruthy();
   });
 
-  // ── Editing ──────────────────────────────────────────────────────
-  //
-  // Anyone with the link can change an answer in place. No account, no
-  // proposal state, no promotion step, and a member's edit is the same
-  // act as a partner's (Jonathan, 2026-08-14). What makes that safe is
-  // attribution + history + undo, so those are tested as behaviour, not
-  // as decoration.
-
-  const EDIT = {
-    decision_id: "loud-one",
-    override: "the other one",
-    reasoning: "",
-    decided_by_name: "Anne Kuhlmann",
-    decided_by_verified: false,
-    decided_at: "2026-08-14T10:00:00+00:00",
-    source_run_id: "20260813-2126",
-    is_revert: false,
-    history: [],
-  };
-
-  it("lets an anonymous visitor change a decision's answer in place", async () => {
-    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
-    renderWith(CONFLICTED);
-    await openDecisionsTab();
-    await openRow("A contested call");
-
-    // Pick a different option. Nothing has left the browser yet — the
-    // name is asked at submit, never as a gate before someone can click.
-    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
-    expect(post).not.toHaveBeenCalled();
-
-    fireEvent.change(screen.getByLabelText("Your name"), {
-      target: { value: "Anne Kuhlmann" },
-    });
-    fireEvent.click(screen.getByText("Save this answer"));
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(post.mock.calls[0].slice(0, 4)).toEqual([
-      "dimagi-team", "spark-facilitator", "20260813-2126", "loud-one",
-    ]);
-    expect(post.mock.calls[0][4]).toMatchObject({
-      value: "the other one", reviewer: "Anne Kuhlmann",
-    });
-    // …and the row re-renders as changed immediately, rather than after
-    // the 60s read cache.
-    expect(await screen.findByText(/changed by Anne Kuhlmann/)).toBeTruthy();
-  });
-
-  it("will not submit an anonymous change without a name", async () => {
-    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
-    renderWith(CONFLICTED);
-    await openDecisionsTab();
-    await openRow("A contested call");
-    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
-    expect((screen.getByText("Save this answer") as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it("never asks a signed-in viewer to type their name, or to confirm", async () => {
-    // Logged in ⇒ never anonymous: the session identity is used, so we
-    // already know who is editing and there is nothing left to confirm.
-    // A member gets the Workbench's click-and-done editing.
-    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
-    renderWith({ ...CONFLICTED, viewer: { is_member: true } });
-    await openDecisionsTab();
-    await openRow("A contested call");
-    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
-    expect(screen.queryByLabelText("Your name")).toBeNull();
-    expect(screen.queryByText("Save this answer")).toBeNull();
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(post.mock.calls[0][4]).toMatchObject({ value: "the other one" });
-  });
-
-  it("asks for a name once, then edits click-and-done like the Workbench", async () => {
-    // The confirm step exists for exactly one situation: we don't yet
-    // know who is editing. Once they've told us, a Save button on every
-    // one of 42 rows is the barrier this surface exists to remove.
-    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
-    renderWith(CONFLICTED);
-    await openDecisionsTab();
-    await openRow("A contested call");
-
-    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
-    fireEvent.change(screen.getByLabelText("Your name"), {
-      target: { value: "Anne Kuhlmann" },
-    });
-    // The mode does not flip mid-draft — the Save button they are aiming
-    // at stays where it is.
-    expect(screen.getByText("Save this answer")).toBeTruthy();
-    fireEvent.click(screen.getByText("Save this answer"));
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-
-    // Second change: no name field, no Save button, no confirm step.
-    expect(await screen.findByText(/saved as/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^the pick/i }));
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText("Save this answer")).toBeNull();
-  });
-
-  it("shows who changed a row, and lets anyone put the old answer back", async () => {
-    // The safety mechanism, in full: reviewer 2 sees reviewer 1's name,
-    // sees what it used to say, and can restore it in one click.
+  it("shows who changed a row, and lets a member put the old answer back", async () => {
     const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
     renderWith({
       ...CONFLICTED,
+      ...MEMBER,
       decision_edits: {
         "loud-one": {
           override: "the other one",
           reasoning: "the source we trust says so",
           decided_by_name: "Anne Kuhlmann",
-          decided_by_verified: false,
+          decided_by_verified: true,
           decided_at: "2026-08-14T10:00:00+00:00",
           source_run_id: "20260813-2126",
           is_revert: false,
@@ -955,11 +930,7 @@ describe("OppSummaryPage", () => {
     });
     await openDecisionsTab();
     await openRow("A contested call");
-
     expect(await screen.findByText(/changed by Anne Kuhlmann/)).toBeTruthy();
-    // The self-reported marker is shown, never enforced.
-    expect(screen.getAllByText("(self-reported)").length).toBeGreaterThan(0);
-
     fireEvent.click(screen.getByText(/1 earlier/));
     fireEvent.click(screen.getByText("Restore"));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
@@ -968,40 +939,16 @@ describe("OppSummaryPage", () => {
 
   it("surfaces the server's refusal of a change", async () => {
     vi.spyOn(api, "postDecisionEdit").mockRejectedValue(
-      new api.ReactionError("Give it a few minutes before sending another change."),
+      new api.ReactionError("Only members of this workspace can change, confirm or comment on its decisions."),
     );
-    renderWith(CONFLICTED);
+    renderWith({ ...CONFLICTED, ...MEMBER });
     await openDecisionsTab();
     await openRow("A contested call");
     fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
-    fireEvent.change(screen.getByLabelText("Your name"), {
-      target: { value: "Anne Kuhlmann" },
-    });
-    fireEvent.click(screen.getByText("Save this answer"));
-    expect(
-      await screen.findByText(/Give it a few minutes before sending another change/),
-    ).toBeTruthy();
+    expect(await screen.findByText(/Only members of this workspace/)).toBeTruthy();
   });
 
-  it("surfaces the server's refusal instead of pretending it saved", async () => {
-    vi.spyOn(api, "postDecisionReaction").mockRejectedValue(
-      new api.ReactionError("Give it a few minutes before sending another comment."),
-    );
-    renderWith(CONFLICTED);
-    await openDecisionsTab();
-    await openRow("A contested call");
-    fireEvent.click(await screen.findByText(/Say what you.d want to know/));
-    fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
-      target: { value: "one more thought" },
-    });
-    fireEvent.change(screen.getByLabelText("Your name"), {
-      target: { value: "Anne Kuhlmann" },
-    });
-    fireEvent.click(screen.getByText("Send"));
-    expect(await screen.findByText(/Give it a few minutes/)).toBeTruthy();
-  });
-
-  it("renders reactions the run already collected", async () => {
+  it("renders reactions the run already collected, to anyone", async () => {
     renderWith({
       ...CONFLICTED,
       reactions: {

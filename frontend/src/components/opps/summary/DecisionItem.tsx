@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageSquare } from "lucide-react";
+import { CheckCircle2, MessageSquare } from "lucide-react";
 
 import type {
   DecisionReaction,
@@ -9,61 +9,39 @@ import type {
 import { DecisionAnswerEditor } from "@/components/opps/decisions/DecisionAnswerEditor";
 import { DecisionHistory } from "@/components/opps/decisions/DecisionHistory";
 import { DecisionRow } from "@/components/opps/decisions/DecisionRow";
-import { ReviewerIdentityFields } from "@/components/opps/decisions/ReviewerIdentityFields";
-import {
-  rememberIdentity,
-  type ReviewerIdentity,
-} from "@/components/opps/decisions/reviewerIdentity";
+import { decisionDisplay } from "@/components/opps/decisions/decisionDisplay";
 import {
   DecisionReactions,
   type ReactionSubmit,
 } from "@/components/opps/summary/DecisionReactions";
+import { SignInToEdit } from "@/components/opps/summary/SignInToEdit";
 
 export interface DecisionEditSubmit {
   value: string;
   reasoning?: string;
-  reviewer?: string;
-  reviewer_email?: string;
   /** A CONFIRMATION of `value` (the answer in force), not a change. */
   confirm?: boolean;
 }
 
 /**
- * One decision row on the public review surface: the question, the answer
- * in force, the editor that changes it, and the discussion under it.
+ * One decision row on the run summary: the question, the answer in force,
+ * and — for a signed-in workspace member — Confirm, the editor that
+ * changes it, and the discussion under it.
  *
- * ## Why editing here is click-and-done, like the Workbench
+ * ONE row design everywhere (Jonathan, 2026-10-03): this is the shared
+ * `DecisionRow` the Workbench renders, at the Workbench's type scale. A
+ * row ACE recommends confirming before launch is the SAME row — the
+ * shared row draws its "Confirm before launch" marker and `confirm_reason`
+ * from `review_ask` — not a separate card.
  *
- * The Workbench commits a pill click as it happens. This surface shipped
- * with a confirm step on EVERY row, justified as "asking for a name
- * before someone can even click a pill would be the barrier this surface
- * exists to remove". That argument is about the FIRST edit of a session,
- * when nobody has told us who they are yet. It never justified a Save
- * button on the fortieth row: by then the name is known (typed once and
- * remembered in `reviewerIdentity`, or resolved from the session for a
- * signed-in member), so the barrier was removed at the start and
- * reintroduced on every row after it.
+ * Who may write is decided server-side (401 / 403 for anyone but a
+ * member); `canWrite` only decides what this row OFFERS. A non-member reads
+ * the row, its options and its discussion, and gets "Sign in to edit" in
+ * place of the controls. There is no anonymous identity any more, so a
+ * pick commits as it happens, exactly as in the Workbench.
  *
- * So `commitMode` follows identity, not surface: `confirm` only while we
- * genuinely don't know who is editing, `immediate` the moment we do. A
- * signed-in member never sees a confirm step at all.
- *
- * Everything else IS the Workbench: the row itself is the shared
- * `DecisionRow`, at the Workbench's own type scale (`dense`), with the
- * Workbench's status chips and overridden tint. Jonathan compared the two
- * surfaces and settled it — *"the workbench is what I remember and what I
- * want to replicate for the decisions"* (2026-08-14) — so this page
- * replicates rather than reinterprets, and only the two FORCED
- * differences remain:
- *
- * 1. identity for an anonymous editor, which the Workbench resolves from
- *    the session and this surface cannot;
- * 2. `voice="partner"` — "override reason" is Workbench vocabulary a
- *    partner has never met. Field `aria-label`s stay identical.
- *
- * The extra blocks this surface adds (attribution badge, comment count,
- * the discussion thread) ride the shared row's `badges` / `children`
- * slots rather than forking it.
+ * Confirm records "keep the answer in force" distinctly from a change
+ * (`confirm: true` → `confirmed: true` on the override row).
  */
 export function DecisionItem({
   decision,
@@ -71,36 +49,22 @@ export function DecisionItem({
   onToggle,
   reactions,
   edit,
-  identity,
-  setIdentity,
-  viewerIsMember,
-  identityKnown,
-  canSubmit,
+  canWrite,
   onReact,
   onEdit,
   tags,
 }: {
-  /** Extra header chips from the caller (e.g. "internal"). */
-  tags?: React.ReactNode;
   decision: ReviewDecision;
   open: boolean;
   onToggle: () => void;
   reactions: DecisionReaction[];
   edit?: PublicDecisionEdit;
-  identity: ReviewerIdentity;
-  setIdentity: (next: ReviewerIdentity) => void;
-  viewerIsMember: boolean;
-  /** Do we already know who is editing? Drives confirm vs immediate. */
-  identityKnown: boolean;
-  /**
-   * Is there a usable name RIGHT NOW — including one being typed into the
-   * confirm block. Distinct from `identityKnown`, which only moves on a
-   * successful write; a keystroke must enable Save without yanking the
-   * confirm step (and the Save button) out from under the typist.
-   */
-  canSubmit: boolean;
+  /** A signed-in member of this workspace. */
+  canWrite: boolean;
   onReact: (decisionId: string, body: ReactionSubmit) => Promise<void>;
   onEdit: (decisionId: string, body: DecisionEditSubmit) => Promise<void>;
+  /** Extra header chips from the caller (e.g. "internal"). */
+  tags?: React.ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,22 +76,12 @@ export function DecisionItem({
   const confirmed = !!edit?.confirmed;
   const humanChanged = !!edit && !edit.is_revert && !confirmed;
 
-  /** Returns false when the change did not save — see `onCommit`'s contract. */
-  async function commit(value: string, reasoning: string): Promise<boolean> {
+  /** Returns false when the write did not land — see `onCommit`'s contract. */
+  async function write(body: DecisionEditSubmit): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
-      await onEdit(decision.id, {
-        value,
-        reasoning: reasoning || undefined,
-        ...(viewerIsMember
-          ? {}
-          : {
-              reviewer: identity.name.trim(),
-              reviewer_email: identity.email.trim() || undefined,
-            }),
-      });
-      if (!viewerIsMember) rememberIdentity(identity);
+      await onEdit(decision.id, body);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "We couldn't record that change.");
@@ -137,6 +91,9 @@ export function DecisionItem({
     }
   }
 
+  const commit = (value: string, reasoning: string) =>
+    write({ value, reasoning: reasoning || undefined });
+
   return (
     <DecisionRow
       decision={decision}
@@ -145,7 +102,7 @@ export function DecisionItem({
       open={open}
       onToggle={onToggle}
       anchorId={`decision-${decision.id}`}
-      optionsLabel="Pick option"
+      optionsLabel={canWrite ? "Confirm or change" : "Options"}
       statusChip={false}
       badges={
         <>
@@ -184,35 +141,55 @@ export function DecisionItem({
         </>
       }
       optionsSlot={
-        <DecisionAnswerEditor
-          decision={decision}
-          effectiveValue={answer}
-          effectiveReason={reason}
-          voice="partner"
-          commitMode={identityKnown ? "immediate" : "confirm"}
-          dense
-          onCommit={commit}
-          onRevert={
-            answer !== decision.ai_default
-              ? () => commit(decision.ai_default, "")
-              : undefined
-          }
-          canSubmit={canSubmit}
-          busy={busy}
-          error={error}
-          identitySlot={
-            viewerIsMember || identityKnown ? null : (
-              <ReviewerIdentityFields identity={identity} onChange={setIdentity} />
-            )
-          }
-        />
+        canWrite ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              {confirmed ? (
+                <span className="inline-flex items-center gap-1.5 text-emerald-400">
+                  <CheckCircle2 size={14} aria-hidden />
+                  Confirmed{edit?.decided_by_name ? ` by ${edit.decided_by_name}` : ""}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void write({ value: answer, confirm: true })}
+                  className="rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label={`Confirm: ${decisionDisplay(decision, answer).value}`}
+                >
+                  {busy ? "Saving…" : "Confirm"}
+                </button>
+              )}
+              <span className="text-muted-foreground">or change it — pick another option:</span>
+            </div>
+            <DecisionAnswerEditor
+              decision={decision}
+              effectiveValue={answer}
+              effectiveReason={reason}
+              voice="partner"
+              dense
+              onCommit={commit}
+              onRevert={
+                answer !== decision.ai_default ? () => commit(decision.ai_default, "") : undefined
+              }
+              busy={busy}
+              error={error}
+            />
+          </div>
+        ) : undefined
       }
     >
+      {!canWrite && (
+        <div className="mt-3">
+          <SignInToEdit />
+        </div>
+      )}
+
       {edit && (
         <DecisionHistory
           current={edit}
           history={edit.history}
-          onRestore={(value, reasoning) => commit(value, reasoning)}
+          onRestore={canWrite ? (value, reasoning) => commit(value, reasoning) : undefined}
         />
       )}
 
@@ -220,9 +197,7 @@ export function DecisionItem({
         decisionId={decision.id}
         reactions={reactions}
         onSubmit={onReact}
-        identity={identity}
-        onIdentityChange={setIdentity}
-        hideIdentityFields={viewerIsMember}
+        canWrite={canWrite}
         prompt={
           decision.evidence_basis === "conflicting"
             ? "Not sure enough to change it? Say what you'd want to know."

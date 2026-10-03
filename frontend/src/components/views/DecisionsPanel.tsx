@@ -224,13 +224,11 @@ function DecisionRow({
       optionsSlot={
         canEdit ? (
           // The SAME editor the public run summary renders — see its
-          // module docstring. `immediate` because a member is
-          // authenticated, so there is never a name to collect first.
+          // module docstring.
           <DecisionAnswerEditor
             decision={decision}
             effectiveValue={effectiveValue}
             effectiveReason={effectiveReason}
-            commitMode="immediate"
             voice="console"
             dense
             onCommit={(value, reasoning) =>

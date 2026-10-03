@@ -4324,7 +4324,7 @@
             }
           }
         },
-        "description": "Change a decision's value in place. Anyone with the link may.\n\nThis deliberately does NOT gate on membership, and deliberately has no\nproposal/promotion state. Jonathan, 2026-08-14: \"we definitely want\nthe decisions UI to be editable by users \u2026 reviewer 2 can change /\nupdate reviewer 1 anyway in the UI, and that should just be the same\nas Dimagi going in and updating things on top of the anonymous input\n(also if you are logged in, obviously should not be anonymous).\"\nThe bar to start engaging with ACE has to be very low because it is\nspeculative AI work \u2014 an account requirement is a barrier, a name\nfield is not. And the PDD these rows summarize is already\nworld-editable via anyone-with-link and already seeds the next run,\nso gating this more tightly than the design document was backwards.\n\nIt writes the SAME store the Workbench's authenticated editor writes\n(``<opp>/inputs/decision-overrides.yaml``, read by the plugin's\n``decisions_append_rows`` at the decisions write boundary), through\nthe same merge and the same serializer. The only thing that differs\nbetween the two surfaces is how the identity on the row was resolved.\n\nRefusals: a ``decision_id`` the run's ``decisions.yaml`` does not\ncarry is refused, not stored (the override would be unroutable). HTML\nis refused rather than mangled. Lengths are capped before any Drive\nround-trip. An anonymous caller with no name is refused; a signed-in\ncaller's typed name is ignored in favour of their session identity.",
+        "description": "Change (or, with ``confirm``, confirm) one decision's value in place.\n\n**Members only** (Jonathan, 2026-10-03: \"no anonymous editing at all\").\nAnyone may read the summary; writing needs a signed-in account in this\nworkspace \u2014 401 without a session, 403 for a non-member or a request\nthat fails CSRF. See ``_member_reviewer``. The identity on the row is\nalways the session's (``decided_by_verified: true``).\n\nIt writes the SAME store the Workbench's editor writes\n(``<opp>/inputs/decision-overrides.yaml``, read by the plugin's\n``decisions_append_rows`` at the decisions write boundary), through\nthe same merge and the same serializer.\n\nRefusals: a ``decision_id`` the run's ``decisions.yaml`` does not\ncarry is refused, not stored (the override would be unroutable). HTML\nis refused rather than mangled. Lengths are capped before any Drive\nround-trip.",
         "tags": [
           "opps-public"
         ],
@@ -9952,7 +9952,7 @@
       },
       "DecisionEditIn": {
         "additionalProperties": false,
-        "description": "Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.\n\nAnyone with the link can change a decision's value in place \u2014 no\nproposal state, no promotion step, no member-only privilege, and\nreviewer 2 changing reviewer 1's answer is the same act as Dimagi\nchanging either. Safety is visibility and reversibility (attribution\non every row, full history, undo from the UI), not permission \u2014 the\nsame way it is in a Google Doc, which is exactly what the PDD these\ndecisions summarize already is.\n\nIdentity resolves per caller and NOT from this body when we already\nknow who it is: **signed in \u21d2 never anonymous**, so ``reviewer`` and\n``reviewer_email`` are ignored for an authenticated request and\nREQUIRED for an anonymous one. See ``apps.opps.public_input``.\n\nLength ceilings are enforced again in ``apps.opps.decision_overrides``\n\u2014 these are the cheap first pass, before any Drive round-trip.",
+        "description": "Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.\n\nMembers only: the identity is the SESSION's, so the body carries no\nname or email (the self-reported ``reviewer`` fields were removed with\nanonymous editing, 2026-10-03). Length ceilings are enforced again in\n``apps.opps.decision_overrides`` \u2014 these are the cheap first pass.",
         "properties": {
           "value": {
             "maxLength": 800,
@@ -9971,30 +9971,6 @@
               }
             ],
             "title": "Reasoning"
-          },
-          "reviewer": {
-            "anyOf": [
-              {
-                "maxLength": 120,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reviewer"
-          },
-          "reviewer_email": {
-            "anyOf": [
-              {
-                "maxLength": 254,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reviewer Email"
           },
           "confirm": {
             "default": false,
@@ -10055,35 +10031,16 @@
       },
       "DecisionReactionIn": {
         "additionalProperties": false,
-        "description": "Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.\n\n``reviewer`` is REQUIRED and self-reported. The page has no login and\na partner cannot self-serve one, so the only honest options were a\nrequired free-text name or anonymous reactions \u2014 and an anonymous\nreaction defeats the store it lands in: the feedback ledger's whole\nvalue is being able to tell a reviewer where THEIR comment went, and\nto tell a future reader whose judgement drove a change. An unsigned\ncomment is unanswerable and uncreditable. So: required name, optional\nemail (the reply path), and the record says the name is self-reported\nrather than pretending it is verified.\n\nLength ceilings live in ``apps.opps.reactions`` and are enforced\nthere too \u2014 these are the cheap first pass, so an oversized body is\nrejected before any Drive round-trip.",
+        "description": "Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.\n\nMembers only, like editing: the commenter is the signed-in session\nuser, so the body carries only the comment. Length ceilings live in\n``apps.opps.reactions`` and are enforced there too.",
         "properties": {
-          "reviewer": {
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Reviewer",
-            "type": "string"
-          },
           "comment": {
             "maxLength": 4000,
             "minLength": 1,
             "title": "Comment",
             "type": "string"
-          },
-          "reviewer_email": {
-            "anyOf": [
-              {
-                "maxLength": 254,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reviewer Email"
           }
         },
         "required": [
-          "reviewer",
           "comment"
         ],
         "title": "DecisionReactionIn",

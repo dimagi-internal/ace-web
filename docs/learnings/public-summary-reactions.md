@@ -1,5 +1,7 @@
 # Partner reactions on the public run summary
 
+> **Superseded in part, 2026-10-03.** Commenting is members-only, like editing. The commenter is the signed-in session user (no typed name), and the API refuses anonymous (401) and non-member (403) requests. The record format, the `public` slug marker, and the rate and length limits below are unchanged.
+
 **Status:** shipped 2026-08-14. **Partly superseded the same day** — the
 "an anonymous self-asserted name must not silently rewrite the next run's
 inputs" rule below was overruled by Jonathan and decision rows are now

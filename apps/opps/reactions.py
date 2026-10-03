@@ -39,14 +39,14 @@ no extra keys may be added here. Everything this surface needs to say
 about itself is therefore encoded in fields that schema already has:
 
 * ``slug`` — ``<YYYYMMDD>-public-<reviewer-slug>``. The ``public``
-  segment is the marker. It is what makes a self-reported name on an
-  unauthenticated page distinguishable, in the fact store itself, from
-  a verified gdoc comment — and it is what this module filters on when
+  segment is the marker: it says the comment came from the run-summary
+  page (since 2026-10-03 always from a signed-in workspace member — the
+  write endpoint refuses anyone else), and it is what this module filters on when
   reading reactions back, so a privately-captured review record can
   never be republished on a public page by accident.
 * ``channel: other`` — the enum has no ``public-summary`` member; adding
   one is a plugin-side change (dimagi-internal/ace).
-* ``artifact`` — names the surface and says the identity is self-reported.
+* ``artifact`` — names the surface and says who may write there.
 * ``anchor`` — ``decision:<decision-id> · <question>``: machine-parseable
   back to the row, legible to a human reading the ledger.
 
@@ -356,7 +356,7 @@ def submit_decision_reaction(
             "reviewer": reviewer,
             "received_at": (today or datetime.now(UTC).date()).isoformat(),
             "channel": "other",
-            "artifact": "Decisions — public run summary (name self-reported)",
+            "artifact": "Decisions — run summary (signed-in workspace member)",
             "artifact_url": artifact_url,
             "against_run": run_id,
             "items": [],

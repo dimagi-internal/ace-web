@@ -148,22 +148,38 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
 # the URLs change every run, but each reader knows which SYSTEM it just
 # read a link out of, and that system's access model is what's stable.
 #
-# Jonathan, 2026-08-14: "Nothing is 'Dimagi only' at scale for ACE, even
-# if right now it needs to be because of shared tenancy. For now we can
-# show the link but have a tag on it (admin only)." So a gated link is
-# never hidden and never silently 404s — it renders with an `admin only`
-# tag, and a workspace member sees no tag at all.
+# ``admin`` ("admin only") means: a reviewer of this run will NEVER get
+# access — the link stays Dimagi-internal. It used to mean "needs an account
+# we cannot give an external partner today", which was true while every opp
+# shared ACE's tenants (Jonathan, 2026-08-14). It is no longer true for an
+# opp with its OWN tenancy (Jonathan, 2026-10-03: "admin only was meant to
+# mean you needed to be dimagi because the things weren't properly
+# isolated. That is no longer true and you should expect access, so the
+# things that are truly dimagi admin only are what we should be using").
+# `/ace:release` invites each reviewer into the opp's own HQ project space,
+# Connect org and ace-web workspace, and Labs is opened to the tenancy's
+# `labs_allowed_domains`. So each non-Drive link is classified PER LINK
+# against the opp's tenancy (``apps.opps.tenancy.TenancyAccess``):
 #
-# ``admin`` means: opening this needs an account we cannot give an
-# external partner today.
-#   * CommCare HQ app pages   — project-space membership; a signed-in
-#     non-member gets 404 (verified anonymously, spark-facilitator run).
-#   * Connect opportunity     — workspace membership.
-#   * OCS console             — team membership.
-#   * connect-labs (dashboards, solicitations) — redirects to a
-#     CommCare-HQ OAuth login an external partner can't self-serve.
-#   * ace-web Workbench       — workspace membership, and ace-web admits
-#     @dimagi.com only.
+# ``reviewer`` — inside the opp's own tenancy. A released reviewer should
+#   expect to open it; the page draws NO tag.
+#   * CommCare HQ app pages   — when the URL's space is the opp's hq_domain.
+#   * Connect opportunity     — when the URL's org is the opp's PM/holding org.
+#   * connect-labs dashboards + solicitation — when labs_allowed_domains
+#     reaches beyond Dimagi's own domains.
+#   * ace-web Workbench       — when the opp has its own tenancy.
+#   * a Drive doc whose ACL is not anyone-with-link, on an own-tenancy opp.
+#
+# ``admin`` — stays Dimagi-internal:
+#   * any of the above on a SHARED-tenancy opp (`connect-ace-prod`,
+#     `ace-pm-org` / `ace-nm-org`, Dimagi-only Labs domains — e.g.
+#     `dimagi-team`'s opps), or a URL outside the opp's tenancy;
+#   * the OCS team console, always — reviewers use the public chatbot;
+#   * a canopy-web walkthrough the run did not tag (see
+#     ``_derive_walkthrough_access``).
+#
+# A gated link is never hidden and never silently 404s, and a workspace
+# member sees no tag at all.
 #
 # ``public`` means: no ACE-side account gate.
 #
@@ -189,13 +205,20 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
 # "access unverified", which is honest and costs a reader one click to
 # find out.
 #
-# NON-Drive links keep their system's stable access model, which is a
-# property of the system rather than of the object: HQ app pages need
-# project-space membership, Connect needs a workspace, OCS needs a team.
-# Those stay asserted, because there is nothing per-object to measure.
+# NON-Drive links have nothing per-object to measure, so they are
+# classified from the opp's tenancy as above. A measured Drive file that is
+# NOT anyone-with-link follows the same rule: ``reviewer`` on an
+# own-tenancy opp (its reviewers get the run's documents at release),
+# ``admin`` on a shared-tenancy one.
 ACCESS_PUBLIC = "public"
 ACCESS_ADMIN = "admin"
 ACCESS_UNKNOWN = "unknown"
+ACCESS_REVIEWER = "reviewer"
+
+
+def _tenant_tag(inside_own_tenancy: bool) -> str:
+    """``reviewer`` (no tag) inside the opp's own tenancy, else ``admin``."""
+    return ACCESS_REVIEWER if inside_own_tenancy else ACCESS_ADMIN
 
 
 # Drive file-id shapes this page actually hands out. ``/d/<id>`` covers
@@ -236,8 +259,12 @@ class LinkAccessReader:
     prime should be slow, never wrong.
     """
 
-    def __init__(self, drive: DriveClient) -> None:
+    def __init__(self, drive: DriveClient, tenancy: dict | None = None) -> None:
+        from apps.opps.tenancy import TenancyAccess
+
         self._drive = drive
+        #: Where a released reviewer gets access — see the block above.
+        self.tenancy = TenancyAccess(tenancy)
         self._memo: dict[str, bool] = {}
         self._resolved: set[str] = set()
 
@@ -270,7 +297,11 @@ class LinkAccessReader:
         shared = self._memo.get(fid)
         if shared is None:
             return ACCESS_UNKNOWN
-        return ACCESS_PUBLIC if shared else ACCESS_ADMIN
+        if shared:
+            return ACCESS_PUBLIC
+        # Not anyone-with-link: a reviewer of an own-tenancy opp is given
+        # its documents at release; on a shared-tenancy opp it stays internal.
+        return _tenant_tag(self.tenancy.has_own_tenancy)
 
 
 def _state_drive_file_ids(state: dict) -> list[str]:
@@ -366,7 +397,7 @@ def _is_future(date_iso: str) -> bool:
     return d >= date.today()
 
 
-def _read_apps(state: dict) -> list[dict]:
+def _read_apps(state: dict, access: LinkAccessReader | None = None) -> list[dict]:
     all_products = _phase_products(state, "commcare-setup")
     apps_block = all_products.get("apps") or {}
     out: list[dict] = []
@@ -391,9 +422,9 @@ def _read_apps(state: dict) -> list[dict]:
             "kind": kind_label,
             "name": app.get("name") or f"{kind_label} app",
             "hq_url": hq_url,
-            # HQ app pages need project-space membership: a signed-in
-            # non-member gets a 404, not a "request access" page.
-            "access": ACCESS_ADMIN,
+            # HQ app pages need project-space membership — which a released
+            # reviewer HAS when the app is in the opp's own space.
+            "access": _tenant_tag(bool(access) and access.tenancy.hq_app(hq_url)),
         })
     return out
 
@@ -566,7 +597,7 @@ def _connect_domain(state: dict) -> str | None:
     )
 
 
-def _read_connect(state: dict) -> dict | None:
+def _read_connect(state: dict, access: LinkAccessReader | None = None) -> dict | None:
     """Public payload surfaces only the Connect *opportunity*.
 
     The program URL (``connect.dimagi.com/a/<domain>/program/<uuid>/``) is
@@ -593,8 +624,9 @@ def _read_connect(state: dict) -> dict | None:
             "url": opp_url,
             "start_date": opp.get("start_date") or connect.get("start_date"),
             "end_date": opp.get("end_date") or connect.get("end_date"),
-            # Connect gates opportunity pages on workspace membership.
-            "access": ACCESS_ADMIN,
+            # Connect gates opportunity pages on org membership — which a
+            # released reviewer HAS for the opp's own PM / holding org.
+            "access": _tenant_tag(bool(access) and access.tenancy.connect(opp_url)),
         },
     }
 
@@ -674,8 +706,10 @@ def _read_assistant(state: dict) -> dict | None:
         return None
     return {
         "ocs_url": chatbot.get("admin_url"),
-        # The OCS console needs team membership; the WIDGET below does
-        # not, which is why the embed key stays on the public payload.
+        # The OCS console needs team membership and stays Dimagi-internal
+        # even on an own-tenancy opp: reviewers use the public chatbot (the
+        # WIDGET below needs no account, which is why the embed key stays
+        # on the public payload).
         "access": ACCESS_ADMIN,
         "public_id": public_id,
         "embed_key": embed_key,
@@ -1209,7 +1243,7 @@ def _read_synthetic(state: dict) -> dict | None:
     }
 
 
-def _read_dashboards(state: dict) -> list[dict]:
+def _read_dashboards(state: dict, access: LinkAccessReader | None = None) -> list[dict]:
     """Demo dashboards for the run — every shape Phase 7 actually writes.
 
     The reader used to accept exactly one shape:
@@ -1270,9 +1304,9 @@ def _read_dashboards(state: dict) -> list[dict]:
         out.append({
             "title": title,
             "url": url,
-            # connect-labs redirects to a CommCare-HQ OAuth login an
-            # external partner cannot self-serve.
-            "access": ACCESS_ADMIN,
+            # connect-labs is opened to the tenancy's labs_allowed_domains;
+            # Dimagi-only domains mean only Dimagi can open it.
+            "access": _tenant_tag(bool(access) and access.tenancy.labs()),
         })
     return out
 
@@ -1289,7 +1323,7 @@ def _read_selected_llo(state: dict) -> dict | None:
     }
 
 
-def _read_solicitation(state: dict) -> dict | None:
+def _read_solicitation(state: dict, access: LinkAccessReader | None = None) -> dict | None:
     sol = _phase_products(state, "solicitation-management", "solicitation")
     if not sol or not (sol.get("url") or sol.get("public_url")):
         return None
@@ -1297,8 +1331,8 @@ def _read_solicitation(state: dict) -> dict | None:
         "url": sol.get("url") or sol.get("public_url"),
         "deadline": sol.get("deadline"),
         "status": sol.get("status"),
-        # Published on connect-labs — same OAuth gate as the dashboards.
-        "access": ACCESS_ADMIN,
+        # Published on connect-labs — same rule as the dashboards.
+        "access": _tenant_tag(bool(access) and access.tenancy.labs()),
     }
 
 
@@ -2577,8 +2611,13 @@ def build_summary_payload(
     opp_slug: str,
     run_id: str,
     viewer_is_member: bool = True,
+    tenancy: dict | None = None,
 ) -> dict | None:
     """Build the public summary JSON payload for a per-run summary page.
+
+    ``tenancy`` is the opp's tenancy (``apps.opps.tenancy``); it decides
+    which links a released reviewer can open. ``None`` (unknown) classifies
+    every non-Drive link as internal — the pre-tenancy behaviour.
 
     Returns ``None`` when the workspace's ACE root, the opp folder, or
     the requested run folder can't be located, so callers can map to a
@@ -2637,7 +2676,7 @@ def build_summary_payload(
     # batch before the section readers run (ace-web#740). Sequential
     # per-link reads would undo ace-web#738's batching on the very
     # endpoint it was written for.
-    access = LinkAccessReader(drive)
+    access = LinkAccessReader(drive, tenancy)
     access.prime(_state_drive_file_ids(state))
 
     workspace_slug = getattr(workspace, "slug", "")
@@ -2660,7 +2699,9 @@ def build_summary_payload(
     workbench = (
         {
             "url": f"{script_name}/w/{workspace_slug}/opps/{opp_slug}/runs/{run_id}",
-            "access": ACCESS_ADMIN,
+            # ace-web workspace membership — `/ace:release` invites a
+            # reviewer of an own-tenancy opp into its workspace.
+            "access": _tenant_tag(access.tenancy.workbench()),
         }
         if workspace_slug
         else None
@@ -2674,7 +2715,7 @@ def build_summary_payload(
             run_id=run_id,
         ),
         "design": _read_design(state, access),
-        "apps": _read_apps(state),
+        "apps": _read_apps(state, access),
         # The producing phase's own verdict on those apps — null when
         # Phase 3 finished clean, so a clean run renders as before.
         "build": _read_build(state, "commcare-setup"),
@@ -2683,16 +2724,16 @@ def build_summary_payload(
         # `run_state.yaml`. `None` — and so absent from the page
         # entirely — on every run that never took the deep gate.
         "deep_qa": _read_deep_qa(drive, run_folder.id, state),
-        "connect": _read_connect(state),
+        "connect": _read_connect(state, access),
         "training": _read_training(state, access),
         "assistant": _read_assistant(state),
         "walkthroughs": _read_walkthroughs(state),
-        "dashboards": _read_dashboards(state),
+        "dashboards": _read_dashboards(state, access),
         # What the dashboards and the demo are showing NUMBERS of. Read
         # from the run's own synthetic block; null when it generated none.
         "synthetic": _read_synthetic(state),
         "selected_llo": _read_selected_llo(state),
-        "solicitation": _read_solicitation(state),
+        "solicitation": _read_solicitation(state, access),
         "launch": _read_launch(state),
         "cycle_grade": _read_cycle_grade(state),
         "opp_eval": _read_opp_eval(state),

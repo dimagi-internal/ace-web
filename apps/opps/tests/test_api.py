@@ -2348,7 +2348,13 @@ decisions:
 
 
 @pytest.fixture
-def reaction_workspace(db, monkeypatch):
+def reaction_workspace(db, monkeypatch, client):
+    """A summary workspace + Drive, with ``client`` SIGNED IN as a member.
+
+    Every write on the summary is members-only (2026-10-03), so the
+    default writer is a member; tests of the refusal paths call
+    ``client.logout()`` or sign in as someone else.
+    """
     from django.core.cache import cache
 
     from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
@@ -2368,14 +2374,21 @@ def reaction_workspace(db, monkeypatch):
         },
     })
     creator = User.objects.create_user(email="reaction-creator@example.com")
-    Workspace.objects.create(
+    ws = Workspace.objects.create(
         slug="summary-ws", display_name="Summary WS",
         drive_root_folder_id=drive.folder_id("ACE"), created_by=creator,
     )
     monkeypatch.setattr(
         "apps.opps.drive_client.get_drive_client", lambda workspace=None: drive,
     )
+    client.force_login(_summary_member(ws, "anne@partner.org", "Anne Kuhlmann"))
     return drive
+
+
+def _summary_member(ws, email, name):
+    user = User.objects.create_user(email=email, display_name=name)
+    WorkspaceMembership.objects.create(workspace=ws, user=user, role="editor")
+    return user
 
 
 _REACTION_URL = (
@@ -2385,15 +2398,14 @@ _REACTION_URL = (
 
 
 def _react(client, **body):
-    payload = {"reviewer": "Anne Kuhlmann", "comment": "30 days is too long here."}
+    payload = {"comment": "30 days is too long here."}
     payload.update(body)
     return client.post(_REACTION_URL, payload, content_type="application/json")
 
 
 @pytest.mark.django_db
-def test_anonymous_visitor_can_react_to_a_decision(client, reaction_workspace):
-    """No auth, by design: the page a partner is handed has no login, and
-    sending them somewhere else to respond is how a response never happens."""
+def test_a_member_can_react_to_a_decision(client, reaction_workspace):
+    """The commenter is the signed-in member, never a typed name."""
     resp = _react(client)
     assert resp.status_code == 201
     body = resp.json()
@@ -2425,9 +2437,22 @@ def test_reaction_shows_up_on_the_next_summary_read(client, reaction_workspace):
 
 
 @pytest.mark.django_db
-def test_reaction_requires_a_name(client, reaction_workspace):
-    assert _react(client, reviewer="").status_code == 422
-    assert _react(client, reviewer=" a ").status_code == 400
+def test_reaction_refuses_anyone_but_a_member(client, reaction_workspace):
+    """No anonymous commenting (Jonathan, 2026-10-03): 401 without a
+    session, 403 for a signed-in non-member — enforced server-side, and
+    before anything reaches Drive."""
+    client.logout()
+    assert _react(client).status_code == 401
+    client.force_login(User.objects.create_user(email="stranger@else.org"))
+    assert _react(client).status_code == 403
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "feedback" not in [f.name for f in reaction_workspace.list_files(root)]
+    # A self-reported name is no longer part of the contract at all.
+    client.logout()
+    assert client.post(
+        _REACTION_URL, {"reviewer": "Anne", "comment": "hello there"},
+        content_type="application/json",
+    ).status_code in (401, 422)
 
 
 @pytest.mark.django_db
@@ -2441,7 +2466,7 @@ def test_reaction_to_an_unknown_decision_404s(client, reaction_workspace):
     resp = client.post(
         "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
         "/decisions/no-such-row/reactions",
-        {"reviewer": "Anne Kuhlmann", "comment": "this row does not exist"},
+        {"comment": "this row does not exist"},
         content_type="application/json",
     )
     assert resp.status_code == 404
@@ -2452,7 +2477,7 @@ def test_reaction_to_an_unknown_run_404s(client, reaction_workspace):
     resp = client.post(
         "/api/opps/public/summary-ws/turmeric/runs/no-such-run"
         "/decisions/visit-window/reactions",
-        {"reviewer": "Anne Kuhlmann", "comment": "no such run"},
+        {"comment": "no such run"},
         content_type="application/json",
     )
     assert resp.status_code == 404
@@ -2493,7 +2518,7 @@ _SUMMARY_URL = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
 
 
 def _edit(client, **body):
-    payload = {"value": "14 days", "reviewer": "Anne Kuhlmann"}
+    payload = {"value": "14 days"}
     payload.update(body)
     return client.post(_EDIT_URL, payload, content_type="application/json")
 
@@ -2506,19 +2531,21 @@ def _overrides_rows(drive):
 
 
 @pytest.mark.django_db
-def test_anonymous_visitor_can_change_a_decision(client, reaction_workspace):
+def test_a_member_can_change_a_decision(client, reaction_workspace):
     resp = _edit(client, reasoning="Two weeks matches the payment cycle.")
     assert resp.status_code == 200
     body = resp.json()
     assert body["override"] == "14 days"
     assert body["decided_by_name"] == "Anne Kuhlmann"
-    assert body["decided_by_verified"] is False
+    assert body["decided_by_verified"] is True
 
     rows = _overrides_rows(reaction_workspace)
     assert [r["id"] for r in rows] == ["visit-window"]
     assert rows[0]["override"] == "14 days"
     assert rows[0]["ai_default"] == "30 days"
-    assert rows[0]["decided_by_verified"] is False
+    # The author is the session user, recorded with their email.
+    assert rows[0]["decided_by"] == "anne@partner.org"
+    assert rows[0]["decided_by_verified"] is True
 
 
 @pytest.mark.django_db
@@ -2541,17 +2568,10 @@ def test_the_public_edit_lands_in_the_store_the_workbench_writes(
 
 
 @pytest.mark.django_db
-def test_a_signed_in_member_is_never_anonymous(client, reaction_workspace):
-    """Logged in ⇒ the session identity wins and the typed name is
-    discarded. Two names on one change is worse than one."""
-    user = User.objects.create_user(email="ada@dimagi.com", display_name="Ada Member")
-    client.force_login(user)
-    resp = _edit(client, reviewer="Somebody Else")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["decided_by_name"] == "Ada Member"
-    assert body["decided_by_verified"] is True
-    assert _overrides_rows(reaction_workspace)[0]["decided_by"] == "ada@dimagi.com"
+def test_an_edit_body_cannot_name_its_author(client, reaction_workspace):
+    """The identity is the session's. A body that tries to supply one is
+    refused by the schema rather than silently ignored."""
+    assert _edit(client, reviewer="Somebody Else").status_code == 422
 
 
 @pytest.mark.django_db
@@ -2560,8 +2580,10 @@ def test_reviewer_two_can_change_reviewer_one_and_the_first_answer_survives(
 ):
     """The whole model: last-writer-wins is acceptable only because the
     loser is recoverable."""
-    _edit(client, value="14 days", reviewer="Anne Kuhlmann")
-    resp = _edit(client, value="21 days", reviewer="Ben Okoro")
+    _edit(client, value="14 days")
+    ws = Workspace.objects.get(slug="summary-ws")
+    client.force_login(_summary_member(ws, "ben@partner.org", "Ben Okoro"))
+    resp = _edit(client, value="21 days")
     assert resp.status_code == 200
 
     row = _overrides_rows(reaction_workspace)[0]
@@ -2579,8 +2601,8 @@ def test_reviewer_two_can_change_reviewer_one_and_the_first_answer_survives(
 def test_an_edit_is_reversible_from_the_ui(client, reaction_workspace):
     """Restoring the AI default is a normal edit, and leaves the trail
     rather than erasing it."""
-    _edit(client, value="14 days", reviewer="Anne Kuhlmann")
-    resp = _edit(client, value="30 days", reviewer="Anne Kuhlmann")
+    _edit(client, value="14 days")
+    resp = _edit(client, value="30 days")
     assert resp.status_code == 200
     assert resp.json()["is_revert"] is True
 
@@ -2596,7 +2618,7 @@ def test_an_edit_naming_an_unknown_decision_is_refused_not_stored(
     resp = client.post(
         "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
         "/decisions/no-such-row/edit",
-        {"value": "whatever", "reviewer": "Anne Kuhlmann"},
+        {"value": "whatever"},
         content_type="application/json",
     )
     assert resp.status_code == 404
@@ -2605,9 +2627,37 @@ def test_an_edit_naming_an_unknown_decision_is_refused_not_stored(
 
 
 @pytest.mark.django_db
-def test_an_anonymous_edit_requires_a_name(client, reaction_workspace):
-    assert _edit(client, reviewer=None).status_code == 400
-    assert _edit(client, reviewer=" a ").status_code == 400
+def test_edit_and_confirm_refuse_anyone_but_a_member(client, reaction_workspace):
+    """No anonymous editing at all (Jonathan, 2026-10-03). Server-side, not
+    just hidden in the UI: 401 without a session, 403 for a non-member,
+    and nothing is written to Drive either way."""
+    client.logout()
+    assert _edit(client).status_code == 401
+    assert _edit(client, value="30 days", confirm=True).status_code == 401
+    client.force_login(User.objects.create_user(email="stranger@else.org"))
+    assert _edit(client).status_code == 403
+    assert _edit(client, value="30 days", confirm=True).status_code == 403
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "inputs" not in [f.name for f in reaction_workspace.list_files(root)]
+
+
+@pytest.mark.django_db
+def test_a_member_write_without_a_csrf_token_is_refused(reaction_workspace):
+    """The router is csrf_exempt; the token is what stops a third-party
+    page filing a change under a member's name."""
+    from django.test import Client
+
+    strict = Client(enforce_csrf_checks=True)
+    ws = Workspace.objects.get(slug="summary-ws")
+    strict.force_login(_summary_member(ws, "cara@partner.org", "Cara"))
+    resp = strict.post(_EDIT_URL, {"value": "14 days"}, content_type="application/json")
+    assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+def test_anyone_can_still_read_the_summary(client, reaction_workspace):
+    client.logout()
+    assert client.get(_SUMMARY_URL).status_code == 200
 
 
 @pytest.mark.django_db
@@ -2636,8 +2686,8 @@ def test_edit_shows_up_on_the_next_summary_read(client, reaction_workspace):
 
 @pytest.mark.django_db
 def test_public_payload_never_carries_a_reviewer_email(client, reaction_workspace):
-    user = User.objects.create_user(email="ada@dimagi.com", display_name="Ada Member")
-    client.force_login(user)
+    ws = Workspace.objects.get(slug="summary-ws")
+    client.force_login(_summary_member(ws, "ada@dimagi.com", "Ada Member"))
     _edit(client)
     client.logout()
     served = client.get(_SUMMARY_URL).json()["decision_edits"]["visit-window"]
@@ -2913,3 +2963,25 @@ def test_confirming_a_decision_is_recorded_distinctly_from_a_change(
 @pytest.mark.django_db
 def test_an_edit_without_confirm_is_not_a_confirmation(client, reaction_workspace):
     assert _edit(client).json()["confirmed"] is False
+
+
+@pytest.mark.django_db
+def test_the_summary_tags_links_from_the_opps_stored_tenancy(client, reaction_workspace):
+    """The endpoint reads the opp's tenancy the way `GET …/tenancy` does, so
+    an own-tenancy opp's workbench reads `reviewer` (no tag) and a
+    shared-tenancy one reads `admin`."""
+    from apps.opps.models import OppWorkspace
+
+    client.logout()
+    ws = Workspace.objects.get(slug="summary-ws")
+    assert client.get(_SUMMARY_URL).json()["workbench"]["access"] == "admin"
+
+    OppWorkspace.objects.create(
+        workspace=ws, slug="turmeric", display_name="Turmeric", created_by=ws.created_by,
+        tenancy={"hq_domain": "connect-ace-spark",
+                 "connect_holding_org": "spark-nm-org-test",
+                 "labs_allowed_domains": ["@sparkmicrogrants.org"]},
+    )
+    from django.core.cache import cache
+    cache.clear()
+    assert client.get(_SUMMARY_URL).json()["workbench"]["access"] == "reviewer"
