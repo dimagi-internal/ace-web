@@ -9,11 +9,16 @@ import type { Decision } from "@/api/types.ws";
 /**
  * Who can actually open a link. A property of the PAYLOAD, never a
  * hostname table in this file — the URLs change every run, but the
- * access model of the system each link points into does not. `admin`
- * means "needs an account we can't give an external partner today"
- * (CommCare HQ project membership, a Connect / OCS workspace, the
- * connect-labs OAuth login, the ace-web Workbench). Gated links are
- * still shown — tagged, not hidden.
+ * access model of the system each link points into does not.
+ *
+ * `admin` ("admin only") means a reviewer of this run will NEVER get
+ * access — it stays Dimagi-internal (ACE's shared tenants on a
+ * shared-tenancy opp, the OCS team console, a link outside the opp's
+ * tenancy). `reviewer` means the link is inside the opp's own tenancy:
+ * `/ace:release` gives its reviewers access, so it carries NO tag
+ * (Jonathan, 2026-10-03: "you should expect access"). The server derives
+ * both from the opp's tenancy — `apps/opps/summary.py` § link access.
+ * Gated links are still shown — tagged, not hidden.
  *
  * `unknown` (ace-web#740) is the honest answer for a Google Drive link
  * whose sharing state the server could not read. Drive tags are MEASURED
@@ -23,7 +28,7 @@ import type { Decision } from "@/api/types.ws";
  * the measurement fails, saying "public" is that bug with an extra step
  * and saying "admin" invents a wall that may not exist.
  */
-export type LinkAccess = "public" | "admin" | "unknown";
+export type LinkAccess = "public" | "admin" | "unknown" | "reviewer";
 
 /**
  * A decisions-log row as the public review surface renders it — the
@@ -512,81 +517,15 @@ export function forwardedSummaryPath(apiUrl: string, base: string): string | nul
 export class ReactionError extends Error {}
 
 /**
- * Submit one reaction against one decision row.
+ * POST one member write (edit, confirm, comment) to the summary's API.
  *
- * Public endpoint, same no-auth posture as the summary read: the page a
- * partner is handed has no login and they cannot self-serve one. The
- * reviewer name is required and self-reported — see
- * `apps/opps/reactions.py` for why anonymous was not an option.
+ * Members only (2026-10-03): the session cookie identifies the writer and
+ * the CSRF token proves the request came from this page — the endpoints
+ * are csrf_exempt at the router and refuse a member write without it. A
+ * 401 (not signed in) or 403 (not a member) comes back as a
+ * `ReactionError` carrying the server's sentence.
  */
-export async function postDecisionReaction(
-  workspace: string,
-  slug: string,
-  runId: string,
-  decisionId: string,
-  body: { reviewer: string; reviewer_email?: string; comment: string },
-): Promise<DecisionReaction & { decision_id: string }> {
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  const url =
-    `${base}/api/opps/public/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}` +
-    `/runs/${encodeURIComponent(runId)}/decisions/${encodeURIComponent(decisionId)}/reactions`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    let detail = "We couldn't record that. Try again in a moment.";
-    try {
-      const problem = await resp.json();
-      if (typeof problem?.detail === "string" && problem.detail) detail = problem.detail;
-      else if (resp.status === 422) detail = "That comment is too long.";
-    } catch {
-      /* non-JSON error body — keep the generic message */
-    }
-    throw new ReactionError(detail);
-  }
-  return (await resp.json()) as DecisionReaction & { decision_id: string };
-}
-
-
-/**
- * Change ONE decision's answer.
- *
- * Deliberately not member-gated and deliberately without a proposal
- * state: reviewer 2 changing reviewer 1's answer, and Dimagi changing
- * either, are the same act (Jonathan, 2026-08-14). The bar to start
- * engaging with ACE has to be very low because it is speculative AI
- * work — an account requirement is a barrier, a name field is not.
- *
- * `reviewer` is required only for an anonymous caller; the server
- * ignores it for a signed-in one (logged in ⇒ never anonymous). Writes
- * land in the same store the Workbench editor writes.
- */
-export async function postDecisionEdit(
-  workspace: string,
-  slug: string,
-  runId: string,
-  decisionId: string,
-  body: {
-    value: string;
-    reasoning?: string;
-    reviewer?: string;
-    reviewer_email?: string;
-    /** Record a CONFIRMATION of `value` (the answer in force), not a change. */
-    confirm?: boolean;
-  },
-): Promise<PublicDecisionEdit & { decision_id: string }> {
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  const url =
-    `${base}/api/opps/public/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}` +
-    `/runs/${encodeURIComponent(runId)}/decisions/${encodeURIComponent(decisionId)}/edit`;
-  // The CSRF token is what lets the server ATTRIBUTE the change to a
-  // signed-in member rather than treating them as anonymous — the
-  // endpoint is csrf_exempt because it must accept a genuinely anonymous
-  // POST, so a token is how a session identity earns trust. Absent (a
-  // partner with no account) it is simply omitted and the name they typed
-  // is used instead.
+async function postMemberWrite<T>(url: string, body: unknown, fallback: string): Promise<T> {
   const csrf = getCsrfToken();
   const resp = await fetch(url, {
     method: "POST",
@@ -598,15 +537,62 @@ export async function postDecisionEdit(
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
-    let detail = "We couldn't record that change. Try again in a moment.";
+    let detail = fallback;
     try {
       const problem = await resp.json();
       if (typeof problem?.detail === "string" && problem.detail) detail = problem.detail;
-      else if (resp.status === 422) detail = "That answer is too long.";
+      else if (resp.status === 422) detail = "That is too long.";
     } catch {
       /* non-JSON error body — keep the generic message */
     }
     throw new ReactionError(detail);
   }
-  return (await resp.json()) as PublicDecisionEdit & { decision_id: string };
+  return (await resp.json()) as T;
+}
+
+function decisionUrl(workspace: string, slug: string, runId: string, decisionId: string) {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  return (
+    `${base}/api/opps/public/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}` +
+    `/runs/${encodeURIComponent(runId)}/decisions/${encodeURIComponent(decisionId)}`
+  );
+}
+
+/** Comment on one decision row. The commenter is the signed-in member. */
+export async function postDecisionReaction(
+  workspace: string,
+  slug: string,
+  runId: string,
+  decisionId: string,
+  body: { comment: string },
+): Promise<DecisionReaction & { decision_id: string }> {
+  return postMemberWrite(
+    `${decisionUrl(workspace, slug, runId, decisionId)}/reactions`,
+    body,
+    "We couldn't record that. Try again in a moment.",
+  );
+}
+
+/**
+ * Change — or, with `confirm`, confirm — ONE decision's answer. Writes land
+ * in the same store the Workbench editor writes, attributed to the
+ * signed-in member.
+ */
+export async function postDecisionEdit(
+  workspace: string,
+  slug: string,
+  runId: string,
+  decisionId: string,
+  body: {
+    value: string;
+    reasoning?: string;
+    /** Record a CONFIRMATION of `value` (the answer in force), not a change. */
+    confirm?: boolean;
+  },
+): Promise<PublicDecisionEdit & { decision_id: string }> {
+  return postMemberWrite(
+    `${decisionUrl(workspace, slug, runId, decisionId)}/edit`,
+    body,
+    "We couldn't record that change. Try again in a moment.",
+  );
 }

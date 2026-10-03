@@ -5,6 +5,7 @@ import {
   DETAIL_GRID,
   DecisionDetailFields,
 } from "@/components/opps/decisions/DecisionDetailFields";
+import { asksConfirmation, decisionDisplay } from "@/components/opps/decisions/decisionDisplay";
 import { EvidenceBadge } from "@/components/opps/decisions/EvidenceBadge";
 import { cn } from "@/lib/utils";
 
@@ -103,7 +104,11 @@ export function DecisionRow({
         : "bg-sky-500/15"
       : "";
 
-  const plain = decision.plain?.trim();
+  const shown = decisionDisplay(decision, effectiveValue);
+  const asks = asksConfirmation(decision);
+  const check = [decision.check_at, decision.correct_looks_like]
+    .map((x) => x?.trim())
+    .filter(Boolean);
 
   return (
     <div id={anchorId} className={cn("scroll-mt-24", rowTint, muted && "opacity-75")}>
@@ -119,7 +124,7 @@ export function DecisionRow({
             muted ? "text-muted-foreground" : "text-foreground",
           )}
         >
-          {decision.question}
+          {shown.headline}
         </span>
         <span className="col-start-1 row-start-2 flex min-w-0 flex-col gap-1 md:col-start-2 md:row-start-1">
           <span className="text-[13px] leading-snug [overflow-wrap:anywhere]">
@@ -134,16 +139,36 @@ export function DecisionRow({
                   : "text-foreground",
               )}
             >
-              {effectiveValue || "—"}
+              {shown.value || "—"}
             </span>
           </span>
-          {plain && (
+          {shown.summary && (
             <span className="text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
-              {plain}
+              {shown.summary}
             </span>
           )}
-          {(badges || decision.evidence_basis === "conflicting" || (statusChip && chip)) && (
+          {asks && decision.confirm_reason?.trim() && (
+            <span className="text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
+              <span className="text-foreground">Why confirm: </span>
+              {decision.confirm_reason.trim()}
+            </span>
+          )}
+          {check.length > 0 && (
+            <span className="text-[11px] leading-snug text-muted-foreground/80 [overflow-wrap:anywhere]">
+              <span className="text-muted-foreground">Check: </span>
+              {check.join(" — ")}
+            </span>
+          )}
+          {(asks || badges || decision.evidence_basis === "conflicting" || (statusChip && chip)) && (
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {asks && (
+                <span
+                  className="shrink-0 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400"
+                  title="ACE recommends a person confirm this before launch"
+                >
+                  Confirm before launch
+                </span>
+              )}
               {badges}
               <EvidenceBadge basis={decision.evidence_basis} />
               {statusChip && chip && (

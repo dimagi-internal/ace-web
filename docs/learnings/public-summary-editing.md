@@ -1,5 +1,7 @@
 # Editing decisions from the public run summary
 
+> **Superseded in part, 2026-10-03.** Anonymous editing is gone (Jonathan: "no anonymous editing at all"). Edit, confirm and comment need a signed-in member of the workspace: the API returns 401 with no session and 403 for a non-member or a failed CSRF check (`apps/opps/api.py::_member_reviewer`). Everyone else reads the page and sees "Sign in to edit". The self-reported name fields, `reviewerIdentity`, and the editor's `confirm` commit mode were removed. The parts below about the shared store, merge, history and the "one decision, one home" rule still hold. Where this page describes anonymous identity, read it as history.
+
 **Status:** shipped 2026-08-14. Supersedes the "reactions only" model in
 `public-summary-reactions.md` (still accurate about comments).
 **Code:** `apps/opps/decision_overrides.py`, `apps/opps/public_input.py`,

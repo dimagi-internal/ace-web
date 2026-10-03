@@ -1,5 +1,7 @@
 # Gated links on the public run summary: tag them, never hide them
 
+> **Superseded in part, 2026-10-03.** `admin only` now means "a reviewer of this run will never get access", not "needs an account we can't give a partner today". Each non-Drive link is classified from the opp's tenancy (`apps.opps.tenancy.TenancyAccess`). A link inside the opp's own tenancy is `reviewer` and shows no tag, because `/ace:release` grants it. ACE's shared tenants, the OCS console, and anything outside the tenancy stay `admin`. Drive links are still measured. See the comment block in `apps/opps/summary.py`.
+
 **Status:** convention, 2026-08-14; **amended 2026-08-26 (ace-web#740) — a
 Drive link's tag is now MEASURED, not asserted.** Enforced by
 `apps/opps/tests/test_summary.py::test_an_unreachable_document_is_not_tagged_public`,

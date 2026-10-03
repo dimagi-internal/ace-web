@@ -25,11 +25,8 @@ function dec(over: Partial<Decision> = {}): Decision {
 }
 
 /**
- * The two axes this editor varies on are independent, and were coupled
- * before: `voice` is who is being spoken to, `commitMode` is when a
- * change becomes durable. Coupling them meant the public surface could
- * not adopt the Workbench's immediacy without also adopting the word
- * "override", which a partner has never met.
+ * `voice` is who is being spoken to; a pick commits as it happens on both
+ * surfaces (the anonymous-only `confirm` mode was removed, 2026-10-03).
  */
 describe("DecisionAnswerEditor", () => {
   it("speaks the Workbench's vocabulary in the console voice", () => {
@@ -39,7 +36,6 @@ describe("DecisionAnswerEditor", () => {
         effectiveValue="FLWs in rural Tanzania"
         effectiveReason=""
         voice="console"
-        commitMode="immediate"
         onCommit={vi.fn()}
         onRevert={vi.fn()}
       />,
@@ -48,14 +44,13 @@ describe("DecisionAnswerEditor", () => {
     expect(screen.getByText("Add override reason")).toBeTruthy();
   });
 
-  it("speaks a partner's vocabulary in the partner voice, at the SAME commit mode", () => {
+  it("speaks a partner's vocabulary in the partner voice, with the same immediate commit", () => {
     render(
       <DecisionAnswerEditor
         decision={dec({ override: "FLWs in rural Tanzania" })}
         effectiveValue="FLWs in rural Tanzania"
         effectiveReason=""
         voice="partner"
-        commitMode="immediate"
         onCommit={vi.fn()}
         onRevert={vi.fn()}
       />,
@@ -75,11 +70,14 @@ describe("DecisionAnswerEditor", () => {
           effectiveValue="FLWs in rural Kenya"
           effectiveReason=""
           voice={voice}
-          commitMode="confirm"
           onCommit={vi.fn()}
         />,
       );
-      fireEvent.click(screen.getByRole("button", { name: /Tanzania/ }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: voice === "console" ? "Add override reason" : "Write in a different answer",
+        }),
+      );
       expect(
         screen.getByLabelText("Override reason for: Who is the target population?"),
       ).toBeTruthy();
@@ -90,7 +88,7 @@ describe("DecisionAnswerEditor", () => {
     }
   });
 
-  it("commits a pill click straight away in immediate mode", () => {
+  it("commits a pill click straight away ", () => {
     const onCommit = vi.fn();
     render(
       <DecisionAnswerEditor
@@ -98,13 +96,12 @@ describe("DecisionAnswerEditor", () => {
         effectiveValue="FLWs in rural Kenya"
         effectiveReason=""
         voice="partner"
-        commitMode="immediate"
         onCommit={onCommit}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Tanzania/ }));
     expect(onCommit).toHaveBeenCalledWith("FLWs in rural Tanzania", "");
-    // Nothing to confirm — the whole point.
+    // Committed on click — no Save step.
     expect(screen.queryByText("Save this answer")).toBeNull();
   });
 
@@ -118,7 +115,6 @@ describe("DecisionAnswerEditor", () => {
         effectiveValue="FLWs in rural Kenya"
         effectiveReason=""
         voice="partner"
-        commitMode="immediate"
         onCommit={vi.fn()}
         error="Give it a few minutes before sending another change."
       />,

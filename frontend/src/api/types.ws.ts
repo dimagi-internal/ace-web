@@ -347,6 +347,10 @@ export interface Decision {
   confirm_reason?: string;
   /** One-line plain-language summary of the choice. */
   plain?: string;
+  /** Partner-facing wording of `question` — the row's headline when present. */
+  plain_question?: string;
+  /** Display form of the AI default (e.g. "7,500 MWK"); `ai_default` stays the exact option. */
+  plain_value?: string;
   /** Where a reviewer can check the choice landed (a screen, a form…). */
   check_at?: string;
   /** What "right" looks like when they check. */

@@ -19,33 +19,26 @@ import { cn } from "@/lib/utils";
  * would have drifted on write-in semantics, revert semantics, and what
  * counts as a no-op within a week.
  *
- * Three things vary, and they vary along DIFFERENT axes — conflating them
- * is what made the public surface feel unlike the Workbench:
+ * Two things vary between the surfaces:
  *
- * - `commitMode` follows **identity, not surface**. `immediate` commits a
- *   pill click as it happens; `confirm` stages it locally behind a Save
- *   button. Confirm exists for exactly one situation — we don't yet know
- *   who is editing, so the pick can't be durable until they say. The
- *   Workbench is never in that situation (a member is authenticated) and
- *   neither is the public page once the reviewer has given a name once,
- *   so both are `immediate` from that point on. Making it a per-surface
- *   constant put a Save button on every row of a 42-row page and undid
- *   the immediacy for the 41 rows after the name was known.
  * - `voice` follows **surface**. "Override reason" is Workbench
  *   vocabulary; a partner reading a summary page has never met the word.
  *   The mechanics are identical, the words are not, and the `aria-label`s
  *   stay identical across both regardless of voice.
  * - `dense` follows **type scale** — the Workbench's console scale vs the
- *   reading scale of a document a partner reads. The CONTROLS are the
- *   same either way.
+ *   reading scale of a document a partner reads.
+ *
+ * A pill click commits as it happens on BOTH surfaces. The summary used to
+ * have a `confirm` commit mode that staged a pick behind a Save button
+ * while an anonymous reviewer typed their name; anonymous editing was
+ * removed (2026-10-03 — only signed-in workspace members write), and the
+ * mode with it.
  */
-export type CommitMode = "immediate" | "confirm";
-
 /** Whose vocabulary the visible copy speaks. See `COPY`. */
 export type EditorVoice = "console" | "partner";
 
 /**
- * Per-surface copy, keyed by VOICE rather than by commit mode.
+ * Per-surface copy, keyed by VOICE.
  *
  * The mechanics are identical; the words are not, and pretending
  * otherwise would be a worse kind of sharing. "Override reason" is the
@@ -53,11 +46,6 @@ export type EditorVoice = "console" | "partner";
  * (`override_reasoning`); a partner reading a summary page has never met
  * that word. The FIELD LABELS (aria-label) stay identical across both so
  * assistive tech and tests see one component.
- *
- * This used to be keyed by `commitMode`, which silently coupled two
- * unrelated things: the moment a change becomes durable, and who is being
- * spoken to. The public surface can't adopt the Workbench's immediacy
- * without also adopting its vocabulary until they're separated.
  */
 const COPY = {
   console: {
@@ -86,7 +74,6 @@ export interface DecisionAnswerEditorProps {
   effectiveValue: string;
   /** Override rationale currently in force; "" when none. */
   effectiveReason: string;
-  commitMode: CommitMode;
   /** Whose vocabulary the copy speaks — the Workbench's, or a partner's. */
   voice: EditorVoice;
   /**
@@ -108,10 +95,6 @@ export interface DecisionAnswerEditorProps {
    * Defaults to "the answer differs from the AI default".
    */
   revertable?: boolean;
-  /** Rendered inside the confirm block — the identity fields, publicly. */
-  identitySlot?: React.ReactNode;
-  /** Blocks submit while true (e.g. a missing self-reported name). */
-  canSubmit?: boolean;
   busy?: boolean;
   error?: string | null;
   /** Workbench console type scale rather than the reading scale. */
@@ -122,20 +105,16 @@ export function DecisionAnswerEditor({
   decision,
   effectiveValue,
   effectiveReason,
-  commitMode,
   voice,
   onCommit,
   onRevert,
   revertable,
-  identitySlot,
-  canSubmit = true,
   busy = false,
   error = null,
   dense = false,
 }: DecisionAnswerEditorProps) {
-  // `null` = not editing. Holds the in-progress pick + text; in
-  // `immediate` mode the pick is committed as it happens and this only
-  // carries text.
+  // `null` = not editing. A pick is committed as it happens, so this only
+  // carries the in-progress text.
   const [draft, setDraft] = useState<{
     value: string;
     new_option: string;
@@ -145,13 +124,8 @@ export function DecisionAnswerEditor({
   const copy = COPY[voice];
   // The reason field saves on blur in immediate mode; say so rather than
   // leaving someone wondering whether their typing was kept.
-  const reasonLegend =
-    commitMode === "immediate"
-      ? `${copy.reasonLegend} (optional — saves when you click away)`
-      : `${copy.reasonLegend} (optional)`;
-  // Confirm mode has a staged pick to throw away, so the close button
-  // cancels; immediate mode has nothing pending, so it just closes.
-  const closeLabel = commitMode === "confirm" ? "Cancel" : copy.close;
+  const reasonLegend = `${copy.reasonLegend} (optional — saves when you click away)`;
+  const closeLabel = copy.close;
   const text = dense ? "text-xs" : "text-[13px]";
   const canRevert = revertable ?? effectiveValue !== decision.ai_default;
   const open = draft !== null;
@@ -166,43 +140,19 @@ export function DecisionAnswerEditor({
   }
 
   function pick(opt: string) {
-    if (commitMode === "immediate") {
-      if (opt === effectiveValue) return; // radio semantics: no-op
-      const reasoning = (draft ? draft.reasoning : effectiveReason).trim();
-      if (opt === decision.ai_default && !reasoning && onRevert) {
-        fireAndForget(onRevert());
-      } else {
-        fireAndForget(onCommit(opt, reasoning));
-      }
-      if (draft?.new_option) setDraft({ ...draft, new_option: "" });
-      return;
+    if (opt === effectiveValue) return; // radio semantics: no-op
+    const reasoning = (draft ? draft.reasoning : effectiveReason).trim();
+    if (opt === decision.ai_default && !reasoning && onRevert) {
+      fireAndForget(onRevert());
+    } else {
+      fireAndForget(onCommit(opt, reasoning));
     }
-    // confirm mode: stage locally; nothing leaves the browser until the
-    // person says so (and, if anonymous, says who they are).
-    if (draft) setDraft({ ...draft, value: opt, new_option: "" });
-    else begin(opt);
+    if (draft?.new_option) setDraft({ ...draft, new_option: "" });
   }
 
-  async function submit() {
-    if (!draft || busy) return;
-    const value = draft.new_option.trim() || draft.value;
-    const reasoning = draft.reasoning.trim();
-    if (!value) return;
-    if (value === effectiveValue && reasoning === effectiveReason.trim()) {
-      setDraft(null);
-      return;
-    }
-    try {
-      if ((await onCommit(value, reasoning)) !== false) setDraft(null);
-    } catch {
-      /* surfaced through `error`; the draft stays open so the text isn't lost */
-    }
-  }
-
-  // Immediate mode saves the reason on blur — the Workbench's existing
-  // behaviour, which the shared buffer makes safe.
+  // The reason saves on blur — the Workbench's existing behaviour.
   function commitReasonOnBlur() {
-    if (!draft || commitMode !== "immediate") return;
+    if (!draft) return;
     const value = draft.new_option.trim() || draft.value;
     const reasoning = draft.reasoning.trim();
     if (value === decision.ai_default && !reasoning) {
@@ -213,10 +163,6 @@ export function DecisionAnswerEditor({
     fireAndForget(onCommit(value, reasoning));
   }
 
-  const dirty =
-    !!draft &&
-    (stagedValue !== effectiveValue || draft.reasoning.trim() !== effectiveReason.trim());
-
   return (
     <div className={cn("flex flex-col gap-2", text)}>
       <OptionPills
@@ -226,9 +172,9 @@ export function DecisionAnswerEditor({
         onPick={pick}
       />
 
-      {/* In `immediate` mode there is no draft block to hang these off,
-          and a pill click that failed server-side would otherwise be
-          silently lost — the row would just snap back. */}
+      {/* There is no draft block to hang these off, and a pill click that
+          failed server-side would otherwise be silently lost — the row
+          would just snap back. */}
       {!open && busy && (
         <p className="text-muted-foreground" role="status">
           Saving…
@@ -304,24 +250,8 @@ export function DecisionAnswerEditor({
               className="w-full rounded-md border border-border bg-background px-2 py-1"
             />
           </label>
-          {commitMode === "confirm" && identitySlot}
           {error && <p className="text-red-400">{error}</p>}
           <div className="flex flex-wrap items-center gap-3">
-            {commitMode === "confirm" && (
-              <button
-                type="button"
-                onClick={() => { void submit(); }}
-                disabled={!dirty || !canSubmit || busy}
-                className={cn(
-                  "rounded px-3 py-1.5 font-medium transition",
-                  dirty && canSubmit && !busy
-                    ? "bg-primary text-primary-foreground hover:opacity-90"
-                    : "cursor-not-allowed bg-muted text-muted-foreground",
-                )}
-              >
-                {busy ? "Saving…" : "Save this answer"}
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setDraft(null)}

@@ -6,8 +6,9 @@ interface RowLink {
   label: string;
   href: string;
   /**
-   * Set to `"admin"` when the link needs an account we can't give an
-   * external partner. The link is still rendered — it just says so.
+   * Set to `"admin"` when a reviewer of this run will never get access
+   * (it stays Dimagi-internal). The link is still rendered — it just says
+   * so. `"reviewer"` / `"public"` draw no tag.
    *
    * The page leaves this undefined for a signed-in workspace member, so
    * "should this viewer see tags at all" is decided once, at the top,
@@ -67,11 +68,12 @@ export function SummaryRow({ label, name, links }: Props) {
 /**
  * Marks a link that needs Dimagi access today.
  *
- * Jonathan, 2026-08-14: "Nothing is 'Dimagi only' at scale for ACE, even
- * if right now it needs to be because of shared tenancy. For now we can
- * show the link but have a tag on it (admin only)." Hiding these links
- * (or letting them 404 silently) told an outside reader the run was
- * thinner than it is; the tag says what's actually true.
+ * Only for links a reviewer of this run will NEVER be given (Jonathan,
+ * 2026-10-03: "the things that are truly dimagi admin only are what we
+ * should be using") — a link inside the opp's own tenancy carries no tag,
+ * because `/ace:release` grants it. Hiding these links (or letting them
+ * 404 silently) told an outside reader the run was thinner than it is;
+ * the tag says what's actually true.
  */
 export function AdminOnlyTag({ className }: { className?: string }) {
   return (
@@ -80,7 +82,7 @@ export function AdminOnlyTag({ className }: { className?: string }) {
         "shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70 " +
         (className ?? "")
       }
-      title="Needs a Dimagi account today — ask us and we'll walk you through it"
+      title="Dimagi-internal — reviewers of this run are not given access to this"
     >
       admin only
     </span>

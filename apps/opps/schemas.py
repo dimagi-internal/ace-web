@@ -322,24 +322,12 @@ class GateDecisionIn(StrictModel):
 class DecisionReactionIn(StrictModel):
     """Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.
 
-    ``reviewer`` is REQUIRED and self-reported. The page has no login and
-    a partner cannot self-serve one, so the only honest options were a
-    required free-text name or anonymous reactions — and an anonymous
-    reaction defeats the store it lands in: the feedback ledger's whole
-    value is being able to tell a reviewer where THEIR comment went, and
-    to tell a future reader whose judgement drove a change. An unsigned
-    comment is unanswerable and uncreditable. So: required name, optional
-    email (the reply path), and the record says the name is self-reported
-    rather than pretending it is verified.
-
-    Length ceilings live in ``apps.opps.reactions`` and are enforced
-    there too — these are the cheap first pass, so an oversized body is
-    rejected before any Drive round-trip.
+    Members only, like editing: the commenter is the signed-in session
+    user, so the body carries only the comment. Length ceilings live in
+    ``apps.opps.reactions`` and are enforced there too.
     """
 
-    reviewer: Annotated[str, Field(min_length=1, max_length=120)]
     comment: Annotated[str, Field(min_length=1, max_length=4000)]
-    reviewer_email: Annotated[str, Field(max_length=254)] | None = None
 
 
 class DecisionReactionOut(StrictModel):
@@ -357,27 +345,14 @@ class DecisionReactionOut(StrictModel):
 class DecisionEditIn(StrictModel):
     """Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.
 
-    Anyone with the link can change a decision's value in place — no
-    proposal state, no promotion step, no member-only privilege, and
-    reviewer 2 changing reviewer 1's answer is the same act as Dimagi
-    changing either. Safety is visibility and reversibility (attribution
-    on every row, full history, undo from the UI), not permission — the
-    same way it is in a Google Doc, which is exactly what the PDD these
-    decisions summarize already is.
-
-    Identity resolves per caller and NOT from this body when we already
-    know who it is: **signed in ⇒ never anonymous**, so ``reviewer`` and
-    ``reviewer_email`` are ignored for an authenticated request and
-    REQUIRED for an anonymous one. See ``apps.opps.public_input``.
-
-    Length ceilings are enforced again in ``apps.opps.decision_overrides``
-    — these are the cheap first pass, before any Drive round-trip.
+    Members only: the identity is the SESSION's, so the body carries no
+    name or email (the self-reported ``reviewer`` fields were removed with
+    anonymous editing, 2026-10-03). Length ceilings are enforced again in
+    ``apps.opps.decision_overrides`` — these are the cheap first pass.
     """
 
     value: Annotated[str, Field(min_length=1, max_length=800)]
     reasoning: Annotated[str, Field(max_length=4000)] | None = None
-    reviewer: Annotated[str, Field(max_length=120)] | None = None
-    reviewer_email: Annotated[str, Field(max_length=254)] | None = None
     #: A CONFIRMATION of ``value`` (the answer already in force) rather than
     #: a change — recorded distinctly so the page can say "confirmed by".
     confirm: bool = False

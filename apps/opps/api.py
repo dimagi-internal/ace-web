@@ -12,7 +12,9 @@ from ninja import Path, Router
 from apps.api.auth import session_auth
 from apps.api.deps import require_write_global, resolve_workspace_for_member
 from apps.api.errors import (
+    TYPE_AUTH,
     TYPE_CONFLICT,
+    TYPE_FORBIDDEN,
     TYPE_NOT_FOUND,
     TYPE_UPSTREAM,
     TYPE_VALIDATION,
@@ -2484,6 +2486,7 @@ def public_opp_summary(
     payload = build_summary_payload(
         client, workspace=ws, opp_slug=slug, run_id=run_id,
         viewer_is_member=is_member,
+        tenancy=_opp_tenancy(ws, slug),
     )
     if payload is None:
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
@@ -2579,6 +2582,71 @@ def _public_write_drive(ws):
         raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
 
 
+def _opp_tenancy(ws, slug: str) -> dict:
+    """The opp's tenancy, resolved the way ``GET …/tenancy`` resolves it: the
+    opp's own row, else the workspace default. Decides which summary links
+    a released reviewer can open (``summary.py`` § link access)."""
+    from apps.opps import tenancy as tenancy_mod
+    from apps.opps.models import OppWorkspace
+
+    row = OppWorkspace.objects.filter(workspace=ws, slug=slug).only("tenancy").first()
+    raw = row.tenancy if row is not None else getattr(ws, "default_tenancy", None)
+    try:
+        return tenancy_mod.clean(raw)
+    except Exception:  # noqa: BLE001 — a malformed stored tenancy reads as unknown
+        log.warning("summary: tenancy for %s/%s unreadable; links read internal",
+                    ws.slug, slug)
+        return {}
+
+
+def _member_reviewer(request: HttpRequest, workspace: str):
+    """The signed-in workspace MEMBER making a write on the run summary.
+
+    Every write on the summary — changing a decision, confirming one,
+    commenting on one — needs a signed-in ace-web account that is a member
+    of the workspace (Jonathan, 2026-10-03: "no anonymous editing at all").
+    Anyone may still READ the summary; only the write paths are gated, and
+    they are gated HERE, server-side, not just hidden in the UI:
+
+    * no session → **401** (the page offers "Sign in to edit");
+    * signed in but the request fails Django's CSRF check → **403** — the
+      endpoints are ``csrf_exempt`` at the router, so the token is what
+      stops a third-party page filing a change under a member's name;
+    * signed in, not a member of this workspace → **403**.
+
+    The returned ``Reviewer`` is always ``verified`` — the identity on the
+    row and in the feedback ledger is the session's, never a typed name.
+    This reverses the 2026-08-14 "anyone with the link may edit" rule
+    (``docs/learnings/public-summary-editing.md``).
+    """
+    from apps.opps.public_input import Reviewer, collapse, session_identity_is_trustworthy
+    from apps.workspaces.models import WorkspaceMembership
+
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        raise ProblemError(
+            401, "Sign in to edit", type_=TYPE_AUTH,
+            detail="Sign in with an account in this workspace to change, confirm "
+                   "or comment on decisions.",
+        )
+    if not session_identity_is_trustworthy(request):
+        raise ProblemError(
+            403, "Request not verified", type_=TYPE_FORBIDDEN,
+            detail="Reload the page and try again.",
+        )
+    if not WorkspaceMembership.objects.filter(
+        workspace__slug=workspace, user=user,
+    ).exists():
+        raise ProblemError(
+            403, "Not a member of this workspace", type_=TYPE_FORBIDDEN,
+            detail="Only members of this workspace can change, confirm or comment "
+                   "on its decisions.",
+        )
+    email = collapse(getattr(user, "email", "") or "")
+    name = collapse(getattr(user, "display_name", "") or "") or email
+    return Reviewer(email=email, name=name, verified=True)
+
+
 def _public_workspace(workspace: str):
     from apps.workspaces.models import Workspace
 
@@ -2604,55 +2672,37 @@ def public_decision_edit(
     decision_id: Annotated[str, Path()],
     body: DecisionEditIn,
 ) -> HttpResponse:
-    """Change a decision's value in place. Anyone with the link may.
+    """Change (or, with ``confirm``, confirm) one decision's value in place.
 
-    This deliberately does NOT gate on membership, and deliberately has no
-    proposal/promotion state. Jonathan, 2026-08-14: "we definitely want
-    the decisions UI to be editable by users … reviewer 2 can change /
-    update reviewer 1 anyway in the UI, and that should just be the same
-    as Dimagi going in and updating things on top of the anonymous input
-    (also if you are logged in, obviously should not be anonymous)."
-    The bar to start engaging with ACE has to be very low because it is
-    speculative AI work — an account requirement is a barrier, a name
-    field is not. And the PDD these rows summarize is already
-    world-editable via anyone-with-link and already seeds the next run,
-    so gating this more tightly than the design document was backwards.
+    **Members only** (Jonathan, 2026-10-03: "no anonymous editing at all").
+    Anyone may read the summary; writing needs a signed-in account in this
+    workspace — 401 without a session, 403 for a non-member or a request
+    that fails CSRF. See ``_member_reviewer``. The identity on the row is
+    always the session's (``decided_by_verified: true``).
 
-    It writes the SAME store the Workbench's authenticated editor writes
+    It writes the SAME store the Workbench's editor writes
     (``<opp>/inputs/decision-overrides.yaml``, read by the plugin's
     ``decisions_append_rows`` at the decisions write boundary), through
-    the same merge and the same serializer. The only thing that differs
-    between the two surfaces is how the identity on the row was resolved.
+    the same merge and the same serializer.
 
     Refusals: a ``decision_id`` the run's ``decisions.yaml`` does not
     carry is refused, not stored (the override would be unroutable). HTML
     is refused rather than mangled. Lengths are capped before any Drive
-    round-trip. An anonymous caller with no name is refused; a signed-in
-    caller's typed name is ignored in favour of their session identity.
+    round-trip.
     """
     from apps.opps.decision_overrides import (
         DecisionOverridesError,
         apply_decision_edit,
     )
-    from apps.opps.public_input import (
-        PublicInputRejected,
-        resolve_reviewer,
-        session_identity_is_trustworthy,
-    )
+    from apps.opps.public_input import PublicInputRejected
 
+    reviewer = _member_reviewer(request, workspace)
     _enforce_public_write_budget(request)
     ws = _public_workspace(workspace)
     drive = _public_write_drive(ws)
     _public_run_folders(drive, ws, slug, run_id)
 
     try:
-        reviewer = resolve_reviewer(
-            getattr(request, "user", None)
-            if session_identity_is_trustworthy(request)
-            else None,
-            reviewer=body.reviewer,
-            reviewer_email=body.reviewer_email,
-        )
         result = apply_decision_edit(
             drive,
             ace_root_folder_id=ws.drive_root_folder_id,
@@ -2720,6 +2770,7 @@ def public_decision_reaction(
     """
     from apps.opps.reactions import ReactionRejected, submit_decision_reaction
 
+    reviewer = _member_reviewer(request, workspace)
     _enforce_public_write_budget(request)
     ws = _public_workspace(workspace)
     drive = _public_write_drive(ws)
@@ -2735,8 +2786,8 @@ def public_decision_reaction(
             run_folder_id=run_folder.id,
             run_id=run_id,
             decision_id=decision_id,
-            reviewer=body.reviewer,
-            reviewer_email=body.reviewer_email,
+            reviewer=reviewer.name,
+            reviewer_email=reviewer.email or None,
             comment=body.comment,
             artifact_url=summary_url,
         )

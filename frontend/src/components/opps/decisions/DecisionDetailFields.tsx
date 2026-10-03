@@ -1,4 +1,5 @@
 import type { Decision } from "@/api/types.ws";
+import { decisionDisplay } from "@/components/opps/decisions/decisionDisplay";
 import { OptionPills } from "@/components/opps/decisions/OptionPills";
 import { cn } from "@/lib/utils";
 
@@ -69,8 +70,24 @@ export function DecisionDetailFields({
   optionsLabel?: string;
 }) {
   const replaced = effectiveValue !== decision.ai_default;
+  const shown = decisionDisplay(decision, effectiveValue);
   return (
     <>
+      {/* The row headline/value may be ACE's plain wording; the technical
+          reader still sees the exact question and option. */}
+      {shown.rawQuestionDiffers && (
+        <DetailRow
+          wide
+          label="Exact question"
+          value={<span className="text-muted-foreground">{decision.question}</span>}
+        />
+      )}
+      {shown.rawValueDiffers && (
+        <DetailRow
+          label="Exact option"
+          value={<span className="font-mono text-[11px] text-foreground">{effectiveValue}</span>}
+        />
+      )}
       <DetailRow
         wide
         label={optionsLabel}

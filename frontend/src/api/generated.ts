@@ -1405,31 +1405,23 @@ export interface paths {
         readonly put?: never;
         /**
          * Change one decision's answer from the public run summary
-         * @description Change a decision's value in place. Anyone with the link may.
+         * @description Change (or, with ``confirm``, confirm) one decision's value in place.
          *
-         *     This deliberately does NOT gate on membership, and deliberately has no
-         *     proposal/promotion state. Jonathan, 2026-08-14: "we definitely want
-         *     the decisions UI to be editable by users … reviewer 2 can change /
-         *     update reviewer 1 anyway in the UI, and that should just be the same
-         *     as Dimagi going in and updating things on top of the anonymous input
-         *     (also if you are logged in, obviously should not be anonymous)."
-         *     The bar to start engaging with ACE has to be very low because it is
-         *     speculative AI work — an account requirement is a barrier, a name
-         *     field is not. And the PDD these rows summarize is already
-         *     world-editable via anyone-with-link and already seeds the next run,
-         *     so gating this more tightly than the design document was backwards.
+         *     **Members only** (Jonathan, 2026-10-03: "no anonymous editing at all").
+         *     Anyone may read the summary; writing needs a signed-in account in this
+         *     workspace — 401 without a session, 403 for a non-member or a request
+         *     that fails CSRF. See ``_member_reviewer``. The identity on the row is
+         *     always the session's (``decided_by_verified: true``).
          *
-         *     It writes the SAME store the Workbench's authenticated editor writes
+         *     It writes the SAME store the Workbench's editor writes
          *     (``<opp>/inputs/decision-overrides.yaml``, read by the plugin's
          *     ``decisions_append_rows`` at the decisions write boundary), through
-         *     the same merge and the same serializer. The only thing that differs
-         *     between the two surfaces is how the identity on the row was resolved.
+         *     the same merge and the same serializer.
          *
          *     Refusals: a ``decision_id`` the run's ``decisions.yaml`` does not
          *     carry is refused, not stored (the override would be unroutable). HTML
          *     is refused rather than mangled. Lengths are capped before any Drive
-         *     round-trip. An anonymous caller with no name is refused; a signed-in
-         *     caller's typed name is ignored in favour of their session identity.
+         *     round-trip.
          */
         readonly post: operations["apps_opps_api_public_decision_edit"];
         readonly delete?: never;
@@ -3850,31 +3842,16 @@ export interface components {
          * DecisionEditIn
          * @description Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.
          *
-         *     Anyone with the link can change a decision's value in place — no
-         *     proposal state, no promotion step, no member-only privilege, and
-         *     reviewer 2 changing reviewer 1's answer is the same act as Dimagi
-         *     changing either. Safety is visibility and reversibility (attribution
-         *     on every row, full history, undo from the UI), not permission — the
-         *     same way it is in a Google Doc, which is exactly what the PDD these
-         *     decisions summarize already is.
-         *
-         *     Identity resolves per caller and NOT from this body when we already
-         *     know who it is: **signed in ⇒ never anonymous**, so ``reviewer`` and
-         *     ``reviewer_email`` are ignored for an authenticated request and
-         *     REQUIRED for an anonymous one. See ``apps.opps.public_input``.
-         *
-         *     Length ceilings are enforced again in ``apps.opps.decision_overrides``
-         *     — these are the cheap first pass, before any Drive round-trip.
+         *     Members only: the identity is the SESSION's, so the body carries no
+         *     name or email (the self-reported ``reviewer`` fields were removed with
+         *     anonymous editing, 2026-10-03). Length ceilings are enforced again in
+         *     ``apps.opps.decision_overrides`` — these are the cheap first pass.
          */
         readonly DecisionEditIn: {
             /** Value */
             readonly value: string;
             /** Reasoning */
             readonly reasoning?: string | null;
-            /** Reviewer */
-            readonly reviewer?: string | null;
-            /** Reviewer Email */
-            readonly reviewer_email?: string | null;
             /**
              * Confirm
              * @default false
@@ -3905,27 +3882,13 @@ export interface components {
          * DecisionReactionIn
          * @description Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.
          *
-         *     ``reviewer`` is REQUIRED and self-reported. The page has no login and
-         *     a partner cannot self-serve one, so the only honest options were a
-         *     required free-text name or anonymous reactions — and an anonymous
-         *     reaction defeats the store it lands in: the feedback ledger's whole
-         *     value is being able to tell a reviewer where THEIR comment went, and
-         *     to tell a future reader whose judgement drove a change. An unsigned
-         *     comment is unanswerable and uncreditable. So: required name, optional
-         *     email (the reply path), and the record says the name is self-reported
-         *     rather than pretending it is verified.
-         *
-         *     Length ceilings live in ``apps.opps.reactions`` and are enforced
-         *     there too — these are the cheap first pass, so an oversized body is
-         *     rejected before any Drive round-trip.
+         *     Members only, like editing: the commenter is the signed-in session
+         *     user, so the body carries only the comment. Length ceilings live in
+         *     ``apps.opps.reactions`` and are enforced there too.
          */
         readonly DecisionReactionIn: {
-            /** Reviewer */
-            readonly reviewer: string;
             /** Comment */
             readonly comment: string;
-            /** Reviewer Email */
-            readonly reviewer_email?: string | null;
         };
         /** WorkspaceOut */
         readonly WorkspaceOut: {
