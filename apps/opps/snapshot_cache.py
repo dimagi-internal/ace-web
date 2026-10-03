@@ -101,26 +101,29 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        The Drive files never changed, so warm v14 entries kept serving the
 #        smoke: spark-facilitator/20260926-1800's App Screenshot Capture read
 #        25 after the deploy, 92 on a refresh.
-#   v16 — RunDetail gained ``release_check`` (the plugin's release-check
-#        verdict). A warm v15 entry would show a release-ready run as never
-#        checked until its Drive files next changed.
+#   v16 — RunDetail gained the plugin's release verdict. A warm v15
+#        entry would show a release-ready run as never checked until its Drive files next changed.
 #   v17 — Decision gained ``superseded_by`` (read ace-side because
 #        canopy-agent-runs drops it). A warm v16 entry would keep serving
 #        corrected / fork-retired rows as live choices on the Phases
 #        decisions panel until decisions.yaml next changed.
 #   v18 — Decision gained the optional review fields (``review_ask``,
 #        ``plain``, ``audience``, ``check_at`` … read ace-side like
-#        ``superseded_by``), and release-check items gained ``summary`` /
+#        ``superseded_by``), and release-verdict items gained ``summary`` /
 #        ``action``. A warm v17 entry would serve rows without them until
 #        decisions.yaml next changed.
 #   v19 — Decision gained ``plain_question`` / ``plain_value`` (display
 #        fields). A warm v18 entry would serve rows without them.
-#   v20 — ``release_check`` reads the plugin's validate-release-readiness
-#        verdict (``release-readiness_verdict.yaml``, legacy release-check as
-#        fallback) and gained ``kind`` / ``reviewers`` / ``release_plan``. A
+#   v20 — the release verdict reads the plugin's validate-release-readiness
+#        verdict (``release-readiness_verdict.yaml``, with a legacy fallback)
+#        and gained ``kind`` / ``reviewers`` / ``release_plan``. A
 #        warm v19 entry would serve a release-ready run as "Re-validate" (no
 #        plan) until its Drive files next changed.
-_KEY_VERSION = "v20"
+#   v21 — the field is renamed ``release_readiness`` and the legacy
+#        verdict file is no longer read. A warm v20 entry would carry the
+#        old key, which the frontend no longer reads, so every validated
+#        run would show "Not validated" until its Drive files next changed.
+_KEY_VERSION = "v21"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

@@ -1,24 +1,22 @@
 """The run's release-readiness verdict — is it ready to share with the partner?
 
-The ACE plugin's ``validate-release-readiness`` skill (formerly
-``release-check``) makes one final pass across everything a run produced
-(every QA/eval gate, the live Connect read-back, output previews, every link as
-the partner would open it, the public summary) and does every piece of work a
-release could cause EXCEPT sharing. It writes ONE verdict next to
+The ACE plugin's ``validate-release-readiness`` skill makes one final pass
+across everything a run produced (every QA/eval gate, the live Connect
+read-back, output previews, every link as the partner would open it, the
+public summary) and does every piece of work a release could cause EXCEPT
+sharing. It writes ONE verdict next to
 ``run_state.yaml``::
 
     <run>/release-readiness_verdict.yaml   (schema_version 2, kind release-readiness)
     <run>/release-readiness_report.md      (the human-readable report, a Doc)
 
-Older runs carry the legacy pair, still read as a fallback::
-
-    <run>/release-check_verdict.yaml       (ReleaseVerdict v1)
-    <run>/release-check_report.md
+No other file name is read: a run with no ``release-readiness_verdict.yaml``
+has not been validated.
 
 A READY v2 verdict carries a ``release_plan``: the exact, ordered share actions
 ``/ace:release`` will execute and nothing else (HQ / Connect / Drive / ace-web
-invites, the forward-source link, the emails). A READY v1 verdict has no plan,
-so it is NOT ready — ``/ace:release`` needs a plan.
+invites, the forward-source link, the emails). A READY verdict whose plan is
+missing or unreadable is NOT ready — ``/ace:release`` needs a plan.
 
 ``/ace:release`` refuses to invite anyone without a READY verdict for that run,
 so the Workbench shows it where the release decision is made. This module only
@@ -36,16 +34,9 @@ from apps.opps.drive_client import DriveClient, DriveFile
 
 log = logging.getLogger(__name__)
 
-#: (verdict, report, kind) — the new name first; the legacy pair is the
-#: fallback, and a report is only ever paired with the verdict it sits beside.
-_FILE_PAIRS = (
-    ("release-readiness_verdict.yaml", "release-readiness_report.md", "release-readiness"),
-    ("release-check_verdict.yaml", "release-check_report.md", "release-check"),
-)
-VERDICT_NAME = _FILE_PAIRS[0][0]
-REPORT_NAME = _FILE_PAIRS[0][1]
-LEGACY_VERDICT_NAME = _FILE_PAIRS[1][0]
-LEGACY_REPORT_NAME = _FILE_PAIRS[1][1]
+VERDICT_NAME = "release-readiness_verdict.yaml"
+REPORT_NAME = "release-readiness_report.md"
+KIND = "release-readiness"
 
 #: ``summary`` / ``action`` are the plain-language sentence and next step ACE
 #: adds per item (2026-10); older verdicts carry only ``detail`` / ``fix``,
@@ -67,7 +58,7 @@ _ACTION_BOOL_FIELDS = ("shared", "cross_workspace")
 _OPTION_FIELDS = ("forward_source", "allow_cross_workspace_forward", "allow_shared_connect")
 
 
-def load_release_check(client: DriveClient, run_children: list[DriveFile]) -> dict | None:
+def load_release_readiness(client: DriveClient, run_children: list[DriveFile]) -> dict | None:
     """The run's latest release-readiness verdict, or None when it has none.
 
     ``{kind, verdict, checked_at, run_last_write, read_only, counts, blockers,
@@ -76,18 +67,17 @@ def load_release_check(client: DriveClient, run_children: list[DriveFile]) -> di
     (always None unless the verdict is READY).
     """
     by_name = {f.name: f for f in run_children}
-    pair = next(((v, r, k) for v, r, k in _FILE_PAIRS if v in by_name), None)
-    if pair is None:
+    verdict_file = by_name.get(VERDICT_NAME)
+    if verdict_file is None:
         return None
-    verdict_name, report_name, kind = pair
-    verdict_file = by_name[verdict_name]
-    report = by_name.get(report_name)
+    kind = KIND
+    report = by_name.get(REPORT_NAME)
     report_ref = {"file_id": report.id, "url": report.web_view_link} if report else None
     try:
         text = client.get_content(verdict_file.id, verdict_file.mime_type).content
         data = yaml.safe_load(str(text).replace("\r\n\r\n\r\n", "\n").replace("\r\n", "\n"))
     except Exception:  # noqa: BLE001 — an unreadable verdict is "not checked"
-        log.warning("release_check: could not read %s", verdict_name, exc_info=True)
+        log.warning("release_readiness: could not read %s", VERDICT_NAME, exc_info=True)
         data = None
     if not isinstance(data, dict):
         return {"kind": kind, "verdict": "UNREADABLE", "blockers": [], "warnings": [],
@@ -100,7 +90,7 @@ def load_release_check(client: DriveClient, run_children: list[DriveFile]) -> di
     try:
         plan = _plan(data.get("release_plan")) if verdict == "READY" else None
     except Exception:  # noqa: BLE001 — a malformed plan is "not shown"
-        log.warning("release_check: could not sanitize release_plan", exc_info=True)
+        log.warning("release_readiness: could not sanitize release_plan", exc_info=True)
         plan = None
     return {
         "kind": kind,

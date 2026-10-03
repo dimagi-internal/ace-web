@@ -379,13 +379,13 @@ export interface Run {
    *  flattened server-side by apps/opps/run_products.py. Absent on a
    *  snapshot cached before v11. */
   products?: RunProduct[];
-  /** The plugin's validate-release-readiness verdict (legacy: release-check)
-   *  for this run, or absent/null when it has never been validated
-   *  (apps/opps/release_check.py). */
-  release_check?: ReleaseCheck | null;
+  /** The plugin's validate-release-readiness verdict for this run, or
+   *  absent/null when it has never been validated
+   *  (apps/opps/release_readiness.py). */
+  release_readiness?: ReleaseReadiness | null;
 }
 
-export interface ReleaseCheckItem {
+export interface ReleaseReadinessItem {
   id: string | null;
   area: string | null;
   severity?: string | null;
@@ -432,9 +432,9 @@ export interface ReleasePlan {
   emails: { to: string; subject: string | null; body: string | null }[];
 }
 
-export interface ReleaseCheck {
-  /** Which verdict file was read; absent on a snapshot cached before v20. */
-  kind?: "release-readiness" | "release-check";
+export interface ReleaseReadiness {
+  /** The verdict kind; always "release-readiness". */
+  kind?: "release-readiness";
   reviewers?: ReleaseReviewer[];
   /** The exact share actions a release runs — only on a READY v2 verdict. */
   release_plan?: ReleasePlan | null;
@@ -443,8 +443,8 @@ export interface ReleaseCheck {
   run_last_write: string | null;
   read_only: boolean;
   counts: { blockers: number; warnings: number };
-  blockers: ReleaseCheckItem[];
-  warnings: ReleaseCheckItem[];
+  blockers: ReleaseReadinessItem[];
+  warnings: ReleaseReadinessItem[];
   report: { file_id: string; url: string | null } | null;
 }
 

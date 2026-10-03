@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { CheckCircle2, ExternalLink, RefreshCw, ShieldAlert, ShieldQuestion } from "lucide-react";
 
-import type { ReleaseCheck, ReleaseCheckItem, ReleasePlan, ReleasePlanAction } from "@/api/types.ws";
+import type { ReleasePlan, ReleasePlanAction, ReleaseReadiness, ReleaseReadinessItem } from "@/api/types.ws";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "canopy-ui/ui";
 import { cn } from "@/lib/utils";
 
 /**
  * Is this run ready to share with the partner? The ACE plugin's
- * `validate-release-readiness` (formerly `release-check`) makes one final pass
+ * `validate-release-readiness` makes one final pass
  * across everything the run produced, does every piece of work a release could
  * cause except sharing, and writes a READY / NOT READY verdict. A READY verdict
  * carries the release plan: the exact share actions `/ace:release` will run,
@@ -16,13 +16,13 @@ import { cn } from "@/lib/utils";
  * exactly what releasing will share.
  *
  * A read-only validation (a dry run) never counts as ready, a READY verdict
- * with no plan (a legacy release-check) asks to be re-validated, and a run
+ * with no readable plan asks to be re-validated, and a run
  * that was never validated says so rather than looking fine.
  */
-export function ReleaseReadinessBadge({ check }: { check: ReleaseCheck | null | undefined }) {
+export function ReleaseReadinessBadge({ readiness }: { readiness: ReleaseReadiness | null | undefined }) {
   const [open, setOpen] = useState(false);
 
-  if (!check) {
+  if (!readiness) {
     return (
       <span
         className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground/60"
@@ -34,17 +34,17 @@ export function ReleaseReadinessBadge({ check }: { check: ReleaseCheck | null | 
     );
   }
 
-  const plan = check.release_plan ?? null;
-  const readyVerdict = check.verdict === "READY" && !check.read_only;
+  const plan = readiness.release_plan ?? null;
+  const readyVerdict = readiness.verdict === "READY" && !readiness.read_only;
   const ready = readyVerdict && plan !== null;
   const needsPlan = readyVerdict && plan === null;
   const label = ready
     ? "Ready to release"
     : needsPlan
       ? "Re-validate"
-      : check.verdict === "UNREADABLE"
+      : readiness.verdict === "UNREADABLE"
         ? "Readiness unreadable"
-        : `Not ready · ${check.counts.blockers} blocker${check.counts.blockers === 1 ? "" : "s"}`;
+        : `Not ready · ${readiness.counts.blockers} blocker${readiness.counts.blockers === 1 ? "" : "s"}`;
 
   return (
     <>
@@ -69,7 +69,7 @@ export function ReleaseReadinessBadge({ check }: { check: ReleaseCheck | null | 
           <ShieldAlert className="h-3 w-3" />
         )}
         {label}
-        {check.read_only && <span className="text-[10px] opacity-80">(dry run)</span>}
+        {readiness.read_only && <span className="text-[10px] opacity-80">(dry run)</span>}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col gap-3">
@@ -78,26 +78,26 @@ export function ReleaseReadinessBadge({ check }: { check: ReleaseCheck | null | 
               {ready ? "Ready to release" : needsPlan ? "Re-validate before release" : "Not ready to release"}
             </DialogTitle>
             <DialogDescription>
-              Release-readiness validation{check.checked_at ? ` of ${formatWhen(check.checked_at)}` : ""}
-              {check.read_only ? " — a dry run, which never counts as ready" : ""}.{" "}
-              {check.counts.blockers} blocker{check.counts.blockers === 1 ? "" : "s"},{" "}
-              {check.counts.warnings} warning{check.counts.warnings === 1 ? "" : "s"}.
+              Release-readiness validation{readiness.checked_at ? ` of ${formatWhen(readiness.checked_at)}` : ""}
+              {readiness.read_only ? " — a dry run, which never counts as ready" : ""}.{" "}
+              {readiness.counts.blockers} blocker{readiness.counts.blockers === 1 ? "" : "s"},{" "}
+              {readiness.counts.warnings} warning{readiness.counts.warnings === 1 ? "" : "s"}.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             {needsPlan && (
               <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
-                This verdict has no release plan (it came from the older release check). /ace:release
+                This verdict carries no readable release plan. /ace:release
                 needs a release plan from /ace:validate-release-readiness — run it again on this run.
               </p>
             )}
             {ready && plan && <PlanView plan={plan} />}
-            <ItemList title="Blockers — must be fixed before release" items={check.blockers} tone="rose" />
-            <ItemList title="Warnings — should be fixed" items={check.warnings} tone="amber" />
+            <ItemList title="Blockers — must be fixed before release" items={readiness.blockers} tone="rose" />
+            <ItemList title="Warnings — should be fixed" items={readiness.warnings} tone="amber" />
           </div>
-          {check.report?.url && (
+          {readiness.report?.url && (
             <a
-              href={check.report.url}
+              href={readiness.report.url}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground"
@@ -270,7 +270,7 @@ function ItemList({
   tone,
 }: {
   title: string;
-  items: readonly ReleaseCheckItem[];
+  items: readonly ReleaseReadinessItem[];
   tone: "rose" | "amber";
 }) {
   if (items.length === 0) return null;

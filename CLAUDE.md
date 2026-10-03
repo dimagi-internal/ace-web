@@ -579,24 +579,22 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   the eval covers what matters). `parse_qa_decisions` → system overview
   `qa_decisions` → each step's `qa_policy`. Only two states are flagged: a
   QA skill that recorded no result, and a QA "pass" that ran 0 checks.
-  **Release readiness:** the plugin's `validate-release-readiness` (formerly
-  `release-check`; one final pass across a run — every gate, the live Connect
-  read-back, preview gaps, every link as the partner opens it, the public
-  summary — doing every piece of work a release could cause EXCEPT sharing)
-  writes `<run>/release-readiness_verdict.yaml` (schema_version 2) +
-  `release-readiness_report.md`; older runs carry the legacy
-  `release-check_verdict.yaml` / `release-check_report.md`, read as a
-  fallback (a report is only paired with the verdict beside it). A READY v2
-  verdict carries `release_plan` — the exact ordered share actions
-  `/ace:release` executes (HQ / Connect / Drive / forward-source / ace-web
-  invite / email) plus `not_granted` and the emails; releasing changes nothing
-  else. `apps/opps/release_check.py` reads + sanitizes it into
-  `current_run.release_check` (`kind`, `reviewers`, `release_plan`); the run's
-  tab row shows `ReleaseReadinessBadge` (Ready to release / Not ready · N
-  blockers / Not validated). Ready = READY && !read_only && plan present; a
-  READY verdict with no plan (legacy) shows "Re-validate". When ready, the
+  **Release readiness:** the plugin's `validate-release-readiness` (one
+  final pass across a run — every gate, the live Connect read-back, preview
+  gaps, every link as the partner opens it, the public summary — doing every
+  piece of work a release could cause EXCEPT sharing) writes
+  `<run>/release-readiness_verdict.yaml` (schema_version 2) +
+  `release-readiness_report.md`. No other file name is read. A READY verdict
+  carries `release_plan` — the exact ordered share actions `/ace:release`
+  executes (HQ / Connect / Drive / forward-source / ace-web invite / email)
+  plus `not_granted` and the emails; releasing changes nothing else.
+  `apps/opps/release_readiness.py` reads + sanitizes it into
+  `current_run.release_readiness` (`kind`, `reviewers`, `release_plan`); the
+  run's tab row shows `ReleaseReadinessBadge` (Ready to release / Not ready ·
+  N blockers / Not validated). Ready = READY && !read_only && plan present; a
+  READY verdict with no readable plan shows "Re-validate". When ready, the
   dialog shows the plan: reviewer × HQ/Connect/Drive/ace-web/OCS grant table,
-  per-run Drive shares + forward-source, and each email. Snapshot cache v20.
+  per-run Drive shares + forward-source, and each email. Snapshot cache v21.
   **Output previews** (screenshots): a preview lives with the phase
   that BUILT the output, whoever took it —
   `<N>-<phase>/previews/<output-slug>/_previews.yaml` + PNGs (Phase 6 writes

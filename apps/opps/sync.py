@@ -97,9 +97,9 @@ class RunDetail:
     # apps/opps/output_previews.py; attached to the products catalogue at
     # serialize time. Empty for runs with no previews.
     output_previews: list[dict] = field(default_factory=list)
-    # The run's latest release-check verdict (apps/opps/release_check.py), or
+    # The run's latest release-readiness verdict (apps/opps/release_readiness.py), or
     # None when the run has never been checked.
-    release_check: dict | None = None
+    release_readiness: dict | None = None
     # Per-run decisions log (added with the decisions-log framework, May
     # 2026). Each row carries its own ``phase`` tag; the UI groups them
     # per phase. Empty list when the run predates the framework or hasn't

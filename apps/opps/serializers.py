@@ -276,7 +276,7 @@ def serialize_run_detail(run: RunDetail) -> dict:
         # deserialises without it.
         "phase_timings": dict(getattr(run, "phase_timings", None) or {}),
         "products": _run_products(run),
-        "release_check": getattr(run, "release_check", None),
+        "release_readiness": getattr(run, "release_readiness", None),
     }
 
 

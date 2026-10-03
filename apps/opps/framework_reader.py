@@ -56,7 +56,7 @@ from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.drive_export import read_prose
 from apps.opps.output_previews import load_output_previews
 from apps.opps.parsers import decision_extras
-from apps.opps.release_check import load_release_check
+from apps.opps.release_readiness import load_release_readiness
 
 log = logging.getLogger(__name__)
 
@@ -467,7 +467,7 @@ def load_opp_run_via_store(
         run_folder_id,
         lineage_folder_ids=_fork_lineage(client, state_data, runs_summary),
     )
-    rd.release_check = load_release_check(client, run_children)
+    rd.release_readiness = load_release_readiness(client, run_children)
     # current_phase/current_step: mirror the legacy ``_load_opp_run`` exactly —
     # take them from the matching run-summary row (which already applied the
     # ``phase``/``step`` → ``current_*`` precedence).

@@ -274,7 +274,7 @@ export default function OppRunPage() {
           </button>
         )}
         <div className={replay.active && view === "phase" ? "ml-auto" : ""}>
-          <ReleaseReadinessBadge check={snapshot.current_run.release_check} />
+          <ReleaseReadinessBadge readiness={snapshot.current_run.release_readiness} />
         </div>
         <a
           href={`/ace/opps/${workspaceSlug}/${slug}/runs/${snapshot.current_run.run_id}/summary`}
