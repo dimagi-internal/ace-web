@@ -51,10 +51,42 @@ export function clearViewCache() {
   cache.clear();
 }
 
+/** Views in flight at once. A product with 30 screenshots asks for 30 views
+ *  the moment it opens; each is a ~1s Drive read on the server, and firing
+ *  them all together once exhausted its DB pool and 503'd most of them. */
+const MAX_IN_FLIGHT = 6;
+/** Tries per view when the server answers 503 (busy, says retry). */
+const MAX_TRIES = 3;
+
+let inFlight = 0;
+const waiting: (() => void)[] = [];
+
+async function withSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (inFlight >= MAX_IN_FLIGHT) await new Promise<void>((resolve) => waiting.push(resolve));
+  inFlight++;
+  try {
+    return await work();
+  } finally {
+    inFlight--;
+    waiting.shift()?.();
+  }
+}
+
+/** The server's Retry-After in ms, bounded so a tile never waits long. */
+function retryDelayMs(response: Response): number {
+  const seconds = Number(response.headers.get("Retry-After"));
+  return Math.min(Number.isFinite(seconds) && seconds > 0 ? seconds : 2, 5) * 1000;
+}
+
 async function fetchView(url: string): Promise<ViewResult> {
   let response: Response;
   try {
-    response = await fetch(url, { credentials: "include" });
+    for (let attempt = 1; ; attempt++) {
+      response = await withSlot(() => fetch(url, { credentials: "include" }));
+      if (response.status !== 503 || attempt >= MAX_TRIES) break;
+      const delay = retryDelayMs(response);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   } catch (e) {
     return { kind: "error", status: 0, message: String(e), driveLink: null };
   }

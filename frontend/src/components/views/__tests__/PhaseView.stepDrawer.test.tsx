@@ -56,7 +56,7 @@ const OFF: Replay = {
   beat: { phase: null, skill: null, index: -1 },
   reveal: { done: new Set(), running: new Set(), phases: new Set() }, total: 0, playing: false,
   start: noop, stop: noop, toggle: noop, next: noop, prev: noop, restart: noop, goTo: noop,
-  goToSkill: noop, hold: noop,
+  goToSkill: noop, goToPhase: () => false, hold: noop,
 } as unknown as Replay;
 const ON: Replay = { ...OFF, active: true } as Replay;
 

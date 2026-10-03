@@ -134,7 +134,7 @@ function replayAt(index: number, over: Partial<Replay> = {}): Replay {
     beat: beatAtIndex(TIMELINE, index), reveal: index < 0 ? EMPTY_REVEAL : revealAt(TIMELINE, index),
     total: TIMELINE.events.length, playing: false,
     start: noop, stop: noop, toggle: noop, next: noop, prev: noop, restart: noop, goTo: noop,
-    goToSkill: noop, hold: noop,
+    goToSkill: noop, goToPhase: () => false, hold: noop,
     ...over,
   };
 }
@@ -188,6 +188,20 @@ describe("PhaseView in replay", () => {
     expect(
       screen.getByRole("dialog", { name: /Just photographed: Turmeric — FLW Training/ }),
     ).toBeInTheDocument();
+  });
+
+  it("moves the replay cursor to a phase picked on the left", () => {
+    const goToPhase = vi.fn(() => true);
+    renderAt(replayAt(2, { goToPhase }));
+    fireEvent.click(screen.getByRole("button", { name: /QA and training/ }));
+    expect(goToPhase).toHaveBeenCalledWith("qa-and-training");
+  });
+
+  it("doesn't rewind when the cursor's own phase is picked", () => {
+    const goToPhase = vi.fn(() => true);
+    renderAt(replayAt(2, { goToPhase }), "/?phase=idea-to-design");
+    fireEvent.click(screen.getByRole("button", { name: /Idea to design/ }));
+    expect(goToPhase).not.toHaveBeenCalled();
   });
 
   it("shows what the beat just built on the card of the step that built it", () => {

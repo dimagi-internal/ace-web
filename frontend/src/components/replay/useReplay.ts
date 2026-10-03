@@ -5,6 +5,7 @@ import { getStepDetail } from "@/api/opps";
 
 import {
   beatAtIndex,
+  beatForPhase,
   beatForSkill,
   EMPTY_REVEAL,
   NO_BEAT,
@@ -37,6 +38,8 @@ export interface Replay {
   /** Jump to a beat. Pauses, so whoever is driving holds where they land. */
   goTo: (index: number) => void;
   goToSkill: (skill: string) => void;
+  /** Jump to where `phase` starts. False when the run never reached it. */
+  goToPhase: (phase: string) => boolean;
   /** While held, auto-play waits — a pop-up holds the beat it is showing. */
   hold: (held: boolean) => void;
 }
@@ -122,6 +125,16 @@ export function useReplay(
     },
     [timeline, goTo],
   );
+  const goToPhase = useCallback(
+    (phase: string) => {
+      if (!timeline) return false;
+      const i = beatForPhase(timeline, phase);
+      if (i < 0) return false;
+      goTo(i);
+      return true;
+    },
+    [timeline, goTo],
+  );
 
   const toggle = useCallback(() => {
     if (total === 0) return;
@@ -201,6 +214,7 @@ export function useReplay(
     restart,
     goTo,
     goToSkill,
+    goToPhase,
     hold,
   };
 }
