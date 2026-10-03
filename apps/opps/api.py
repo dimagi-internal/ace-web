@@ -2654,6 +2654,7 @@ def public_decision_edit(
             value=body.value,
             reasoning=body.reasoning or "",
             reviewer=reviewer,
+            confirm=body.confirm,
         )
     except PublicInputRejected as exc:
         raise ProblemError(

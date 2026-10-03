@@ -101,6 +101,7 @@ _HISTORY_FIELDS = (
     "decided_by_verified",
     "decided_at",
     "source_run_id",
+    "confirmed",
 )
 
 
@@ -125,6 +126,7 @@ def make_override_row(
     reviewer: Reviewer,
     decided_at: str,
     source_run_id: str,
+    confirmed: bool = False,
 ) -> dict:
     """One override row, in the shape both surfaces write.
 
@@ -138,6 +140,13 @@ def make_override_row(
     a signed-in member and a partner who typed their name both get to
     change the value, and the row records which one it was rather than
     flattening them into an email field one of them can't fill.
+
+    ``confirmed`` marks a CONFIRMATION — a reviewer saying "keep the value
+    the build uses" — as distinct from a change. The row carries the value
+    already in force, so for the plugin it binds exactly what a change to
+    that value would (and a confirmed AI default is inert, as a revert is);
+    the flag is what lets the review page say "confirmed by …" instead of
+    "changed by …". Additive, so ``schema_version`` stays 1.
     """
     row: dict[str, Any] = {
         "id": row_id,
@@ -153,6 +162,8 @@ def make_override_row(
     row["decided_by_verified"] = reviewer.verified
     row["decided_at"] = decided_at
     row["source_run_id"] = source_run_id
+    if confirmed:
+        row["confirmed"] = True
     return row
 
 
@@ -213,7 +224,13 @@ def _snapshot(row: dict) -> dict:
 
 
 def _is_revert(row: dict) -> bool:
-    """Back to the AI default with nothing to say = a revert."""
+    """Back to the AI default with nothing to say = a revert.
+
+    A confirmation of the AI default is NOT a revert: it is a reviewer's
+    recorded sign-off and must survive the merge even with no history.
+    """
+    if row.get("confirmed"):
+        return False
     return (
         row.get("override") == row.get("ai_default")
         and not (row.get("override_reasoning") or "").strip()
@@ -470,8 +487,12 @@ def apply_decision_edit(
     reasoning: str,
     reviewer: Reviewer,
     now: datetime | None = None,
+    confirm: bool = False,
 ) -> dict:
     """Change ONE decision's answer, from either surface, in place.
+
+    ``confirm=True`` records a confirmation of ``value`` (the value already
+    in force) rather than a change — see ``make_override_row``.
 
     The public counterpart to ``save_decision_overrides``: no staging
     buffer (an anonymous caller has no authenticated WebSocket to stage
@@ -514,6 +535,7 @@ def apply_decision_edit(
         reviewer=reviewer,
         decided_at=(now or datetime.now(UTC)).isoformat(),
         source_run_id=source_run_id,
+        confirmed=confirm,
     )
     result = write_override_rows(
         drive, opp_folder_id=opp_folder.id, opp_slug=opp_slug, new_rows=[row],
@@ -549,6 +571,7 @@ def project_override(row: dict, *, include_email: bool) -> dict:
         "decided_at": row.get("decided_at", ""),
         "source_run_id": row.get("source_run_id", ""),
         "is_revert": _is_revert(row),
+        "confirmed": bool(row.get("confirmed", False)),
         "history": [
             {
                 "override": h.get("override", ""),
@@ -557,6 +580,7 @@ def project_override(row: dict, *, include_email: bool) -> dict:
                 or (h.get("decided_by", "") if include_email else ""),
                 "decided_by_verified": bool(h.get("decided_by_verified", False)),
                 "decided_at": h.get("decided_at", ""),
+                "confirmed": bool(h.get("confirmed", False)),
             }
             for h in (row.get("history") or [])
             if isinstance(h, dict)

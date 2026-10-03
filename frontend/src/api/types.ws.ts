@@ -338,6 +338,25 @@ export interface Decision {
    * "" on a live row (and on snapshots cached before the field existed).
    */
   superseded_by?: string;
+  // ── Optional review fields (ACE, 2026-10). Absent on older runs and on
+  // snapshots cached before they existed; "" means "not set". Every
+  // consumer must render sensibly without them.
+  /** `recommended-confirmation` puts the row in "Recommended to confirm before launch". */
+  review_ask?: string;
+  /** One plain sentence: why a reviewer should confirm this before launch. */
+  confirm_reason?: string;
+  /** One-line plain-language summary of the choice. */
+  plain?: string;
+  /** Where a reviewer can check the choice landed (a screen, a form…). */
+  check_at?: string;
+  /** What "right" looks like when they check. */
+  correct_looks_like?: string;
+  /** `partner` | `internal`; absent = partner. Internal rows are hidden by default. */
+  audience?: string;
+  /** Rule rows: `record` | `entity` | `worker` | `programme`. */
+  scope?: string;
+  /** Rule rows: `enforced` | `by-design` | `gap`. */
+  enforcement?: string;
 }
 
 export interface Run {
@@ -367,6 +386,10 @@ export interface ReleaseCheckItem {
   owner: string | null;
   detail: string | null;
   fix: string | null;
+  /** Plain-language sentence (ACE 2026-10). Preferred over `detail` when present. */
+  summary?: string | null;
+  /** Plain next step (ACE 2026-10). Preferred over `fix` when present. */
+  action?: string | null;
 }
 
 export interface ReleaseCheck {
@@ -486,6 +509,8 @@ export interface SavedDecisionOverride {
   source_run_id?: string;
   /** Row restored to the AI default — inert for the next run, kept visible. */
   is_revert?: boolean;
+  /** A reviewer CONFIRMED the value in force, rather than changing it. */
+  confirmed?: boolean;
   /** Prior states, newest first. What makes any change undoable. */
   history?: {
     override: string;

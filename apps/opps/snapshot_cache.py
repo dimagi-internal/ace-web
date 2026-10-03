@@ -108,7 +108,12 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        canopy-agent-runs drops it). A warm v16 entry would keep serving
 #        corrected / fork-retired rows as live choices on the Phases
 #        decisions panel until decisions.yaml next changed.
-_KEY_VERSION = "v17"
+#   v18 — Decision gained the optional review fields (``review_ask``,
+#        ``plain``, ``audience``, ``check_at`` … read ace-side like
+#        ``superseded_by``), and release-check items gained ``summary`` /
+#        ``action``. A warm v17 entry would serve rows without them until
+#        decisions.yaml next changed.
+_KEY_VERSION = "v18"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

@@ -29,7 +29,7 @@ const expandPanel = () =>
 const expandRow = () => fireEvent.click(screen.getByText("How many visit instruments?"));
 
 describe("DecisionsPanel — v4 evidence_basis / conflict_signals", () => {
-  it("flags a conflicting row with a 'conflicting' chip in the collapsed list", () => {
+  it("notes a conflicting row quietly in the collapsed list", () => {
     render(
       <DecisionsPanel
         phase="design"
@@ -42,21 +42,24 @@ describe("DecisionsPanel — v4 evidence_basis / conflict_signals", () => {
       />,
     );
     expandPanel(); // panel open, row still collapsed
-    expect(screen.getByText("conflicting")).toBeInTheDocument();
+    expect(screen.getByText("ACE's sources disagreed")).toBeInTheDocument();
   });
 
-  it("shows a quieter 'inferred' chip in the collapsed list", () => {
+  it("keeps 'inferred' out of the collapsed list and in the detail", () => {
+    // A third of rows are inferred; a chip on each carried no signal.
     render(
       <DecisionsPanel phase="design" decisions={[dec({ evidence_basis: "inferred" })]} />,
     );
     expandPanel();
-    expect(screen.getByText("inferred")).toBeInTheDocument();
+    expect(screen.queryByText(/inferred/)).toBeNull();
+    expandRow();
+    expect(screen.getByText(/^inferred —/)).toBeInTheDocument();
   });
 
   it("shows NO evidence chip for a stated (legacy) row", () => {
     render(<DecisionsPanel phase="design" decisions={[dec()]} />);
     expandPanel();
-    expect(screen.queryByText("conflicting")).toBeNull();
+    expect(screen.queryByText("ACE's sources disagreed")).toBeNull();
     expect(screen.queryByText("inferred")).toBeNull();
     expect(screen.queryByText("stated")).toBeNull();
   });

@@ -239,22 +239,41 @@ from `EvidenceBadge`, and sky for human-changed from the Workbench's
 "N overridden" chip.
 
 One width trap came out of sharing the row: every span in the header
-truncates, and `truncate` resolves a flex item's `min-width:auto` to 0, so
-in the summary's narrower `max-w-3xl` column the QUESTION — the one thing
-a reader is there for — was the item that collapsed to nothing while the
-row id and the answer kept their width. `DecisionRow` now caps the id,
-lets the answer yield, and gives the question a floor.
+truncated, and `truncate` resolves a flex item's `min-width:auto` to 0, so
+in the summary's narrow column the QUESTION collapsed to nothing — and
+expanding a row never un-truncated its own header, so the full question
+and answer never appeared anywhere. **Superseded 2026-10-03:** nothing in
+the header truncates any more; the question and answer wrap (side by side
+from `md`, stacked on a phone), the id moved into the detail, and the
+decisions tab widens the whole page to `max-w-6xl`. A test asserts no
+`truncate` class survives in an expanded header.
 
-What the lead-with-the-conflicts view was protecting is kept without
-sacrificing the structure:
+### What the reviewer must DO leads — not ACE's uncertainty (2026-10-03)
 
-* a phase holding a flagged row opens by default, and those rows open
-  inside it — so the contested rows are on screen at first paint, **in**
-  their phase rather than lifted out of it;
-* every other phase collapses to a one-line header with its counts, so 40
-  routine rows can't bury the 2 that matter;
-* "Worth your eye first" is a **jump list**, not a second rendering of the
-  same rows. One decision, one home.
+The tab used to lead with "Worth your eye first" and the Overview with
+"N need your eye", counting rows whose `evidence_basis` was `conflicting`
+or that a human had changed. Jonathan's review: that surfaces ACE's
+INTERNAL uncertainty, not what the reviewer has to do. The structure is now:
+
+* **Recommended to confirm before launch** — always open, on top: rows ACE
+  marks `review_ask: recommended-confirmation`, each with the value the
+  build uses, ACE's `confirm_reason`, and **Confirm** / **Change it**. A
+  confirmation goes through the same edit endpoint with `confirm: true`
+  and is stored as `confirmed: true` on the override row (additive,
+  `schema_version` stays 1; a confirmed AI default is inert for the next
+  run exactly as a revert is, but survives the merge so the page can say
+  "confirmed by <name>"). The Overview headline counts the confirmations
+  still outstanding (`confirmationCounts`), never conflicts.
+* **Choices ACE made** — every other live row, by phase; phases start
+  open because a collapsed row now says what was decided in full.
+* Hidden behind toggles: `audience: internal` rows and superseded rows
+  (the summary payload now SERVES superseded rows, marked with
+  `superseded_by`, but never counts them in `total` / `counts`).
+* `conflicting` is a quiet per-row note ("ACE's sources disagreed"), not
+  a badge, a jump list, or a count that asks for action.
+
+One decision, one home still holds: a row in the confirm group is not
+repeated in its phase.
 
 ### The phase LABEL must come from the plugin, but may not overrule the run
 

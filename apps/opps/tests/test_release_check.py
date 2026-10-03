@@ -46,3 +46,18 @@ def test_an_unreadable_verdict_is_never_ready():
     assert load_release_check(client, kids)["verdict"] == "UNREADABLE"
     client, kids = _children(**{"release-check_verdict.yaml": "verdict: SHIP_IT\n"})
     assert load_release_check(client, kids)["verdict"] == "UNREADABLE"
+
+
+def test_plain_summary_and_action_pass_through_and_are_optional():
+    """ACE adds a plain ``summary`` / ``action`` per item (2026-10); older
+    verdicts lack them and serve None, so the dialog falls back to
+    ``detail`` / ``fix``."""
+    verdict = dict(VERDICT)
+    verdict["blockers"] = [dict(VERDICT["blockers"][0],
+                                summary="The training deck failed its review.",
+                                action="Re-render the deck, then re-check.")]
+    client, kids = _children(**{"release-check_verdict.yaml": yaml.safe_dump(verdict)})
+    rc = load_release_check(client, kids)
+    assert rc["blockers"][0]["summary"] == "The training deck failed its review."
+    assert rc["blockers"][0]["action"] == "Re-render the deck, then re-check."
+    assert rc["warnings"][0]["summary"] is None and rc["warnings"][0]["action"] is None

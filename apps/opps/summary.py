@@ -22,7 +22,7 @@ What lives where:
     |---------------------------|------------------------------------------------------|
     | ``design``                | ``products.pdd.{title, description, file_id}``       |
     | ``commcare-setup``        | ``products.apps.{learn, deliver}.{name, nova_*, hq_*, build_status}`` |
-    | ``connect-setup``         | ``products.connect.{program, opportunity, ace_test_user, build_memo}`` |
+    | ``connect-setup``         | ``products.connect.{program, opportunity, ace_test_user}``  |
     | ``ocs-setup``             | ``products.ocs_chatbot.{experiment_id, public_id, embed_key, admin_url, team_slug}`` |
     | ``qa-and-training``       | ``products.training.{deck, docs.*}``                  |
     | ``synthetic-data-and-workflows`` | ``products.synthetic.{walkthroughs, dashboards, workflows, labs_opp_id}`` |
@@ -58,10 +58,8 @@ taken. The presence of the two files is therefore the only honest signal
 that it ran — which is exactly the signal the ``deep_qa`` section keys
 on. See ``_read_deep_qa``.
 
-And one reads a DOCUMENT BODY through a typed pointer: the build memo
-(``products.connect.build_memo.file_id``) is exported as markdown and
-carried as content, because it is the review artifact — see
-``_read_build_memo``.
+The build memo section (ace-web#767) was removed in 2026-10 when ACE
+retired the build memo; a run that still records one simply doesn't show it.
 """
 from __future__ import annotations
 
@@ -74,7 +72,7 @@ import yaml
 from django.conf import settings
 
 from apps.opps.drive_client import DriveClient
-from apps.opps.drive_export import GOOGLE_DOC_MIME, MARKDOWN_EXPORT, read_prose
+from apps.opps.drive_export import read_prose
 from apps.opps.reactions import read_reactions
 
 log = logging.getLogger(__name__)
@@ -318,10 +316,6 @@ def _state_drive_file_ids(state: dict) -> list[str]:
     learn = _phase_products(state, "closeout", "learnings")
     if isinstance(learn, dict):
         _add(learn, "summary_file_id", "new_pdd_file_id")
-
-    memo = _build_memo_block(state)
-    if memo:
-        ids.append(memo.get("file_id") or drive_file_id(memo.get("web_view_link")) or "")
 
     return [fid for fid in ids if fid]
 
@@ -1708,95 +1702,6 @@ def _read_design(state: dict, access: LinkAccessReader) -> dict | None:
     return {"docs": docs} if docs else None
 
 
-def _build_memo_block(state: dict) -> dict:
-    """``phases.connect-setup.products.connect.build_memo``, or ``{}``.
-
-    Written by ACE's ``skills/build-memo`` (ace#2371) at the end of
-    Phase 4 as ``{file_id, title, web_view_link, complete, gaps[]}``.
-    Every run before 2026-09-11 lacks it.
-    """
-    memo = _phase_products(state, "connect-setup", "connect").get("build_memo")
-    return memo if isinstance(memo, dict) else {}
-
-
-def _read_build_memo(
-    drive: DriveClient, state: dict, access: LinkAccessReader,
-) -> dict | None:
-    """The run's build memo, as CONTENT — the review artifact (ace-web#767).
-
-    The PDD defines it as the thing a human reviews instead of every
-    screen: "humans review the memo and spot-check the apps, rather than
-    reviewing every screen." So the page carries the document's text and
-    renders it, rather than a link to a Google Doc an external reviewer
-    may not be able to open (``access`` is measured as for every other
-    Drive link, and the link stays as a secondary action).
-
-    The body is read as ``text/markdown`` and passed through VERBATIM.
-    Measured on a real Drive round-trip of a memo shaped by the skill
-    (fixture ``build_memo_markdown_export.md``): the default
-    ``text/plain`` export flattens every table into tab-separated
-    fragments, and the memo is mostly tables. The markdown export keeps
-    them as GFM pipe tables but backslash-escapes punctuation
-    (``\\[ACE\\]``, ``1\\.``, ``consent\\_confirmed``). Those are
-    CommonMark escapes, and the page renders this body with a CommonMark
-    renderer that resolves them itself — so ``unescape_markdown`` is
-    deliberately NOT applied: it would turn an escaped ``\\|`` inside a
-    cell into a column break and ``1\\.`` at a line start into a list.
-
-    ``None`` when the run recorded no memo — every run before the skill
-    shipped — so those pages render exactly as before. When the pointer
-    exists but the text cannot be read, the section still renders with
-    ``body: None`` so the reader gets the link and the gaps rather than
-    silence.
-    """
-    memo = _build_memo_block(state)
-    file_id = memo.get("file_id") or drive_file_id(memo.get("web_view_link"))
-    url = memo.get("web_view_link")
-    if not url and file_id:
-        url = f"https://docs.google.com/document/d/{file_id}/edit"
-    if not url:
-        return None
-
-    raw_gaps = memo.get("gaps")
-    gaps = [
-        str(g).strip() for g in (raw_gaps if isinstance(raw_gaps, list) else [])
-        if str(g or "").strip()
-    ]
-    complete = memo.get("complete")
-
-    return {
-        "title": memo.get("title") or "Build memo",
-        "url": url,
-        "access": access.tag(file_id=file_id, url=url),
-        # `None` when the run did not say; the page then claims neither.
-        "complete": complete if isinstance(complete, bool) else None,
-        "gaps": gaps,
-        "body": _read_build_memo_body(drive, file_id) if file_id else None,
-    }
-
-
-def _read_build_memo_body(drive: DriveClient, file_id: str) -> str | None:
-    """The memo's markdown, or ``None`` if it cannot be read as text.
-
-    Metadata first, so the export MIME follows the file's REAL type
-    rather than the ``.md`` in its name: the skill renders a Google Doc,
-    but a pointer at a raw ``text/markdown`` upload (its
-    ``.source.md`` twin) must still read.
-    """
-    try:
-        meta = drive.get_file(file_id)
-        export_as = MARKDOWN_EXPORT if meta.mime_type == GOOGLE_DOC_MIME else None
-        content = drive.get_content(file_id, meta.mime_type, export_as=export_as)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("summary: read build memo %s failed: %s", file_id, exc)
-        return None
-    if getattr(content, "encoding", None) == "base64":
-        # Not text (a PDF, an image). Nothing renderable; the link remains.
-        return None
-    body = (content.content or "").replace("\r\n", "\n")
-    return body if body.strip() else None
-
-
 # ---------------------------------------------------------------------------
 # "What changed because you asked" — the run's frozen claim set.
 # ---------------------------------------------------------------------------
@@ -2171,7 +2076,7 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
     The doc itself is an internal working artifact and is not shared, so
     no link is emitted — the content is the payload.
     """
-    from apps.opps.parsers import Decision
+    from apps.opps.parsers import Decision, decision_extras
     from apps.opps.serializers import serialize_decision
 
     f = _find_in_folder(drive, run_folder_id, "decisions.yaml")
@@ -2183,18 +2088,14 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
         return None
 
     rows: list[dict] = []
+    live = 0
     counts = {"stated": 0, "inferred": 0, "conflicting": 0, "overridden": 0}
     phase_index = _plugin_phase_index()
     for raw in raw_rows:
         if not isinstance(raw, dict):
             log.warning("summary: decision entry is not a mapping — skipped")
             continue
-        if raw.get("superseded_by"):
-            # HISTORY, not a choice this run stands behind: a row a later row
-            # corrected (ace#1421), or one a fork retired because this run
-            # re-runs its phase (ace#2582). The log keeps it for the audit
-            # trail; the review page shows a partner only the live choices.
-            continue
+        superseded_by = str(raw.get("superseded_by") or "").strip()
         row_id = str(raw.get("id") or "").strip()
         question = str(raw.get("question") or "").strip()
         if not row_id or not question:
@@ -2221,11 +2122,10 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
             override_reasoning=str(raw.get("override_reasoning") or ""),
             evidence_basis=basis,
             conflict_signals=[str(c) for c in (raw.get("conflict_signals") or [])],
+            superseded_by=superseded_by,
+            **decision_extras(raw),
         )
         serialized = serialize_decision(decision)
-        # Always "" here (superseded rows were skipped above); dropped so the
-        # frozen public payload (PR #723) keeps its exact row shape.
-        serialized.pop("superseded_by", None)
         # ``decision.phase`` is the phase TAG the log writes (``3-commcare``);
         # the phase NAME it projects onto (``commcare-setup``) rides on the
         # serialized ``phase`` field, which is what the registry is keyed on.
@@ -2243,13 +2143,22 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
         # ``_registry_label_agrees``.
         serialized["phase_ordinal"] = _decision_phase_ordinal(decision.phase)
         rows.append(serialized)
+        if superseded_by:
+            # HISTORY, not a choice this run stands behind: a row a later row
+            # corrected (ace#1421), or one a fork retired because this run
+            # re-runs its phase (ace#2582). It is served (with
+            # ``superseded_by`` set) so the page can show it behind a
+            # "show history" toggle, hidden by default — but it never counts
+            # toward ``total`` / ``counts``, which describe the live choices.
+            continue
+        live += 1
         counts[basis] += 1
         if status == "overridden":
             counts["overridden"] += 1
 
-    if not rows:
+    if not live:
         return None
-    return {"total": len(rows), "counts": counts, "rows": rows}
+    return {"total": live, "counts": counts, "rows": rows}
 
 
 # ─── Deep QA (/ace:qa-deep) ─────────────────────────────────────────
@@ -2764,10 +2673,6 @@ def build_summary_payload(
             opp_slug=opp_slug,
             run_id=run_id,
         ),
-        # The review artifact (ace-web#767) — first in the design/review
-        # area on the page. `None` on every run without a memo, so those
-        # render unchanged.
-        "build_memo": _read_build_memo(drive, state, access),
         "design": _read_design(state, access),
         "apps": _read_apps(state),
         # The producing phase's own verdict on those apps — null when

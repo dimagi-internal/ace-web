@@ -1763,8 +1763,59 @@ def test_superseded_rows_are_history_not_live_choices():
         "    inherited_from_run: 20260926-1800\n"
     )
     d = _payload(tree)["decisions"]
-    assert [r["id"] for r in d["rows"]] == ["live-pre-fork", "corrected-revised"]
+    live = [r["id"] for r in d["rows"] if not r["superseded_by"]]
+    assert live == ["live-pre-fork", "corrected-revised"]
     assert d["total"] == 2
+    # History is SERVED, marked, so the page can show it behind a toggle
+    # (hidden by default) — but it never counts as a live choice.
+    history = {r["id"]: r["superseded_by"] for r in d["rows"] if r["superseded_by"]}
+    assert history == {
+        "corrected": "corrected-revised",
+        "payability-20260926-1800": "payability",
+    }
+    assert sum(d["counts"][k] for k in ("stated", "inferred", "conflicting")) == 2
+
+
+def test_review_fields_pass_through_and_default_to_empty():
+    """The optional review fields ACE adds (2026-10) reach the page verbatim;
+    an older row without them serves "" for each, never a missing key."""
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["runs"]["20260503-0835"]["decisions.yaml"] = (
+        "decisions:\n"
+        "  - id: window\n"
+        "    phase: 1-design\n"
+        "    question: Which slice?\n"
+        "    ai-default: Goal Setting\n"
+        "    review_ask: recommended-confirmation\n"
+        "    confirm_reason: Only the partner knows the cadence.\n"
+        "    plain: The pilot covers the first seven steps.\n"
+        "    check_at: Learn module 1\n"
+        "    correct_looks_like: Seven steps listed\n"
+        "    audience: partner\n"
+        "  - id: rule\n"
+        "    phase: 4-connect\n"
+        "    question: One meeting a day?\n"
+        "    ai-default: yes\n"
+        "    audience: internal\n"
+        "    scope: worker\n"
+        "    enforcement: gap\n"
+        "  - id: legacy\n"
+        "    phase: 1-design\n"
+        "    question: Old?\n"
+        "    ai-default: a\n"
+    )
+    rows = {r["id"]: r for r in _payload(tree)["decisions"]["rows"]}
+    assert rows["window"]["review_ask"] == "recommended-confirmation"
+    assert rows["window"]["confirm_reason"] == "Only the partner knows the cadence."
+    assert rows["window"]["plain"] == "The pilot covers the first seven steps."
+    assert rows["window"]["check_at"] == "Learn module 1"
+    assert rows["window"]["correct_looks_like"] == "Seven steps listed"
+    assert (rows["rule"]["audience"], rows["rule"]["scope"], rows["rule"]["enforcement"]) == (
+        "internal", "worker", "gap",
+    )
+    for key in ("review_ask", "confirm_reason", "plain", "check_at",
+                "correct_looks_like", "audience", "scope", "enforcement"):
+        assert rows["legacy"][key] == ""
 
 
 def test_open_questions_parse_owner_and_where_it_gets_answered():

@@ -3786,6 +3786,11 @@ export interface components {
              * @default
              */
             readonly decided_at: string;
+            /**
+             * Confirmed
+             * @default false
+             */
+            readonly confirmed: boolean;
         };
         /**
          * DecisionEditOut
@@ -3831,6 +3836,11 @@ export interface components {
              */
             readonly is_revert: boolean;
             /**
+             * Confirmed
+             * @default false
+             */
+            readonly confirmed: boolean;
+            /**
              * History
              * @default []
              */
@@ -3865,6 +3875,11 @@ export interface components {
             readonly reviewer?: string | null;
             /** Reviewer Email */
             readonly reviewer_email?: string | null;
+            /**
+             * Confirm
+             * @default false
+             */
+            readonly confirm: boolean;
         };
         /**
          * DecisionReactionOut

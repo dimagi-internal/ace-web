@@ -53,6 +53,8 @@ export interface DecisionEditEntry {
   decided_by_name: string;
   decided_by_verified: boolean;
   decided_at: string;
+  /** A reviewer CONFIRMED the value in force, rather than changing it. */
+  confirmed?: boolean;
 }
 
 /**
@@ -93,28 +95,6 @@ export interface OppSummaryPayload {
     status: "active" | "closed" | "in_progress";
     end_date: string | null;
   };
-  /**
-   * The run's build memo, carried as CONTENT (ace-web#767) — the review
-   * artifact the PDD names: "humans review the memo and spot-check the
-   * apps, rather than reviewing every screen." `null` on every run
-   * before ace#2371, and then the page draws nothing for it.
-   */
-  build_memo: {
-    title: string;
-    url: string;
-    access: LinkAccess;
-    /** `null` when the run did not say — the page then claims neither. */
-    complete: boolean | null;
-    /** What the memo itself says it is missing. */
-    gaps: string[];
-    /**
-     * The memo as markdown — Drive's `text/markdown` export, VERBATIM,
-     * backslash escapes and all (`\[ACE\]`, `1\.`). The CommonMark
-     * renderer resolves them; unescaping first would break tables.
-     * `null` when the pointer exists but the text could not be read.
-     */
-    body: string | null;
-  } | null;
   /**
    * "What changed because you asked" — the run's frozen claim set
    * (ace#2420).
@@ -593,6 +573,8 @@ export async function postDecisionEdit(
     reasoning?: string;
     reviewer?: string;
     reviewer_email?: string;
+    /** Record a CONFIRMATION of `value` (the answer in force), not a change. */
+    confirm?: boolean;
   },
 ): Promise<PublicDecisionEdit & { decision_id: string }> {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");

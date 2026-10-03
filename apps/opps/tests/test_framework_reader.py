@@ -173,6 +173,40 @@ def test_superseded_by_reaches_the_serialized_snapshot():
     assert {r["id"]: r["superseded_by"] for r in rows}["plain"] == ""
 
 
+def test_review_fields_reach_the_serialized_snapshot():
+    """canopy-agent-runs drops the optional review fields too (``review_ask``,
+    ``plain``, ``audience`` …); the reader reads them ace-side, and a row
+    without them serves "" — the Workbench renders it as before."""
+    from apps.opps.serializers import serialize_run_detail
+
+    tree = _demo_multi_run_tree()
+    tree["ACE"]["demo"]["runs"]["20260601-0900"]["decisions.yaml"] = (
+        "decisions:\n"
+        "  - id: d1\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Which archetype?\n"
+        "    ai-default: service-delivery\n"
+        "    review_ask: recommended-confirmation\n"
+        "    confirm_reason: The partner decides this.\n"
+        "    plain: Workers deliver a service.\n"
+        "    audience: internal\n"
+        "  - id: d2\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Language?\n"
+        "    ai-default: English\n"
+    )
+    client = FakeDriveClient.from_tree(tree)
+    snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
+    rows = {r["id"]: r for r in serialize_run_detail(snap.current_run)["decisions"]}
+    assert rows["d1"]["review_ask"] == "recommended-confirmation"
+    assert rows["d1"]["confirm_reason"] == "The partner decides this."
+    assert rows["d1"]["plain"] == "Workers deliver a service."
+    assert rows["d1"]["audience"] == "internal"
+    assert rows["d2"]["review_ask"] == "" and rows["d2"]["plain"] == ""
+
+
 def test_multi_run_attaches_judge_verdict_via_store():
     """Step status + judge verdict come from the framework store + map."""
     client = FakeDriveClient.from_tree(_demo_multi_run_tree())

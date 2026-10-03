@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { CheckCircle2, ChevronRight } from "lucide-react";
 
 import type {
   DecisionReaction,
@@ -7,6 +7,7 @@ import type {
   PublicDecisionEdit,
   ReviewDecision,
 } from "@/api/oppSummary";
+import { DecisionRow } from "@/components/opps/decisions/DecisionRow";
 import { DecisionSection } from "@/components/opps/decisions/DecisionSection";
 import { ReviewerIdentityFields } from "@/components/opps/decisions/ReviewerIdentityFields";
 import {
@@ -25,46 +26,35 @@ import { cn } from "@/lib/utils";
 export type { DecisionEditSubmit };
 
 /**
- * The public face of the run's decisions log — read, change, or discuss.
+ * The public face of the run's decisions log — read, confirm, change, or
+ * discuss. Every load-bearing default is a typed row, so this renders
+ * those rows and gets a partner engaging with specific calls; they are
+ * editable in place by anyone with the link, through the Workbench's own
+ * editor into the Workbench's own store
+ * (`docs/learnings/public-summary-editing.md`).
  *
- * A 24-page PDD is a bad instrument for eliciting decisions: people skim
- * prose and agree with all of it. Every load-bearing default is already a
- * typed row, so this renders those rows and gets a partner engaging with
- * specific calls. They are **editable in place by anyone with the link**,
- * through the Workbench's own editor into the Workbench's own store.
+ * ## Structure: what the reviewer must DO, then what ACE did (2026-10-03)
  *
- * ## Phase IS the structure, the same as the Workbench
+ * This page used to lead with "Worth your eye first" / "N need your eye",
+ * flagging rows whose `evidence_basis` was `conflicting` or that someone
+ * had already changed. Jonathan's review: that surfaces ACE's INTERNAL
+ * uncertainty, not what the reviewer has to do. So:
  *
- * The Workbench organises decisions by phase, because "which part of the
- * flow produced this call" is how someone reasons about a decision. This
- * surface used to group by phase only INSIDE a collapsed "Show all 42"
- * disclosure, and lift the 2 conflicting rows out of phase context to
- * lead the page — so a reader could not see where a decision arose until
- * they expanded everything, which is exactly backwards (Jonathan,
- * 2026-08-14).
+ * 1. **Recommended to confirm before launch** — always open, on top: the
+ *    rows ACE marks `review_ask: recommended-confirmation`. Each states
+ *    the value the build uses and ACE's plain `confirm_reason`, and offers
+ *    **Confirm** (recorded distinctly from a change — `confirm: true` on
+ *    the same edit endpoint) or **Change it** (the usual editor).
+ * 2. **Choices ACE made** — every other live row, by phase, collapsible.
+ *    Phase stays the organising structure, as in the Workbench.
+ * 3. Hidden by default behind toggles: `audience: internal` rows and
+ *    superseded rows (history the run replaced).
  *
- * Now the phase sections are the page, and the rows inside them are the
- * shared `DecisionRow` the Workbench renders. What the old
- * lead-with-the-conflicts view was PROTECTING is kept without sacrificing
- * the structure:
+ * `evidence_basis: conflicting` is now a small per-row note ("ACE's
+ * sources disagreed") with no headline count and no call to action.
  *
- * - a phase holding a row that needs an eye opens by default, and those
- *   rows open inside it — so the contested rows are on screen at first
- *   paint, in their phase, not lifted out of it;
- * - the rest collapse to one line each, so 40 routine rows can't bury
- *   them;
- * - "Worth your eye first" is a JUMP LIST, not a second rendering of the
- *   same rows — one decision, one home.
- *
- * The one structural difference from the Workbench is forced: the
- * Workbench is a master/detail layout with a phase rail, and this is a
- * single-column document, so the phases stack as collapsible sections
- * instead of being selected from a sidebar.
- *
- * Editing and commenting are different acts and each row carries both —
- * an edit asserts a value the next run builds from, a comment is
- * discussion that lands in the feedback ledger. Rationale for all of it:
- * `docs/learnings/public-summary-editing.md`.
+ * One decision, one home: a row in the confirm group is not repeated in
+ * its phase below.
  */
 
 interface PhaseGroup {
@@ -74,22 +64,39 @@ interface PhaseGroup {
   rows: ReviewDecision[];
 }
 
+/** A row ACE recommends the reviewer confirm before launch. Live rows only. */
+export function isRecommendedConfirmation(d: ReviewDecision): boolean {
+  return d.review_ask === "recommended-confirmation" && !d.superseded_by;
+}
+
+/** A row ACE wrote for itself, not the partner. Absent audience = partner. */
+export function isInternal(d: ReviewDecision): boolean {
+  return d.audience === "internal";
+}
+
 /**
- * Rows a reader is best placed to correct — contested, or already changed.
- *
- * Exported because the Overview headline ("N need your eye") counts the
- * same population. It used to add `counts.conflicting + counts.overridden`
- * off the API instead, and those counts are built from the RUN's
- * decisions.yaml — a human edit lives in `decision_edits` and could never
- * reach them, so the headline and this tab disagreed on the same page
- * (ace-web#771). One predicate, both surfaces.
+ * Has a human acted on a confirm-recommended row — confirmed it, or
+ * changed it? A revert back to the AI default with nothing to say is not
+ * an answer to the ask.
  */
-export function isFlagged(d: ReviewDecision, edit?: PublicDecisionEdit): boolean {
-  return (
-    d.evidence_basis === "conflicting" ||
-    d.status === "overridden" ||
-    (!!edit && !edit.is_revert)
-  );
+export function isConfirmationHandled(edit?: PublicDecisionEdit): boolean {
+  return !!edit && (!!edit.confirmed || !edit.is_revert);
+}
+
+/**
+ * The Overview headline's number: how many recommended confirmations are
+ * still waiting. One predicate for both surfaces, so the headline and the
+ * tab below it can never disagree (the ace-web#771 lesson).
+ */
+export function confirmationCounts(
+  rows: readonly ReviewDecision[],
+  edits: Record<string, PublicDecisionEdit>,
+): { total: number; outstanding: number } {
+  const asked = rows.filter(isRecommendedConfirmation);
+  return {
+    total: asked.length,
+    outstanding: asked.filter((d) => !isConfirmationHandled(edits[d.id])).length,
+  };
 }
 
 export function DecisionsReview({
@@ -121,15 +128,11 @@ export function DecisionsReview({
   const [knownName, setKnownName] = useState(
     () => rememberedIdentity().name.trim(),
   );
+  const [showInternal, setShowInternal] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const { counts, rows, total } = decisions;
 
-  // A signed-in member is resolved server-side; an anonymous reviewer is
-  // known once they've successfully submitted something under a name —
-  // this visit or a previous one (`reviewerIdentity` remembers it
-  // locally). From that point editing is click-and-done, as it is in the
-  // Workbench; before it, one confirm step collects the name.
   const identityKnown = viewerIsMember || knownName.length >= MIN_NAME_CHARS;
-  // What can be submitted right now, including a name mid-typing.
   const canSubmit =
     viewerIsMember || identity.name.trim().length >= MIN_NAME_CHARS;
 
@@ -144,22 +147,29 @@ export function DecisionsReview({
     if (!viewerIsMember && body.reviewer) setKnownName(body.reviewer.trim());
   }
 
-  const flagged = useMemo(
-    () => rows.filter((d) => isFlagged(d, edits[d.id])),
-    [rows, edits],
+  const toConfirm = useMemo(() => rows.filter(isRecommendedConfirmation), [rows]);
+  const confirmIds = useMemo(() => new Set(toConfirm.map((d) => d.id)), [toConfirm]);
+  const rest = useMemo(() => rows.filter((d) => !confirmIds.has(d.id)), [rows, confirmIds]);
+  const internalCount = rest.filter((d) => !d.superseded_by && isInternal(d)).length;
+  const historyCount = rest.filter((d) => !!d.superseded_by).length;
+  const visible = useMemo(
+    () =>
+      rest.filter(
+        (d) =>
+          (showHistory || !d.superseded_by) && (showInternal || !isInternal(d)),
+      ),
+    [rest, showHistory, showInternal],
   );
-  const flaggedIds = useMemo(
-    () => new Set(flagged.map((d) => d.id)),
-    [flagged],
-  );
-  const changed = useMemo(
-    () => rows.filter((d) => edits[d.id] && !edits[d.id].is_revert).length,
-    [rows, edits],
-  );
+
+  const changed = rows.filter(
+    (d) => !d.superseded_by && edits[d.id] && !edits[d.id].is_revert && !edits[d.id].confirmed,
+  ).length;
+  const confirmedCount = rows.filter((d) => !d.superseded_by && edits[d.id]?.confirmed).length;
+  const { outstanding } = confirmationCounts(rows, edits);
 
   const groups = useMemo<PhaseGroup[]>(() => {
     const byPhase = new Map<string, PhaseGroup>();
-    for (const d of rows) {
+    for (const d of visible) {
       const key = d.phase_raw || d.phase;
       const g = byPhase.get(key);
       if (g) g.rows.push(d);
@@ -172,40 +182,19 @@ export function DecisionsReview({
         });
     }
     return [...byPhase.values()].sort((a, b) => a.ordinal - b.ordinal);
-  }, [rows]);
+  }, [visible]);
 
-  // A phase opens when it holds something worth an eye; the rest collapse
-  // to a one-line header, so the structure is legible at a glance and the
-  // contested rows aren't buried under the routine ones.
-  const [openPhases, setOpenPhases] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(
-      groups
-        .filter((g) => g.rows.some((d) => flaggedIds.has(d.id)))
-        .map((g) => [g.key, true]),
-    ),
-  );
-  const [openRows, setOpenRows] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries([...flaggedIds].map((id) => [id, true])),
-  );
-
-  const allOpen = groups.every((g) => openPhases[g.key]);
+  // Phases start OPEN: a collapsed row now says what was decided in full,
+  // so the open list is the scannable summary; a phase is collapsed by
+  // choice, not by default.
+  const [closedPhases, setClosedPhases] = useState<Record<string, boolean>>({});
+  const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
+  const allOpen = groups.every((g) => !closedPhases[g.key]);
 
   function toggleAll() {
-    setOpenPhases(
-      allOpen ? {} : Object.fromEntries(groups.map((g) => [g.key, true])),
+    setClosedPhases(
+      allOpen ? Object.fromEntries(groups.map((g) => [g.key, true])) : {},
     );
-  }
-
-  /** Open a row where it LIVES — in its phase — and scroll to it. */
-  function jumpTo(decision: ReviewDecision) {
-    const key = decision.phase_raw || decision.phase;
-    setOpenPhases((prev) => ({ ...prev, [key]: true }));
-    setOpenRows((prev) => ({ ...prev, [decision.id]: true }));
-    requestAnimationFrame(() => {
-      document
-        .getElementById(`decision-${decision.id}`)
-        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-    });
   }
 
   // The explicit "Not you?" editor IS a deliberate identity change, so it
@@ -217,12 +206,21 @@ export function DecisionsReview({
     setKnownName(next.name.trim());
   }
 
+  const itemProps = {
+    identity,
+    setIdentity,
+    viewerIsMember,
+    identityKnown,
+    canSubmit,
+    onReact: submitReaction,
+    onEdit: submitEdit,
+  };
+
   return (
     <div>
-      <p className="text-[0.975rem] leading-[1.7] text-muted-foreground">
+      <p className="max-w-3xl text-[0.975rem] leading-[1.7] text-muted-foreground">
         ACE made <span className="text-foreground">{total}</span> load-bearing calls building
-        this run, grouped below by the phase of the build that produced them. Each one
-        records what it picked, what else was on the table, and why — and{" "}
+        this run. Each one records what it picked, what else was on the table, and why — and{" "}
         <span className="text-foreground">you can change any of them here</span>. What you
         change is what the next run builds from.
       </p>
@@ -230,8 +228,13 @@ export function DecisionsReview({
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
         <Count n={counts.stated} label="stated in a source" />
         <Count n={counts.inferred} label="inferred beyond it" />
-        <Count n={counts.conflicting} label="resolved a conflict" tone="amber" />
+        {/* Shown so the numbers add up to the total — neutral, not a call
+            to action: that ACE's sources disagreed is ACE's uncertainty. */}
+        {counts.conflicting > 0 && (
+          <Count n={counts.conflicting} label="where sources disagreed" />
+        )}
         <Count n={counts.overridden + changed} label="changed by a human" tone="sky" />
+        {confirmedCount > 0 && <Count n={confirmedCount} label="confirmed" tone="emerald" />}
       </div>
 
       {/* Who the changes will be credited to. Asked once (at the first
@@ -262,49 +265,70 @@ export function DecisionsReview({
         </div>
       )}
 
-      {flagged.length > 0 && (
-        <div className="mt-7 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-4">
-          <h3 className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-amber-400">
-            <AlertTriangle size={13} />
-            Worth your eye first
-          </h3>
-          <p className="mt-1.5 text-sm leading-[1.6] text-muted-foreground">
-            Where the source material disagreed with itself and ACE picked a side, or where
-            someone has already changed the answer. They're open in their phase below — jump
-            straight to one:
+      {toConfirm.length > 0 && (
+        <section className="mt-8" aria-labelledby="recommended-confirm">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3
+              id="recommended-confirm"
+              className="text-[11px] font-medium uppercase tracking-[0.16em] text-foreground"
+            >
+              Recommended to confirm before launch
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {outstanding === 0
+                ? `All ${toConfirm.length} answered`
+                : `${outstanding} of ${toConfirm.length} still to confirm`}
+            </span>
+          </div>
+          <p className="mt-1.5 max-w-3xl text-sm leading-[1.6] text-muted-foreground">
+            ACE recommends a person confirm these before anyone goes live. Confirm the answer the
+            build uses, or change it.
           </p>
-          <ul className="mt-2.5 flex flex-col gap-1">
-            {flagged.map((d) => (
-              <li key={d.id}>
-                <button
-                  type="button"
-                  onClick={() => jumpTo(d)}
-                  className="group flex w-full items-baseline gap-2 text-left text-sm leading-[1.5] text-muted-foreground hover:text-foreground"
-                >
-                  <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">
-                    {phaseTag(d)}
-                  </span>
-                  <span className="flex-1 text-foreground underline-offset-4 group-hover:underline">
-                    {d.question}
-                  </span>
-                </button>
-              </li>
+          {/* Asked ONCE for the whole group, not on every card. */}
+          {!viewerIsMember && !identityKnown && (
+            <div className="mt-3 flex max-w-xl flex-col gap-1.5">
+              <ReviewerIdentityFields identity={identity} onChange={setIdentity} />
+            </div>
+          )}
+          <ul className="mt-3 grid gap-3 lg:grid-cols-2">
+            {toConfirm.map((d) => (
+              <ConfirmCard
+                key={d.id}
+                decision={d}
+                edit={edits[d.id]}
+                reactions={reactions[d.id] ?? []}
+                {...itemProps}
+              />
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
-      <div className="mt-7 flex items-center justify-between gap-3">
+      <div className="mt-9 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-[11px] font-medium uppercase tracking-[0.16em] text-foreground">
-          Every decision, by phase
+          Choices ACE made
         </h3>
-        <button
-          type="button"
-          onClick={toggleAll}
-          className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-        >
-          {allOpen ? "Collapse all" : `Expand all ${total}`}
-        </button>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          {internalCount > 0 && (
+            <ToggleChip pressed={showInternal} onClick={() => setShowInternal((v) => !v)}>
+              {showInternal ? "Hide" : "Show"} {internalCount} internal
+            </ToggleChip>
+          )}
+          {historyCount > 0 && (
+            <ToggleChip pressed={showHistory} onClick={() => setShowHistory((v) => !v)}>
+              {showHistory ? "Hide" : "Show"} {historyCount} replaced
+            </ToggleChip>
+          )}
+          {groups.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              {allOpen ? "Collapse all" : "Expand all"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mt-1">
@@ -312,33 +336,39 @@ export function DecisionsReview({
           <PhaseSection
             key={g.key}
             group={g}
-            open={!!openPhases[g.key]}
+            open={!closedPhases[g.key]}
             onToggle={() =>
-              setOpenPhases((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
+              setClosedPhases((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
             }
-            needsEye={g.rows.filter((d) => flaggedIds.has(d.id)).length}
             changed={
-              g.rows.filter((d) => edits[d.id] && !edits[d.id].is_revert).length
+              g.rows.filter(
+                (d) => edits[d.id] && !edits[d.id].is_revert && !edits[d.id].confirmed,
+              ).length
             }
           >
             {g.rows.map((d) => (
               <li key={d.id}>
-                <DecisionItem
-                  decision={d}
-                  open={!!openRows[d.id]}
-                  onToggle={() =>
-                    setOpenRows((prev) => ({ ...prev, [d.id]: !prev[d.id] }))
-                  }
-                  reactions={reactions[d.id] ?? []}
-                  edit={edits[d.id]}
-                  identity={identity}
-                  setIdentity={setIdentity}
-                  viewerIsMember={viewerIsMember}
-                  identityKnown={identityKnown}
-                  canSubmit={canSubmit}
-                  onReact={submitReaction}
-                  onEdit={submitEdit}
-                />
+                {d.superseded_by ? (
+                  <ReplacedRow
+                    decision={d}
+                    open={!!openRows[d.id]}
+                    onToggle={() =>
+                      setOpenRows((prev) => ({ ...prev, [d.id]: !prev[d.id] }))
+                    }
+                  />
+                ) : (
+                  <DecisionItem
+                    decision={d}
+                    open={!!openRows[d.id]}
+                    onToggle={() =>
+                      setOpenRows((prev) => ({ ...prev, [d.id]: !prev[d.id] }))
+                    }
+                    reactions={reactions[d.id] ?? []}
+                    edit={edits[d.id]}
+                    tags={isInternal(d) ? <InternalTag /> : undefined}
+                    {...itemProps}
+                  />
+                )}
               </li>
             ))}
           </PhaseSection>
@@ -356,26 +386,259 @@ function phaseTag(d: ReviewDecision): string {
 }
 
 /**
- * One phase's heading + its rows, on the shared `DecisionSection` shell.
+ * One recommended confirmation: the value in force, why ACE wants a human
+ * to confirm it, and the two answers — Confirm, or Change it.
  *
- * The Workbench's per-phase panel leads with a "Decisions" pill because
- * it already sits inside a panel naming the phase; this stacks every
- * phase in one column, so it leads with the ordinal and name the
- * Workbench's `PhaseTile` shows. Chips reuse the Workbench's tones: amber
- * is `EvidenceBadge`'s contested, sky is its "N overridden".
+ * Confirm posts the CURRENT value with `confirm: true` through the same
+ * edit endpoint a change uses, so it lands in the same store with the same
+ * attribution and history, but reads back as "confirmed by <name>" rather
+ * than "changed by". Change opens the ordinary row editor in place.
+ */
+function ConfirmCard({
+  decision,
+  edit,
+  reactions,
+  identity,
+  setIdentity,
+  viewerIsMember,
+  identityKnown,
+  canSubmit,
+  onReact,
+  onEdit,
+}: {
+  decision: ReviewDecision;
+  edit?: PublicDecisionEdit;
+  reactions: DecisionReaction[];
+  identity: ReviewerIdentity;
+  setIdentity: (next: ReviewerIdentity) => void;
+  viewerIsMember: boolean;
+  identityKnown: boolean;
+  canSubmit: boolean;
+  onReact: (decisionId: string, body: ReactionSubmit) => Promise<void>;
+  onEdit: (decisionId: string, body: DecisionEditSubmit) => Promise<void>;
+}) {
+  const [changing, setChanging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const answer = edit?.override || decision.override || decision.ai_default;
+  const confirmed = !!edit?.confirmed;
+  const changedBy = edit && !edit.is_revert && !confirmed ? edit.decided_by_name : null;
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onEdit(decision.id, {
+        value: answer,
+        confirm: true,
+        ...(viewerIsMember
+          ? {}
+          : {
+              reviewer: identity.name.trim(),
+              reviewer_email: identity.email.trim() || undefined,
+            }),
+      });
+      if (!viewerIsMember) rememberIdentity(identity);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "We couldn't record that confirmation.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li
+      id={`decision-${decision.id}`}
+      className={cn(
+        "flex min-w-0 scroll-mt-24 flex-col rounded-lg border bg-card/40 p-4",
+        confirmed ? "border-emerald-500/40" : "border-border",
+      )}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {phaseTag(decision)}
+      </div>
+      <p className="mt-1 text-[15px] font-medium leading-snug text-foreground [overflow-wrap:anywhere]">
+        {decision.question}
+      </p>
+      <p className="mt-2 text-sm leading-[1.6] text-muted-foreground [overflow-wrap:anywhere]">
+        The build uses <span className="font-medium text-foreground">{answer}</span>.
+        {decision.plain && <> {decision.plain}</>}
+      </p>
+      {decision.confirm_reason && (
+        <p className="mt-1.5 text-sm leading-[1.6] text-muted-foreground [overflow-wrap:anywhere]">
+          <span className="text-foreground">Why confirm: </span>
+          {decision.confirm_reason}
+        </p>
+      )}
+      {(decision.check_at || decision.correct_looks_like) && (
+        <dl className="mt-2 grid gap-x-4 gap-y-1 text-[12px] text-muted-foreground sm:grid-cols-2">
+          {decision.check_at && (
+            <div className="min-w-0">
+              <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                Where to check it
+              </dt>
+              <dd className="[overflow-wrap:anywhere]">{decision.check_at}</dd>
+            </div>
+          )}
+          {decision.correct_looks_like && (
+            <div className="min-w-0">
+              <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                What right looks like
+              </dt>
+              <dd className="[overflow-wrap:anywhere]">{decision.correct_looks_like}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+
+      <div className="mt-auto pt-3">
+        {confirmed && (
+          <p className="mb-2 inline-flex items-center gap-1.5 text-sm text-emerald-400">
+            <CheckCircle2 size={14} aria-hidden />
+            Confirmed{edit?.decided_by_name ? ` by ${edit.decided_by_name}` : ""}
+          </p>
+        )}
+        {changedBy && (
+          <p className="mb-2 text-sm text-sky-400">Changed by {changedBy}</p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {!confirmed && (
+            <button
+              type="button"
+              onClick={confirm}
+              disabled={busy || !canSubmit}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? "Confirming…" : "Confirm"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setChanging((v) => !v)}
+            aria-expanded={changing}
+            className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent/40"
+          >
+            <ChevronRight
+              size={13}
+              aria-hidden
+              className={cn("transition-transform", changing && "rotate-90")}
+            />
+            {changing ? "Close" : "Change it"}
+          </button>
+        </div>
+        {error && <p className="mt-2 text-sm text-rose-400">{error}</p>}
+      </div>
+
+      {changing && (
+        <div className="mt-3 overflow-hidden rounded-md border border-border/70">
+          <DecisionItem
+            decision={decision}
+            open
+            onToggle={() => setChanging(false)}
+            reactions={reactions}
+            edit={edit}
+            identity={identity}
+            setIdentity={setIdentity}
+            viewerIsMember={viewerIsMember}
+            identityKnown={identityKnown}
+            canSubmit={canSubmit}
+            onReact={onReact}
+            onEdit={onEdit}
+          />
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * A superseded row — history the run replaced, shown only when the reader
+ * asks for it. Read-only: to bring an old answer back, pick it on the live
+ * row, which goes through the attributed edit path.
+ */
+function ReplacedRow({
+  decision,
+  open,
+  onToggle,
+}: {
+  decision: ReviewDecision;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const value = decision.override || decision.ai_default;
+  return (
+    <DecisionRow
+      decision={decision}
+      effectiveValue={value}
+      effectiveReason=""
+      open={open}
+      onToggle={onToggle}
+      statusChip={false}
+      muted
+      badges={
+        <span
+          className="shrink-0 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground"
+          title={`Replaced by ${decision.superseded_by}`}
+        >
+          replaced — no longer in force
+        </span>
+      }
+    />
+  );
+}
+
+function InternalTag() {
+  return (
+    <span
+      className="shrink-0 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground"
+      title="ACE recorded this for its own build; it is not something a partner needs to review"
+    >
+      internal
+    </span>
+  );
+}
+
+function ToggleChip({
+  pressed,
+  onClick,
+  children,
+}: {
+  pressed: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
+        pressed
+          ? "border-foreground/40 bg-accent/60 text-foreground"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * One phase's heading + its rows, on the shared `DecisionSection` shell.
+ * Leads with the ordinal and name the Workbench's `PhaseTile` shows.
  */
 function PhaseSection({
   group,
   open,
   onToggle,
-  needsEye,
   changed,
   children,
 }: {
   group: PhaseGroup;
   open: boolean;
   onToggle: () => void;
-  needsEye: number;
   changed: number;
   children: React.ReactNode;
 }) {
@@ -398,14 +661,6 @@ function PhaseSection({
       }
       chips={
         <>
-          {needsEye > 0 && (
-            <span
-              className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-400"
-              title={`${needsEye} decision${needsEye === 1 ? "" : "s"} worth your eye`}
-            >
-              {needsEye} {needsEye === 1 ? "needs" : "need"} your eye
-            </span>
-          )}
           {changed > 0 && (
             <span
               className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-sky-400"
@@ -425,7 +680,6 @@ function PhaseSection({
   );
 }
 
-
 function Count({
   n,
   label,
@@ -433,7 +687,7 @@ function Count({
 }: {
   n: number;
   label: string;
-  tone?: "amber" | "sky";
+  tone?: "sky" | "emerald";
 }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
@@ -442,10 +696,10 @@ function Count({
           "text-sm font-medium tabular-nums",
           n === 0
             ? "text-muted-foreground/50"
-            : tone === "amber"
-              ? "text-amber-400"
-              : tone === "sky"
-                ? "text-sky-400"
+            : tone === "sky"
+              ? "text-sky-400"
+              : tone === "emerald"
+                ? "text-emerald-400"
                 : "text-foreground",
         )}
       >

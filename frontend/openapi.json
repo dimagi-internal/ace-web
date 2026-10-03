@@ -9874,6 +9874,11 @@
             "default": "",
             "title": "Decided At",
             "type": "string"
+          },
+          "confirmed": {
+            "default": false,
+            "title": "Confirmed",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9922,6 +9927,11 @@
           "is_revert": {
             "default": false,
             "title": "Is Revert",
+            "type": "boolean"
+          },
+          "confirmed": {
+            "default": false,
+            "title": "Confirmed",
             "type": "boolean"
           },
           "history": {
@@ -9985,6 +9995,11 @@
               }
             ],
             "title": "Reviewer Email"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
           }
         },
         "required": [
