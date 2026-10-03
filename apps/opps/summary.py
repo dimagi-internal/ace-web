@@ -168,13 +168,16 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
 #   * connect-labs dashboards + solicitation — when labs_allowed_domains
 #     reaches beyond Dimagi's own domains.
 #   * ace-web Workbench       — when the opp has its own tenancy.
-#   * a Drive doc whose ACL is not anyone-with-link, on an own-tenancy opp.
 #
 # ``admin`` — stays Dimagi-internal:
 #   * any of the above on a SHARED-tenancy opp (`connect-ace-prod`,
 #     `ace-pm-org` / `ace-nm-org`, Dimagi-only Labs domains — e.g.
 #     `dimagi-team`'s opps), or a URL outside the opp's tenancy;
 #   * the OCS team console, always — reviewers use the public chatbot;
+#   * a Drive doc that is NOT anyone-with-link, on ANY tenancy —
+#     `/ace:release` invites to HQ, Connect and ace-web only and shares no
+#     Drive file, so a released reviewer cannot open it. The tag is
+#     measured, so it clears itself once the doc is shared;
 #   * a canopy-web walkthrough the run did not tag (see
 #     ``_derive_walkthrough_access``).
 #
@@ -207,9 +210,7 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
 #
 # NON-Drive links have nothing per-object to measure, so they are
 # classified from the opp's tenancy as above. A measured Drive file that is
-# NOT anyone-with-link follows the same rule: ``reviewer`` on an
-# own-tenancy opp (its reviewers get the run's documents at release),
-# ``admin`` on a shared-tenancy one.
+# NOT anyone-with-link is ``admin`` on every tenancy (see above).
 ACCESS_PUBLIC = "public"
 ACCESS_ADMIN = "admin"
 ACCESS_UNKNOWN = "unknown"
@@ -297,11 +298,10 @@ class LinkAccessReader:
         shared = self._memo.get(fid)
         if shared is None:
             return ACCESS_UNKNOWN
-        if shared:
-            return ACCESS_PUBLIC
-        # Not anyone-with-link: a reviewer of an own-tenancy opp is given
-        # its documents at release; on a shared-tenancy opp it stays internal.
-        return _tenant_tag(self.tenancy.has_own_tenancy)
+        # Not anyone-with-link ⇒ `admin` on every tenancy: `/ace:release`
+        # shares no Drive file (commands/release.md — HQ invites, Connect org
+        # members and ace-web only), so a released reviewer cannot open it.
+        return ACCESS_PUBLIC if shared else ACCESS_ADMIN
 
 
 def _state_drive_file_ids(state: dict) -> list[str]:

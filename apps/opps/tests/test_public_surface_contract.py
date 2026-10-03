@@ -1259,11 +1259,16 @@ def test_links_inside_the_opps_own_tenancy_carry_no_admin_tag():
     assert {a["access"] for a in p["apps"]} == {ACCESS_ADMIN}
     # Reviewers use the public chatbot, never the team console.
     assert p["assistant"]["access"] == ACCESS_ADMIN
-    # A measured Drive file that is not anyone-with-link is the run's
-    # documents, which reviewers of an own-tenancy opp receive at release…
-    assert p["open_questions"]["access"] == ACCESS_REVIEWER
-    # …while a measured anyone-with-link file still reads `public`.
-    assert {d["access"] for d in p["training"]["docs"]} <= {ACCESS_PUBLIC, ACCESS_REVIEWER}
+    # A Drive file that is NOT anyone-with-link stays `admin` even on an
+    # own-tenancy opp: `/ace:release` shares no Drive file, so a released
+    # reviewer cannot open it (the tag clears once the doc is shared)…
+    assert p["open_questions"]["access"] == ACCESS_ADMIN
+    # …and Drive tags never read `reviewer` — they are measured.
+    drive_tags = {d["access"] for d in p["training"]["docs"]} | {
+        d["access"] for d in p["design"]["docs"]
+    }
+    assert ACCESS_REVIEWER not in drive_tags
+    assert drive_tags <= {ACCESS_PUBLIC, ACCESS_ADMIN, ACCESS_UNKNOWN}
 
 
 def test_the_shared_hq_space_never_counts_as_an_opps_own():
