@@ -67,6 +67,10 @@ class FakeDriveClient(DriveClient):
         # Every batch link_shared was asked for, so a test can assert the
         # reader batches rather than fanning out one call per link.
         self.link_shared_calls: list[list[str]] = []
+        # file_id -> hyperlink urls of a Google Doc (retarget_doc_ids). A
+        # Doc's visible text is its ``body``; its links live here, because a
+        # link hidden behind link text never shows in a text export.
+        self._doc_links: dict[str, list[str]] = {}
 
     @classmethod
     def from_tree(cls, tree: dict) -> FakeDriveClient:
@@ -186,6 +190,41 @@ class FakeDriveClient(DriveClient):
     def set_export_body(self, file_id: str, export_as: str, body: str) -> None:
         """Register what `get_content(..., export_as=...)` returns for a file."""
         self._export_bodies[(file_id, export_as)] = body
+
+    # --- Google Doc hyperlinks (retarget_doc_ids) ---
+
+    def set_doc_links(self, file_id: str, urls: list[str]) -> None:
+        """Test helper: give a Google Doc these hyperlinks."""
+        self._doc_links[file_id] = list(urls)
+
+    def doc_links(self, file_id: str) -> list[str]:
+        """Test helper: a Google Doc's hyperlinks."""
+        return list(self._doc_links.get(file_id, []))
+
+    def retarget_doc_ids(self, file_id: str, ids: dict[str, str]) -> int:
+        """Rewrite whole source ids in a Doc's links and visible text, as the
+        Docs API requests built by ``apps.opps.doc_ids`` do: one per link
+        retargeted, one per visible occurrence. Never touches the media type."""
+        from apps.opps.doc_ids import id_pattern
+
+        node = self._nodes_by_id[file_id]
+        pattern = id_pattern(ids)
+        if pattern is None:
+            return 0
+        n = 0
+        links = []
+        for url in self._doc_links.get(file_id, []):
+            new, k = pattern.subn(lambda m: ids[m.group(1)], url)
+            links.append(new)
+            n += 1 if k else 0
+        if file_id in self._doc_links:
+            self._doc_links[file_id] = links
+        if node.body:
+            node.body, k = pattern.subn(lambda m: ids[m.group(1)], node.body)
+            n += k
+        if n:
+            self._record_mutation(file_id)
+        return n
 
     # --- Link sharing (ACLs) ---
     #
@@ -316,6 +355,8 @@ class FakeDriveClient(DriveClient):
         )
         parent.children[name] = node
         self._nodes_by_id[nid] = node
+        if file_id in self._doc_links:
+            self._doc_links[nid] = list(self._doc_links[file_id])
         self._record_mutation(nid)
         return nid
 

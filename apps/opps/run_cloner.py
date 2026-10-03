@@ -28,10 +28,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from apps.opps.doc_ids import id_pattern
 from apps.opps.drive_client import DriveClient, DriveFile
 
 log = logging.getLogger(__name__)
@@ -80,17 +80,17 @@ class _Copier:
         # this map is what points the clone at its own copies afterwards.
         self.ids: dict[str, str] = {}
         self.file_ids: dict[str, str] = {}
-        # Every YAML file copied, as (copy id, name, mime type), in copy order:
-        # the files whose verbatim text may name source ids (see
+        # Every copy that may name source ids — text files and Google Docs —
+        # as (copy id, name, mime type), in copy order (see
         # _point_state_at_copies).
-        self.yaml_copies: list[tuple[str, str, str]] = []
+        self.text_copies: list[tuple[str, str, str]] = []
 
     def file(self, f: DriveFile, dest_folder_id: str) -> None:
         new_id = self.drive.copy_file(f.id, dest_folder_id, f.name)
         self.ids[f.id] = new_id
         self.file_ids[f.id] = new_id
-        if f.name.endswith(_YAML_SUFFIXES):
-            self.yaml_copies.append((new_id, f.name, f.mime_type))
+        if _rewrite_kind(f.name, f.mime_type) is not None:
+            self.text_copies.append((new_id, f.name, f.mime_type))
         self.copied += 1
         if self.copied % _PROGRESS_EVERY == 0:
             self.record.files_copied = self.copied
@@ -221,9 +221,9 @@ def _copy(drive, record, source, target, opp_slug, run_id, owner,
         existing_runs = dst_runs or _child(drive.list_files(dst_opp_id), "runs", folder=True)
         dst_runs_id = existing_runs.id if existing_runs else drive.create_folder(dst_opp_id, "runs")
         dst_run_id = drive.create_folder(dst_runs_id, run_id)
-        # Only the RUN's YAML is rewritten: opp-level files are shared by every
-        # later clone of this opp into the target, and carry no run file ids.
-        run_yaml_from = len(copier.yaml_copies)
+        # Only the RUN's copies are rewritten: opp-level files are shared by
+        # every later clone of this opp into the target, and carry no run file ids.
+        run_text_from = len(copier.text_copies)
 
         run_children = drive.list_files(src_run.id)
         state = _child(run_children, _RUN_STATE, folder=False)
@@ -234,7 +234,7 @@ def _copy(drive, record, source, target, opp_slug, run_id, owner,
         copier.ids[src_run.id] = dst_run_id
         copier.ids.setdefault(src_opp.id, dst_opp_id)
         _carry_link_sharing(drive, copier.file_ids)
-        _point_state_at_copies(drive, copier.yaml_copies[run_yaml_from:], copier.ids)
+        _point_state_at_copies(drive, copier.text_copies[run_text_from:], copier.ids)
     except Exception as exc:
         record.status = "error"
         record.error = f"{type(exc).__name__}: {exc}"[:2000]
@@ -275,11 +275,41 @@ def clone_run(
     return copy()
 
 
-# The copied files rewritten to name the clone's own copies: every YAML file in
+# The copied files rewritten to name the clone's own copies. Every YAML file in
 # the run — run_state.yaml and decisions.yaml, and the indexes that list files
-# by id (each previews/<output>/_previews.yaml, Phase 6's capture manifest).
+# by id (each previews/<output>/_previews.yaml, Phase 6's capture manifest) —
+# and, since ace#2607, every other text file (the markdown companions:
+# training-onboarding-email.md, the guides' .source.md, phase summaries) and
+# every Google Doc, whose hyperlinks named the source run's files too.
 _YAML_SUFFIXES = (".yaml", ".yml")
+_TEXT_SUFFIXES = _YAML_SUFFIXES + (
+    ".md", ".markdown", ".txt", ".json", ".csv", ".html", ".xml",
+)
 _GOOGLE_NATIVE = "application/vnd.google-apps."
+_GOOGLE_DOC = "application/vnd.google-apps.document"
+
+
+def _rewrite_kind(name: str, mime_type: str) -> str | None:
+    """How a copy is pointed at the clone's files: ``"text"`` (read, rewrite,
+    write back as text), ``"doc"`` (retarget a Google Doc's links and visible
+    ids in place via the Docs API), or None (binaries and other Google types —
+    slides, sheets — are left as copied).
+
+    A Google Doc NAMED *.yaml is ACE's YAML stored as a Doc (run_state,
+    decisions, verdicts): it keeps the text path it always had. Any other Doc
+    is formatted prose and is never written back as text — that would flatten it."""
+    mime = mime_type or ""
+    if name.endswith(_YAML_SUFFIXES):
+        return "text"
+    if mime == _GOOGLE_DOC:
+        return "doc"
+    if mime.startswith(_GOOGLE_NATIVE):
+        return None
+    if name.endswith(_TEXT_SUFFIXES) or mime.startswith("text/"):
+        return "text"
+    if any(t in mime for t in ("json", "yaml", "xml")):
+        return "text"
+    return None
 
 
 def _carry_link_sharing(drive: DriveClient, file_ids: dict[str, str]) -> int:
@@ -298,9 +328,9 @@ def _carry_link_sharing(drive: DriveClient, file_ids: dict[str, str]) -> int:
 
 
 def _point_state_at_copies(
-    drive: DriveClient, yaml_copies: list[tuple[str, str, str]], ids: dict[str, str]
+    drive: DriveClient, text_copies: list[tuple[str, str, str]], ids: dict[str, str]
 ) -> int:
-    """Replace every source Drive id in the copied YAML files with its copy.
+    """Replace every source Drive id in the copied text files and Docs with its copy.
 
     The run is copied verbatim, so its YAML names the SOURCE run's files: on
     the first Spark clone all eight documents on the reviewer-facing summary
@@ -311,23 +341,33 @@ def _point_state_at_copies(
     drops a frame whose id is outside the run's own tree, so every
     screenshot-backed output on the clone showed nothing. Ids of files the
     clone deliberately leaves behind (comms-logs) stay pointing at the source,
-    which is Dimagi-only."""
-    if not ids or not yaml_copies:
+    which is Dimagi-only.
+
+    ace#2607: YAML was not the only carrier. The markdown companions and the
+    Google Docs rendered from them linked the source run too — on the second
+    Spark clone the partner-facing onboarding email opened the source FAQ,
+    deck and quick reference, and the FLW guide Doc hid 23 source screenshot
+    links behind link text (a text export shows no id). Plain text files are
+    rewritten as text and keep their own media type; a Doc is retargeted in
+    place (links + visible ids), never rewritten as text."""
+    pattern = id_pattern(ids)
+    if pattern is None or not text_copies:
         return 0
-    # Whole ids only, in ONE pass: a plain per-id str.replace rewrites an id
-    # that is a prefix of another (and can re-rewrite an id it just wrote).
-    pattern = re.compile(
-        r"(?<![\w-])(" + "|".join(re.escape(i) for i in sorted(ids, key=len, reverse=True))
-        + r")(?![\w-])"
-    )
     replaced = 0
-    for file_id, _name, mime_type in yaml_copies:
-        text = drive.get_content(file_id, mime_type).content
+    for file_id, name, mime_type in text_copies:
+        if _rewrite_kind(name, mime_type) == "doc":
+            replaced += drive.retarget_doc_ids(file_id, ids)
+            continue
+        content = drive.get_content(file_id, mime_type)
+        if content.encoding == "base64":
+            continue  # not text after all
+        text = content.content
         new, n = pattern.subn(lambda m: ids[m.group(1)], text)
         if n:
-            # A plain YAML file keeps its own media type; a Google Doc holding
-            # YAML is updated from text/yaml, as it always was.
+            # A plain file keeps its own media type; a Google Doc holding YAML
+            # is updated from text/yaml, as it always was.
             write_as = "text/yaml" if mime_type.startswith(_GOOGLE_NATIVE) else mime_type
-            drive.update_file(file_id, new, write_as or "text/yaml")
+            fallback = "text/yaml" if name.endswith(_YAML_SUFFIXES) else "text/plain"
+            drive.update_file(file_id, new, write_as or fallback)
             replaced += n
     return replaced

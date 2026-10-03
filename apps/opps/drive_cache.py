@@ -43,6 +43,7 @@ log = logging.getLogger(__name__)
 
 _KEY_VERSION = "v1"
 _DEFAULT_TTL = 30
+_GOOGLE_DOC = "application/vnd.google-apps.document"
 
 
 def _cache_ttl() -> int:
@@ -311,6 +312,18 @@ class CachedDriveClient(DriveClient):
     def update_file(self, file_id: str, content: str, mime_type: str) -> None:
         self._inner.update_file(file_id, content, mime_type)
         _invalidate_file(file_id, mime_types=(mime_type,))
+
+    def retarget_doc_ids(self, file_id: str, ids: dict[str, str]) -> int:
+        n = self._inner.retarget_doc_ids(file_id, ids)
+        if n:
+            # The Doc's body changed: drop its metadata, its native read, and
+            # the prose exports readers key separately (see _content_key).
+            _invalidate_file(file_id, mime_types=(_GOOGLE_DOC,))
+            cache.delete_many([
+                _content_key(file_id, _GOOGLE_DOC, export_as)
+                for export_as in ("text/plain", "text/markdown", "text/html")
+            ])
+        return n
 
     def upload_binary(
         self, parent_id: str, name: str, content: bytes, mime_type: str
