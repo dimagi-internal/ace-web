@@ -240,6 +240,15 @@ class DriveClient(ABC):
         """Grant anyone-with-the-link ``role`` on ``file_id``."""
         raise NotImplementedError
 
+    def retarget_doc_ids(self, file_id: str, ids: dict[str, str]) -> int:
+        """Point a Google Doc's hyperlinks and visible Drive ids at new files:
+        every whole source id in ``ids`` (source id -> copy id) is replaced,
+        in place, keeping the Doc's formatting. Returns how many occurrences
+        were rewritten. Used by the clone (dimagi-internal/ace#2607): a copied
+        Doc still links the SOURCE run's files, and a text write-back would
+        flatten it. Not abstract: only the clone needs it."""
+        raise NotImplementedError(f"{type(self).__name__} cannot retarget Doc ids")
+
     @abstractmethod
     def create_folder(self, parent_id: str, name: str) -> str:
         """Create a folder under parent_id. Returns new folder ID."""
@@ -346,6 +355,7 @@ class GoogleDriveClient(DriveClient):
         from googleapiclient.discovery import build
         self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
         self._credentials = credentials
+        self._docs_service = None  # Docs v1, built on first retarget_doc_ids
         # Per-thread transports. googleapiclient's service object is shared
         # safely across threads ONLY if each request carries its own http —
         # the underlying httplib2.Http holds a single connection and reusing
@@ -644,6 +654,31 @@ class GoogleDriveClient(DriveClient):
             fileId=file_id, body={"type": "anyone", "role": role},
             supportsAllDrives=True, fields="id",
         ).execute()
+
+    def _docs(self):
+        """The Docs v1 service, built once. The SA's ``drive`` scope is one
+        the Docs API accepts, so no extra scope is needed."""
+        docs = self._docs_service
+        if docs is None:
+            from googleapiclient.discovery import build
+            docs = build("docs", "v1", credentials=self._credentials, cache_discovery=False)
+            self._docs_service = docs
+        return docs
+
+    # Retried as a whole on 429 only (the write never ran): each attempt
+    # re-reads the Doc, so a retry computes its requests from current state.
+    @_drive_write_retry
+    def retarget_doc_ids(self, file_id: str, ids: dict[str, str]) -> int:
+        from apps.opps.doc_ids import retarget_requests
+
+        docs = self._docs()
+        doc = docs.documents().get(documentId=file_id).execute()
+        requests, occurrences = retarget_requests(doc, ids)
+        if requests:
+            docs.documents().batchUpdate(
+                documentId=file_id, body={"requests": requests}
+            ).execute()
+        return occurrences
 
     def create_folder(self, parent_id: str, name: str) -> str:
         body = {

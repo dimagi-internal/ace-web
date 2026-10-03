@@ -464,3 +464,104 @@ def test_preview_rewrite_leaves_the_source_and_uncopied_ids_alone(
     f = next(f for f in drive.list_files(drive.folder_id(f"{DST_RUN}/{PREVIEWS}"))
              if f.name == "_previews.yaml")
     assert f.mime_type == "application/x-yaml"
+
+
+# --- markdown companions and Google Docs point at the copies (ace#2607) -----
+
+DOC_MIME = "application/vnd.google-apps.document"
+GUIDE = "6-qa-and-training/guide.md"
+TRAINING = f"{SRC_RUN}/6-qa-and-training"
+
+
+def _url(file_id):
+    return f"https://docs.google.com/document/d/{file_id}/edit"
+
+
+def test_markdown_copy_names_the_copies_and_keeps_its_type(drive, source_ws, target_ws, owner):
+    # Live: training-onboarding-email.md and the guides' .source.md linked the
+    # SOURCE run's FAQ, deck and screenshots — 23 ids in the FLW guide alone.
+    guide = drive.file_id(f"{SRC_RUN}/{GUIDE}")
+    shot = drive.file_id(f"{SRC_RUN}/6-qa-and-training/screenshots/s1.png")
+    left_behind = drive.file_id(f"{SRC_RUN}/comms-log/llo-invite.md")
+    email_src = drive.upload_file(
+        drive.folder_id(TRAINING), "training-onboarding-email.md",
+        f"See the [guide]({_url(guide)}) and ![s1](https://drive.google.com/file/d/{shot}/view)"
+        f"\nThread: {left_behind}\n",
+        "text/markdown",
+    )
+    before = drive.get_content(email_src, "text/markdown").content
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+
+    path = f"{DST_RUN}/6-qa-and-training/training-onboarding-email.md"
+    text = drive.get_content(drive.file_id(path), "text/markdown").content
+    assert _names_id(text, drive.file_id(f"{DST_RUN}/{GUIDE}"))
+    assert _names_id(text, drive.file_id(f"{DST_RUN}/6-qa-and-training/screenshots/s1.png"))
+    assert not _names_id(text, guide) and not _names_id(text, shot)
+    # Comms-logs are not cloned, so there is no copy to point at.
+    assert _names_id(text, left_behind)
+    # Written back as itself, not as YAML.
+    f = next(f for f in drive.list_files(drive.folder_id(f"{DST_RUN}/6-qa-and-training"))
+             if f.name == "training-onboarding-email.md")
+    assert f.mime_type == "text/markdown"
+    # The source is never written to.
+    assert drive.get_content(email_src, "text/markdown").content == before
+
+
+def test_google_doc_links_are_retargeted_at_the_copies(drive, source_ws, target_ws, owner):
+    # Live: the partner-facing onboarding-email Doc linked the source FAQ, deck
+    # and quick reference; the FLW guide Doc hid 23 screenshot links behind
+    # link text, where a text export shows no id.
+    guide = drive.file_id(f"{SRC_RUN}/{GUIDE}")
+    left_behind = drive.file_id(f"{SRC_RUN}/comms-log/llo-invite.md")
+    doc_src = drive.upload_file(drive.folder_id(TRAINING), "Training — onboarding email",
+                                f"Read the guide.\nGuide id: {guide}\n", DOC_MIME)
+    drive.set_doc_links(doc_src, [_url(guide), _url(left_behind)])
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+
+    doc = drive.file_id(f"{DST_RUN}/6-qa-and-training/Training — onboarding email")
+    guide_copy = drive.file_id(f"{DST_RUN}/{GUIDE}")
+    assert drive.doc_links(doc) == [_url(guide_copy), _url(left_behind)]
+    body = drive.get_content(doc, DOC_MIME).content
+    assert _names_id(body, guide_copy) and not _names_id(body, guide)
+    # Still a Doc — never flattened by a text write.
+    assert drive.get_file(doc).mime_type == DOC_MIME
+    # The source Doc is untouched.
+    assert drive.doc_links(doc_src) == [_url(guide), _url(left_behind)]
+    assert _names_id(drive.get_content(doc_src, DOC_MIME).content, guide)
+
+
+def test_a_doc_holding_yaml_is_still_written_back_as_yaml(drive, source_ws, target_ws, owner):
+    # run_state/decisions/verdicts are often Google Docs named *.yaml: they keep
+    # the text path (read, rewrite, write text/yaml) they always had.
+    guide = drive.file_id(f"{SRC_RUN}/{GUIDE}")
+    decisions = drive.file_id(f"{SRC_RUN}/decisions.yaml")
+    drive.update_file(decisions, f"rows:\n  - ref: {guide}\n", DOC_MIME)
+    retargeted = []
+    drive.retarget_doc_ids = lambda fid, ids: retargeted.append(fid) or 0
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+    copy = drive.file_id(f"{DST_RUN}/decisions.yaml")
+    text = drive.get_content(copy, "text/yaml").content
+    assert _names_id(text, drive.file_id(f"{DST_RUN}/{GUIDE}"))
+    assert drive.get_file(copy).mime_type == "text/yaml"
+    assert copy not in retargeted
+
+
+def test_binaries_and_other_google_types_are_not_read(drive, source_ws, target_ws, owner):
+    drive.upload_binary(drive.folder_id(TRAINING), "shot.png", b"\x89PNG", "image/png")
+    drive.upload_file(drive.folder_id(TRAINING), "Training Deck", "deck",
+                      "application/vnd.google-apps.presentation")
+    read = []
+    real = drive.get_content
+
+    def spy(file_id, mime_type, **kw):
+        read.append(drive.get_file(file_id).name)
+        return real(file_id, mime_type, **kw)
+
+    drive.get_content = spy
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+    assert "shot.png" not in read and "Training Deck" not in read
+    assert "guide.md" in read
