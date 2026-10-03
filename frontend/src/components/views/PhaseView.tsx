@@ -351,6 +351,10 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openStep?.skill_name]);
   const pickPhase = (name: string) => {
+    // In a replay, picking a phase moves the CURSOR there; the follow-the-
+    // cursor effect below then opens it. Selecting it alone would show the
+    // phase dimmed, as of a beat somewhere else in the run.
+    if (replay.active && replay.beat.phase !== name && replay.goToPhase(name)) return;
     // Picking another phase puts the open step out of view: close it.
     if (openStep && openStep.phase !== name && onCloseStep) onCloseStep(name);
     else setSelectedPhase(name);

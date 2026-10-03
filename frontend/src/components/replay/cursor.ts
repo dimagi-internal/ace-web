@@ -72,6 +72,13 @@ export function revealAt(timeline: DemoTimeline, beatIndex: number): Reveal {
   return { done, running, phases };
 }
 
+/** Index of the beat where `phase` starts (its `phase_start`, else its first
+ *  beat of any kind), or -1 when the run never reached it. */
+export function beatForPhase(timeline: DemoTimeline, phase: string): number {
+  const start = timeline.events.findIndex((e) => e.kind === "phase_start" && e.phase === phase);
+  return start >= 0 ? start : timeline.events.findIndex((e) => e.phase === phase);
+}
+
 /** Index of the beat where `skill` finished, or -1. */
 export function beatForSkill(timeline: DemoTimeline, skill: string): number {
   return timeline.events.findIndex((e) => e.kind === "step_end" && e.skill === skill);

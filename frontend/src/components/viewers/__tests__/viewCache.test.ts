@@ -91,3 +91,49 @@ it("caps rendered rows", async () => {
   expect(r.kind === "csv" && r.rows.length).toBe(MAX_CSV_ROWS);
   expect(r.kind === "csv" && r.truncated).toBe(true);
 });
+
+describe("loadView under load", () => {
+  it("keeps at most 6 views in flight, queueing the rest", async () => {
+    const pending: ((r: Response) => void)[] = [];
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => pending.push(resolve)));
+    const loads = Array.from({ length: 10 }, (_, i) => loadView(`/v/q${i}`));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    pending.shift()!(respond("x", "text/plain"));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    while (fetchMock.mock.calls.length < 10 || pending.length) {
+      pending.shift()?.(respond("x", "text/plain"));
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect((await Promise.all(loads)).every((r) => r.kind === "text")).toBe(true);
+  });
+
+  it("retries a 503 after its Retry-After instead of giving up", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockResolvedValueOnce(respond("{}", "application/problem+json", { status: 503 }, { "Retry-After": "1" }))
+        .mockResolvedValueOnce(respond("# ok", "text/markdown"));
+      const load = loadView("/v/busy");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await load).toMatchObject({ kind: "markdown", text: "# ok" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports the 503 once the retries run out", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(respond("{}", "application/problem+json", { status: 503 }, { "Retry-After": "1" })),
+      );
+      const load = loadView("/v/down");
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await load).toMatchObject({ kind: "error", status: 503 });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

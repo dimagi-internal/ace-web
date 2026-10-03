@@ -11,6 +11,8 @@ import pytest
 from apps.opps import artifact_view
 from apps.opps.drive_client import DriveFile, FileContent
 
+_real_render = artifact_view.render
+
 DOC = "application/vnd.google-apps.document"
 SLIDES = "application/vnd.google-apps.presentation"
 SHEET = "application/vnd.google-apps.spreadsheet"
@@ -181,6 +183,23 @@ def test_endpoint_serves_the_view_with_name_and_drive_link(member_client, monkey
     assert r["X-Artifact-Name"] == "PDD%20%E2%80%94%20v2.md"
     assert r["X-Drive-Link"] == "https://drive/a1"
     assert "private" in r["Cache-Control"]
+
+
+@pytest.mark.django_db
+def test_endpoint_hands_back_its_db_connection_before_reading_drive(member_client, monkeypatch):
+    """A page of screenshots fires dozens of views at once; holding a pooled
+    connection through each ~1s Drive read exhausted the pool and 503'd them."""
+    from django.db import connection
+
+    events = []
+    monkeypatch.setattr(connection, "close", lambda: events.append("db released"))
+    monkeypatch.setattr(
+        "apps.opps.artifact_view.render",
+        lambda drive, meta: events.append("drive read") or _real_render(drive, meta),
+    )
+    _wire(monkeypatch, _snapshot([_art("a1", "PDD.md", DOC)]), _Drive())
+    assert member_client.get("/api/w/ws1/opps/opp/artifacts/a1/view?run_id=r1").status_code == 200
+    assert events[:2] == ["db released", "drive read"]
 
 
 @pytest.mark.django_db

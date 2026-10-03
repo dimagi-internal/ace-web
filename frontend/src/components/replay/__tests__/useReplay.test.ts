@@ -107,6 +107,23 @@ describe("useReplay — step-through", () => {
     expect(result.current.beat.skill).toBe(skill);
   });
 
+  it("jumps to where a phase starts, and refuses a phase the run never reached", async () => {
+    const { result } = await started();
+    const last = result.current.timeline!.events.at(-1)!.phase;
+    let moved = false;
+    act(() => {
+      moved = result.current.goToPhase(last);
+    });
+    expect(moved).toBe(true);
+    expect(result.current.beat.phase).toBe(last);
+    expect(result.current.beat.event?.kind).toBe("phase_start");
+    act(() => {
+      moved = result.current.goToPhase("no-such-phase");
+    });
+    expect(moved).toBe(false);
+    expect(result.current.beat.phase).toBe(last);
+  });
+
   it("reports a load failure instead of hanging", async () => {
     fetchReplay.mockRejectedValue(new Error("boom"));
     const { result } = renderHook(() => useReplay("ws1", "opp", "run-1"));

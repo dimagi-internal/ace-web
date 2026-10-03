@@ -1442,6 +1442,8 @@ def load_artifact_view(workspace, slug: str, artifact_id: str, *, run_id: str | 
     product file ids), so opening a file costs its own Drive read, not a
     cold opp load. The monkeypatch target for tests.
     """
+    from django.db import connection
+
     from apps.opps import artifact_view
     from apps.opps.drive_client import get_drive_client
     from apps.service_accounts.exceptions import ServiceAccountNotFound
@@ -1457,6 +1459,12 @@ def load_artifact_view(workspace, slug: str, artifact_id: str, *, run_id: str | 
         drive = get_drive_client(workspace=workspace)
     except ServiceAccountNotFound as exc:
         raise artifact_view.ArtifactNotFound(str(exc)) from exc
+    # Everything below is Drive I/O (~1s a file). Hand the pooled DB
+    # connection back first: a page of screenshots fires dozens of these at
+    # once, and holding a connection through each download exhausted the
+    # 8-slot pool — the rest waited out the pool timeout and 503'd, leaving
+    # blank tiles. A later DB touch in the request just checks one out again.
+    connection.close()
     meta = artifact_view.resolve(drive, snapshot, artifact_id)
     return artifact_view.render(drive, meta)
 
