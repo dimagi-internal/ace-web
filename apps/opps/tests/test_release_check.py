@@ -61,3 +61,132 @@ def test_plain_summary_and_action_pass_through_and_are_optional():
     assert rc["blockers"][0]["summary"] == "The training deck failed its review."
     assert rc["blockers"][0]["action"] == "Re-render the deck, then re-check."
     assert rc["warnings"][0]["summary"] is None and rc["warnings"][0]["action"] is None
+
+
+def test_merged_is_the_list_of_folded_finding_ids():
+    verdict = dict(VERDICT)
+    verdict["blockers"] = [dict(VERDICT["blockers"][0], merged=["deck-2", "deck-3", {"x": 1}])]
+    verdict["warnings"] = [dict(VERDICT["warnings"][0], merged=True)]
+    client, kids = _children(**{"release-check_verdict.yaml": yaml.safe_dump(verdict)})
+    rc = load_release_check(client, kids)
+    assert rc["blockers"][0]["merged"] == ["deck-2", "deck-3"]
+    assert rc["warnings"][0]["merged"] == []
+    assert rc["blockers"][0]["severity"] == "blocker"
+
+
+PLAN = {
+    "schema_version": 1, "workspace": "spark", "opp": "spark-facilitator", "run_id": "r1",
+    "reviewers": [{"email": "a@x.org", "role": "viewer"}],
+    "options": {"forward_source": True, "allow_cross_workspace_forward": True,
+                "allow_shared_connect": False, "unknown": True},
+    "actions": [
+        {"step": 1, "id": "hq:a@x.org", "system": "hq", "kind": "hq_invite",
+         "email": "a@x.org", "target": "spark-hq", "role": "App Editor"},
+        {"step": 2, "id": "connect:a@x.org:org", "system": "connect",
+         "kind": "connect_org_member", "email": "a@x.org", "target": "org", "role": "viewer",
+         "shared": False},
+        {"step": 3, "id": "drive:f1", "system": "drive", "kind": "drive_share", "target": "f1",
+         "title": "PDD", "url": "https://docs.google.com/document/d/f1", "role": "commenter",
+         "scope": "anyone_with_link"},
+        {"step": 4, "id": "forward-source", "system": "ace-web", "kind": "forward_source",
+         "target": "dimagi-team/spark-facilitator/r0", "cross_workspace": True},
+        {"step": 5, "id": "ace-web:a@x.org", "system": "ace-web", "kind": "ace_web_invite",
+         "email": "a@x.org", "target": "spark", "role": "viewer", "secret": {"nested": 1}},
+        {"step": 6, "id": "email:a@x.org", "system": "email", "kind": "email",
+         "email": "a@x.org", "target": "a@x.org", "subject": "Review"},
+        "not-a-dict",
+        {"step": 7, "id": "no-kind"},
+    ],
+    "not_granted": [
+        {"email": "a@x.org", "system": "ocs", "reason": "public chat link, no account"}],
+    "emails": [{"to": "a@x.org", "subject": "Review",
+                "body": "Hi\n\n  {{ACCEPT_LINK}}\n" + "x" * 20_000}],
+}
+
+READY_V2 = dict(
+    VERDICT, schema_version=2, kind="release-readiness", verdict="READY",
+    counts={"blockers": 0, "warnings": 0}, blockers=[], warnings=[],
+    reviewers=[{"email": "a@x.org", "role": "viewer"}, {"role": "no-email"}],
+    run_state_hash="sha256:aa", plan_hash="sha256:bb", release_plan=PLAN,
+)
+
+
+def test_the_new_verdict_wins_over_the_legacy_one_and_pairs_its_report():
+    client, kids = _children(**{
+        "release-check_verdict.yaml": yaml.safe_dump(VERDICT),
+        "release-check_report.md": "# old",
+        "release-readiness_verdict.yaml": yaml.safe_dump(READY_V2),
+        "release-readiness_report.md": "# new",
+    })
+    rc = load_release_check(client, kids)
+    assert rc["kind"] == "release-readiness"
+    assert rc["verdict"] == "READY"
+    new_report = next(f for f in kids if f.name == "release-readiness_report.md")
+    assert rc["report"]["file_id"] == new_report.id
+
+
+def test_the_legacy_verdict_is_still_read():
+    client, kids = _children(**{
+        "release-check_verdict.yaml": yaml.safe_dump(VERDICT),
+        "release-check_report.md": "# old",
+    })
+    rc = load_release_check(client, kids)
+    assert rc["kind"] == "release-check"
+    assert rc["verdict"] == "NOT_READY"
+    assert rc["reviewers"] == [] and rc["release_plan"] is None
+    assert rc["report"]["file_id"]
+
+
+def test_a_new_verdict_never_borrows_the_legacy_report():
+    client, kids = _children(**{
+        "release-readiness_verdict.yaml": yaml.safe_dump(READY_V2),
+        "release-check_report.md": "# old",
+    })
+    assert load_release_check(client, kids)["report"] is None
+
+
+def test_the_release_plan_is_sanitized():
+    client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(READY_V2)})
+    rc = load_release_check(client, kids)
+    assert rc["reviewers"] == [{"email": "a@x.org", "role": "viewer"}]
+    plan = rc["release_plan"]
+    assert plan["reviewers"] == [{"email": "a@x.org", "role": "viewer"}]
+    # The non-dict and the kind-less action are dropped; order is kept.
+    assert [a["kind"] for a in plan["actions"]] == [
+        "hq_invite", "connect_org_member", "drive_share", "forward_source",
+        "ace_web_invite", "email",
+    ]
+    hq, connect, drive, fwd, invite, _ = plan["actions"]
+    assert hq["step"] == 1 and hq["role"] == "App Editor"
+    assert connect["shared"] is False
+    assert drive["scope"] == "anyone_with_link" and drive["title"] == "PDD"
+    assert fwd["cross_workspace"] is True and "shared" not in fwd
+    assert "secret" not in invite
+    assert plan["options"] == {"forward_source": True, "allow_cross_workspace_forward": True,
+                               "allow_shared_connect": False}
+    assert plan["not_granted"] == [
+        {"email": "a@x.org", "system": "ocs", "reason": "public chat link, no account"}]
+    body = plan["emails"][0]["body"]
+    assert body.startswith("Hi\n\n  {{ACCEPT_LINK}}\n") and len(body) == 10_000
+
+
+def test_a_ready_legacy_verdict_has_no_plan():
+    legacy_ready = dict(VERDICT, verdict="READY", counts={"blockers": 0, "warnings": 0},
+                        blockers=[], warnings=[])
+    client, kids = _children(**{"release-check_verdict.yaml": yaml.safe_dump(legacy_ready)})
+    rc = load_release_check(client, kids)
+    assert rc["verdict"] == "READY" and rc["release_plan"] is None
+
+
+def test_a_not_ready_verdict_never_serves_a_plan_and_bad_plans_degrade():
+    client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(
+        dict(READY_V2, verdict="NOT_READY"))})
+    assert load_release_check(client, kids)["release_plan"] is None
+    empty = {"reviewers": [], "options": {}, "actions": [], "not_granted": [], "emails": []}
+    for bad in ("a string", [1, 2], {"actions": "nope", "emails": {"to": "x"}}):
+        client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(
+            dict(READY_V2, release_plan=bad, reviewers="nope", counts="nope"))})
+        rc = load_release_check(client, kids)
+        assert rc["verdict"] == "READY" and rc["reviewers"] == []
+        assert rc["counts"] == {"blockers": 0, "warnings": 0}
+        assert rc["release_plan"] in (None, empty)

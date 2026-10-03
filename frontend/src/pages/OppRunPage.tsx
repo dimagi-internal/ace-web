@@ -12,7 +12,7 @@ import { ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { RunsTable } from "../components/opps/RunsTable";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
-import { ReleaseCheckBadge } from "../components/opps/ReleaseCheckBadge";
+import { ReleaseReadinessBadge } from "../components/opps/ReleaseReadinessBadge";
 import { useReplay } from "../components/replay/useReplay";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
@@ -274,7 +274,7 @@ export default function OppRunPage() {
           </button>
         )}
         <div className={replay.active && view === "phase" ? "ml-auto" : ""}>
-          <ReleaseCheckBadge check={snapshot.current_run.release_check} />
+          <ReleaseReadinessBadge check={snapshot.current_run.release_check} />
         </div>
         <a
           href={`/ace/opps/${workspaceSlug}/${slug}/runs/${snapshot.current_run.run_id}/summary`}

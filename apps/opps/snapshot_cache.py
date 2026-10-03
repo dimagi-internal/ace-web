@@ -115,7 +115,12 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        decisions.yaml next changed.
 #   v19 — Decision gained ``plain_question`` / ``plain_value`` (display
 #        fields). A warm v18 entry would serve rows without them.
-_KEY_VERSION = "v19"
+#   v20 — ``release_check`` reads the plugin's validate-release-readiness
+#        verdict (``release-readiness_verdict.yaml``, legacy release-check as
+#        fallback) and gained ``kind`` / ``reviewers`` / ``release_plan``. A
+#        warm v19 entry would serve a release-ready run as "Re-validate" (no
+#        plan) until its Drive files next changed.
+_KEY_VERSION = "v20"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

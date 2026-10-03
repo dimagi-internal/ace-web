@@ -379,14 +379,16 @@ export interface Run {
    *  flattened server-side by apps/opps/run_products.py. Absent on a
    *  snapshot cached before v11. */
   products?: RunProduct[];
-  /** The plugin's release-check verdict for this run, or absent/null when it
-   *  has never been checked (apps/opps/release_check.py). */
+  /** The plugin's validate-release-readiness verdict (legacy: release-check)
+   *  for this run, or absent/null when it has never been validated
+   *  (apps/opps/release_check.py). */
   release_check?: ReleaseCheck | null;
 }
 
 export interface ReleaseCheckItem {
   id: string | null;
   area: string | null;
+  severity?: string | null;
   owner: string | null;
   detail: string | null;
   fix: string | null;
@@ -394,9 +396,48 @@ export interface ReleaseCheckItem {
   summary?: string | null;
   /** Plain next step (ACE 2026-10). Preferred over `fix` when present. */
   action?: string | null;
+  /** Ids of findings folded into this one. */
+  merged?: string[];
+}
+
+export interface ReleaseReviewer {
+  email: string;
+  role: string | null;
+}
+
+/** One share action `/ace:release` executes, in `step` order. Only
+ *  system/kind are guaranteed; every other field may be null/absent. */
+export interface ReleasePlanAction {
+  step: number | null;
+  id: string | null;
+  system: string;
+  kind: string;
+  email?: string | null;
+  target?: string | null;
+  role?: string | null;
+  title?: string | null;
+  url?: string | null;
+  scope?: string | null;
+  subject?: string | null;
+  shared?: boolean;
+  cross_workspace?: boolean;
+}
+
+export interface ReleasePlan {
+  reviewers: ReleaseReviewer[];
+  options?: Record<string, boolean>;
+  actions: ReleasePlanAction[];
+  not_granted: { email: string | null; system: string; reason: string | null }[];
+  /** `body` carries the literal `{{ACCEPT_LINK}}`, filled in at release. */
+  emails: { to: string; subject: string | null; body: string | null }[];
 }
 
 export interface ReleaseCheck {
+  /** Which verdict file was read; absent on a snapshot cached before v20. */
+  kind?: "release-readiness" | "release-check";
+  reviewers?: ReleaseReviewer[];
+  /** The exact share actions a release runs — only on a READY v2 verdict. */
+  release_plan?: ReleasePlan | null;
   verdict: "READY" | "NOT_READY" | "UNREADABLE";
   checked_at: string | null;
   run_last_write: string | null;
