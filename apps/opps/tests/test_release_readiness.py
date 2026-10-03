@@ -1,13 +1,13 @@
-"""apps/opps/release_check.py — reading the plugin's release-check verdict."""
+"""apps/opps/release_readiness.py — reading the plugin's release-readiness verdict."""
 from __future__ import annotations
 
 import yaml
 
-from apps.opps.release_check import load_release_check
+from apps.opps.release_readiness import load_release_readiness
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 
 VERDICT = {
-    "schema_version": 1, "kind": "release-check", "workspace": "spark",
+    "schema_version": 2, "kind": "release-readiness", "workspace": "spark",
     "opp": "spark-facilitator", "run_id": "r1", "checked_at": "2026-10-01T20:00:00Z",
     "run_last_write": "2026-10-01T19:00:00Z", "verdict": "NOT_READY", "read_only": False,
     "counts": {"blockers": 1, "warnings": 1},
@@ -25,10 +25,10 @@ def _children(**files):
 
 def test_reads_the_verdict_and_links_the_report():
     client, kids = _children(**{
-        "release-check_verdict.yaml": yaml.safe_dump(VERDICT),
-        "release-check_report.md": "# report",
+        "release-readiness_verdict.yaml": yaml.safe_dump(VERDICT),
+        "release-readiness_report.md": "# report",
     })
-    rc = load_release_check(client, kids)
+    rc = load_release_readiness(client, kids)
     assert rc["verdict"] == "NOT_READY"
     assert rc["counts"] == {"blockers": 1, "warnings": 1}
     assert rc["blockers"][0]["owner"] == "training-deck-render"
@@ -38,14 +38,14 @@ def test_reads_the_verdict_and_links_the_report():
 
 def test_a_run_never_checked_has_no_verdict():
     client, kids = _children(**{"run_state.yaml": "phases: {}"})
-    assert load_release_check(client, kids) is None
+    assert load_release_readiness(client, kids) is None
 
 
 def test_an_unreadable_verdict_is_never_ready():
-    client, kids = _children(**{"release-check_verdict.yaml": "verdict: [unclosed"})
-    assert load_release_check(client, kids)["verdict"] == "UNREADABLE"
-    client, kids = _children(**{"release-check_verdict.yaml": "verdict: SHIP_IT\n"})
-    assert load_release_check(client, kids)["verdict"] == "UNREADABLE"
+    client, kids = _children(**{"release-readiness_verdict.yaml": "verdict: [unclosed"})
+    assert load_release_readiness(client, kids)["verdict"] == "UNREADABLE"
+    client, kids = _children(**{"release-readiness_verdict.yaml": "verdict: SHIP_IT\n"})
+    assert load_release_readiness(client, kids)["verdict"] == "UNREADABLE"
 
 
 def test_plain_summary_and_action_pass_through_and_are_optional():
@@ -56,8 +56,8 @@ def test_plain_summary_and_action_pass_through_and_are_optional():
     verdict["blockers"] = [dict(VERDICT["blockers"][0],
                                 summary="The training deck failed its review.",
                                 action="Re-render the deck, then re-check.")]
-    client, kids = _children(**{"release-check_verdict.yaml": yaml.safe_dump(verdict)})
-    rc = load_release_check(client, kids)
+    client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(verdict)})
+    rc = load_release_readiness(client, kids)
     assert rc["blockers"][0]["summary"] == "The training deck failed its review."
     assert rc["blockers"][0]["action"] == "Re-render the deck, then re-check."
     assert rc["warnings"][0]["summary"] is None and rc["warnings"][0]["action"] is None
@@ -67,8 +67,8 @@ def test_merged_is_the_list_of_folded_finding_ids():
     verdict = dict(VERDICT)
     verdict["blockers"] = [dict(VERDICT["blockers"][0], merged=["deck-2", "deck-3", {"x": 1}])]
     verdict["warnings"] = [dict(VERDICT["warnings"][0], merged=True)]
-    client, kids = _children(**{"release-check_verdict.yaml": yaml.safe_dump(verdict)})
-    rc = load_release_check(client, kids)
+    client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(verdict)})
+    rc = load_release_readiness(client, kids)
     assert rc["blockers"][0]["merged"] == ["deck-2", "deck-3"]
     assert rc["warnings"][0]["merged"] == []
     assert rc["blockers"][0]["severity"] == "blocker"
@@ -111,43 +111,27 @@ READY_V2 = dict(
 )
 
 
-def test_the_new_verdict_wins_over_the_legacy_one_and_pairs_its_report():
+def test_only_the_release_readiness_files_are_read():
+    """The retired file names are not a fallback: a run carrying only them has
+    not been validated, and a report is never borrowed from them."""
+    legacy_verdict, legacy_report = "release-check_verdict.yaml", "release-check_report.md"
     client, kids = _children(**{
-        "release-check_verdict.yaml": yaml.safe_dump(VERDICT),
-        "release-check_report.md": "# old",
+        legacy_verdict: yaml.safe_dump(dict(VERDICT, verdict="READY")),
+        legacy_report: "# old",
+    })
+    assert load_release_readiness(client, kids) is None
+    client, kids = _children(**{
+        legacy_report: "# old",
         "release-readiness_verdict.yaml": yaml.safe_dump(READY_V2),
-        "release-readiness_report.md": "# new",
     })
-    rc = load_release_check(client, kids)
-    assert rc["kind"] == "release-readiness"
-    assert rc["verdict"] == "READY"
-    new_report = next(f for f in kids if f.name == "release-readiness_report.md")
-    assert rc["report"]["file_id"] == new_report.id
-
-
-def test_the_legacy_verdict_is_still_read():
-    client, kids = _children(**{
-        "release-check_verdict.yaml": yaml.safe_dump(VERDICT),
-        "release-check_report.md": "# old",
-    })
-    rc = load_release_check(client, kids)
-    assert rc["kind"] == "release-check"
-    assert rc["verdict"] == "NOT_READY"
-    assert rc["reviewers"] == [] and rc["release_plan"] is None
-    assert rc["report"]["file_id"]
-
-
-def test_a_new_verdict_never_borrows_the_legacy_report():
-    client, kids = _children(**{
-        "release-readiness_verdict.yaml": yaml.safe_dump(READY_V2),
-        "release-check_report.md": "# old",
-    })
-    assert load_release_check(client, kids)["report"] is None
+    rc = load_release_readiness(client, kids)
+    assert rc["kind"] == "release-readiness" and rc["verdict"] == "READY"
+    assert rc["report"] is None
 
 
 def test_the_release_plan_is_sanitized():
     client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(READY_V2)})
-    rc = load_release_check(client, kids)
+    rc = load_release_readiness(client, kids)
     assert rc["reviewers"] == [{"email": "a@x.org", "role": "viewer"}]
     plan = rc["release_plan"]
     assert plan["reviewers"] == [{"email": "a@x.org", "role": "viewer"}]
@@ -170,23 +154,22 @@ def test_the_release_plan_is_sanitized():
     assert body.startswith("Hi\n\n  {{ACCEPT_LINK}}\n") and len(body) == 10_000
 
 
-def test_a_ready_legacy_verdict_has_no_plan():
-    legacy_ready = dict(VERDICT, verdict="READY", counts={"blockers": 0, "warnings": 0},
-                        blockers=[], warnings=[])
-    client, kids = _children(**{"release-check_verdict.yaml": yaml.safe_dump(legacy_ready)})
-    rc = load_release_check(client, kids)
+def test_a_ready_verdict_without_a_plan_has_no_plan():
+    no_plan = {k: v for k, v in READY_V2.items() if k != "release_plan"}
+    client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(no_plan)})
+    rc = load_release_readiness(client, kids)
     assert rc["verdict"] == "READY" and rc["release_plan"] is None
 
 
 def test_a_not_ready_verdict_never_serves_a_plan_and_bad_plans_degrade():
     client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(
         dict(READY_V2, verdict="NOT_READY"))})
-    assert load_release_check(client, kids)["release_plan"] is None
+    assert load_release_readiness(client, kids)["release_plan"] is None
     empty = {"reviewers": [], "options": {}, "actions": [], "not_granted": [], "emails": []}
     for bad in ("a string", [1, 2], {"actions": "nope", "emails": {"to": "x"}}):
         client, kids = _children(**{"release-readiness_verdict.yaml": yaml.safe_dump(
             dict(READY_V2, release_plan=bad, reviewers="nope", counts="nope"))})
-        rc = load_release_check(client, kids)
+        rc = load_release_readiness(client, kids)
         assert rc["verdict"] == "READY" and rc["reviewers"] == []
         assert rc["counts"] == {"blockers": 0, "warnings": 0}
         assert rc["release_plan"] in (None, empty)
