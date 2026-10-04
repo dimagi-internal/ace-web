@@ -1,0 +1,377 @@
+# Rows VERBATIM from the real spark/spark-facilitator/20261001-2208/decisions.yaml (2026-10-04),
+# trimmed to the decisions the lineage tests follow (18 of 198).
+schema_version: 6
+run_id: 20261001-2208
+decisions:
+- id: working-language
+  phase: 1-design
+  skill: idea-to-pdd
+  question: Working language(s) and who reviews translations?
+  ai-default: English source plus Chichewa (nya) and Tumbuka (tum)
+  options:
+  - English source plus Chichewa (nya) and Tumbuka (tum)
+  - English only
+  reasoning: Matches Spark's own app. Translations are ACE-authored and needs-review; native review is
+    a downstream obligation.
+  source: FCAP extract (app languages en/nya/tum); CCZ has en, nya, tum folders
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+  plain_question: Have the Chichewa and Tumbuka translations been checked by a native speaker?
+  review_ask: recommended-confirmation
+  confirm_reason: The Chichewa and Tumbuka text was produced by AI and has not been reviewed by a native
+    speaker; a worker who switches language sees the unreviewed text.
+  plain: The apps are written in English, with Chichewa and Tumbuka translations made by AI.
+- id: learn-latitude-baseline-pretest
+  phase: 3-commcare
+  skill: pdd-to-learn-app
+  question: PDD §4.2 names one 12-item bank — does the Learn app also carry a baseline pre-test?
+  ai-default: 6-item non-gating pre-test added
+  options:
+  - 6-item non-gating pre-test added
+  - gate only, no pre-test
+  reasoning: 'ACE''s assessment-gate standard wants a baseline distinct from the gate; it carries learn_module
+    only, never connect.assessment, so it cannot unlock Deliver. Spot-check: Learn app › Before you start
+    › Starting quiz.'
+  source: PDD §4.2 [ACE]
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: inferred
+  superseded_by: learn-latitude-starting-quiz
+  inherited_from_run: 20260926-1800
+- id: deliver-latitude-education-codes
+  phase: 3-commcare
+  skill: pdd-to-deliver-app
+  question: PDD §5.1 education option list is to be reconciled with Spark's — which list ships?
+  ai-default: Spark's five codes
+  options:
+  - Spark's five codes
+  - PDD list with other
+  reasoning: 'none/primary/secondary/tertiary/university, verbatim from modules-2/forms-0.xml. Spot-check:
+    Deliver app › Facilitator Registration › cbf_education.'
+  source: PDD §5.1; Spark CF Registration Form [ACE]
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+  superseded_by: deliver-latitude-education-options
+  inherited_from_run: 20260926-1800
+- id: program-currency-usd-vs-mwk
+  phase: 4-connect
+  skill: connect-program-setup
+  question: Reuse the USD Spark program (convert at award) or create a replacement MWK program?
+  ai-default: Create new MWK program
+  options:
+  - Create new MWK program
+  - Reuse USD program and convert at award
+  reasoning: 'HUMAN-DECIDED by the operator (jjackson@dimagi.com, 2026-09-26T00:30Z, orchestrator AskUserQuestion
+    at the Phase 3->4 boundary); recorded as ai-default only because the write boundary refuses a caller-asserted
+    human-decided status (ace#2307) and no inputs/decision-overrides.yaml ruling exists. Created program
+    9e82982e (MWK, MWI); USD program a115e4f2 left in place, flagged superseded in opp.yaml. Spot-check:
+    Connect › program 9e82982e › currency.'
+  source: run_state.yaml operator_decisions.program-currency-usd-vs-mwk; PDD §14 locale warning, §15.3
+  status: ai-default
+  value_set_by: external
+  evidence_basis: stated
+  params:
+    decided_by: jjackson@dimagi.com
+    decided_at: '2026-09-26T00:30:00Z'
+    record: 'run_state.yaml operator_decisions.program-currency-usd-vs-mwk (status: human-decided)'
+    new_program: 9e82982e-7638-44bc-9de2-2bfcefae550d
+    superseded_program: a115e4f2-6af6-401b-8add-8b97af80f43c
+  superseded_by: connect-ambiguity-program-currency-spark
+  inherited_from_run: 20260926-1800
+- id: program-reuse-vs-create
+  phase: 4-connect
+  skill: connect-program-setup
+  question: Reuse an existing Connect program or create one?
+  ai-default: Create
+  options:
+  - Create
+  - Reuse a115e4f2 (USD)
+  reasoning: 'Only domain+archetype match was a115e4f2, whose currency (USD) diverges from the PDD''s
+    MWK; the operator chose replacement. Spot-check: opp.yaml connect.program.id.'
+  source: connect_list_programs(ai-demo-space) unfiltered, 45 programs; operator decision program-currency-usd-vs-mwk
+  superseded_by: program-reuse-vs-create-2208
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: connect-latitude-payment-amount
+  phase: 4-connect
+  skill: connect-opp-setup
+  question: Which single FLW amount does the payment unit carry within the PROPOSED MWK 5,000-10,000 band?
+  ai-default: '7500'
+  options:
+  - '7500'
+  - '5000'
+  - '10000'
+  reasoning: 'Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate.
+    Spot-check: Connect › payment unit › amount.'
+  source: PDD §10.1, §14 payment_rate_min/max [PROPOSED]
+  superseded_by: connect-latitude-payment-amount-2208
+  status: ai-default
+  value_set_by: external
+  evidence_basis: inferred
+- id: connect-ambiguity-program-currency
+  phase: 4-connect
+  skill: connect-opp-setup
+  question: The durable program was USD while the PDD is fixed in MWK — how is that resolved?
+  ai-default: new MWK program
+  options:
+  - new MWK program
+  - reuse USD and convert
+  reasoning: 'Operator decision (jjackson@dimagi.com, 2026-09-26). Spot-check: Connect › program 9e82982e
+    › currency.'
+  source: PDD §14 locale warning; run_state operator_decisions.program-currency-usd-vs-mwk
+  superseded_by: connect-ambiguity-program-currency-2208
+  status: ai-default
+  value_set_by: external
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §14 opportunity_currency: MWK'
+  - 'Connect program a115e4f2 currency: USD (create-time only)'
+- id: solicitation-all-in-rate-and-devices
+  phase: 8-solicitation-management
+  skill: solicitation-create
+  question: How is the rate framed on the listing, and where do device costs sit?
+  ai-default: All-in, devices inside the rate
+  options:
+  - All-in, devices inside the rate
+  - Devices costed separately (work order §2)
+  reasoning: Standing operator directive (2026-09-08) requires an all-in per-verified-unit rate with no
+    separately-funded line and an explicit worker-vs-organisation split (ace#2265). The PDD band (MWK
+    5,000-10,000 to the CBF + MWK 3,000 organisation floor, both PROPOSED; Phase 4 payment unit 7,500
+    + 3,000) is shown as an indicative all-in MWK 8,000-13,000. This deviates from work order §2 / PDD
+    §12, which let the partner cost device provision separately; the listing instead asks how any device
+    gap is carried inside the rate. The work order text should be reconciled at contract execution.
+  source: PDD §10.1, §12, §14; work order §2, §6.2; run_state connect-setup payment_units
+  superseded_by: sol-devices-and-system-of-record-2208
+  status: ai-default
+  value_set_by: external
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'Work order §2 / PDD §12: device provision costed separately, funded only if Dimagi agrees'
+  - 'Operator directive 2026-09-08 (solicitation-create design principle): rate is all-in, never invite
+    a separately-funded line'
+- id: deliver-latitude-education-options
+  phase: 3-commcare
+  skill: pdd-to-deliver-app
+  question: PDD §5.1 lists education options with other and asks to reconcile with Spark — which list
+    ships?
+  ai-default: Spark's five incl. university
+  options:
+  - Spark's five incl. university
+  - PDD list with other
+  reasoning: 'Spark''s CF Registration Form has university and no other (idea-to-pdd-eval WARN). Spot-check:
+    Deliver app › Facilitator Registration › cbf_education.'
+  source: PDD §5.1 (Facilitator Registration)
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: inferred
+  plain: The education options follow Spark's own list (none, primary, secondary, tertiary, university),
+    not the design's list with "other".
+  check_at: Deliver app › Facilitator Registration › education
+  correct_looks_like: Five options including university.
+- id: learn-latitude-starting-quiz
+  phase: 3-commcare
+  skill: pdd-to-learn-app
+  question: PDD §4.2 specifies one 12-item gate — is a separate baseline quiz added?
+  ai-default: 6-item non-gating starting quiz
+  options:
+  - 6-item non-gating starting quiz
+  - gate only
+  reasoning: 'ACE''s assessment-gate standard requires a baseline bank distinct from the gate; it carries
+    learn_module only, never connect.assessment (ace#1131). Spot-check: Learn app › Before you start ›
+    Starting quiz.'
+  source: PDD §4.2 (Assessment)
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: inferred
+  plain: The Learn app adds a 6-question starting quiz before the lessons. It does not count toward passing
+    and cannot unlock the Deliver app.
+  check_at: Learn app › Before you start › Starting quiz
+  correct_looks_like: Six questions; passing it does not unlock delivery.
+- id: program-reuse-vs-create-2208
+  phase: 4-connect
+  skill: connect-program-setup
+  question: Reuse an existing Connect program or create one?
+  ai-default: Reuse e7ca0792 (MWK)
+  options:
+  - Reuse e7ca0792 (MWK)
+  - Create
+  reasoning: 'Unfiltered scan of ace-pm-org: 2 programs; e7ca0792 matches delivery type ace + longitudinal
+    design, MWK/MWI per PDD §14; the other is a throwaway PM→NM probe. Description refreshed to keep ''instead
+    of or in addition to Spark''s form'' open (PDD §15). Budget ceiling 32,760,000 kept: Σ 3,276,000 over
+    1 opp, headroom ample. Spot-check: Connect › program e7ca0792 › description.'
+  source: connect_list_programs(ace-pm-org) unfiltered, 2 programs; opp.yaml connect.program
+  supersedes: program-reuse-vs-create
+  superseded_by: program-reuse-vs-create-spark
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: connect-ambiguity-program-currency-2208
+  phase: 4-connect
+  skill: connect-program-setup
+  question: The PDD's Phase 4 locale warning says the durable program is USD while the design is MWK —
+    how is that resolved?
+  ai-default: reuse MWK program e7ca0792
+  options:
+  - reuse MWK program e7ca0792
+  - reuse USD and convert
+  reasoning: 'Already resolved by the operator decision of 2026-09-26: the durable program is now e7ca0792
+    (MWK, MWI) in ace-pm-org; the USD program is superseded in opp.yaml. Spot-check: Connect › program
+    e7ca0792 › currency.'
+  source: PDD §14 locale warning; opp.yaml connect.program / superseded_programs
+  supersedes: connect-ambiguity-program-currency
+  superseded_by: connect-ambiguity-program-currency-spark
+  status: ai-default
+  value_set_by: external
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §14 locale warning: durable program a115e4f2 carries USD'
+  - 'opp.yaml connect.program e7ca0792: currency MWK, country MWI (verified live)'
+- id: connect-latitude-payment-amount-2208
+  phase: 4-connect
+  skill: connect-opp-setup
+  question: Which single FLW amount does the payment unit carry within the PROPOSED MWK 5,000-10,000 band?
+  ai-default: '7500'
+  options:
+  - '7500'
+  - '5000'
+  - '10000'
+  reasoning: 'Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate.
+    Spot-check: Connect › payment unit › amount.'
+  source: PDD §10.1, §14 payment_rate_min/max [PROPOSED]
+  supersedes: connect-latitude-payment-amount
+  superseded_by: connect-latitude-payment-amount-spark
+  status: ai-default
+  value_set_by: external
+  evidence_basis: inferred
+- id: sol-devices-and-system-of-record-2208
+  phase: 8-solicitation-management
+  skill: solicitation-create
+  question: Does the listing ask about CBF smartphones/connectivity or whether CBFs file the record instead
+    of or in addition to Spark's form, and how is the rate framed?
+  ai-default: Not asked; rate all-in with CBF vs organisation split
+  options:
+  - Not asked; rate all-in with CBF vs organisation split
+  - 'Ask PDD §12 #1 and #5; devices costed separately'
+  - Ask about devices; devices costed separately
+  reasoning: 'Standing operator directives: devices, data and system of record are ASSUMED, never asked
+    (2026-09-26), and the rate is ALL-IN with an explicit worker vs commodity split and no separately-funded
+    line (2026-09-08, ace#2265). The PDD §12 / work order §2 device go/no-go and separately-costed device
+    plan, and the instead-of/in-addition-to filing ask, are therefore omitted from the listing. Indicative
+    all-in band shown as MWK 8,000-13,000 (CBF 5,000-10,000 + organisation 3,000, both PROPOSED). Work
+    order §2/§6.1 text should be reconciled at contract execution.'
+  source: PDD §10, §10.1, §12; work order §2, §6.1; solicitation-create design principles
+  supersedes: solicitation-all-in-rate-and-devices
+  status: overridden
+  value_set_by: external
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §12 asks #1 and #5 and work order §2: confirm smartphones/connectivity or cost devices separately;
+    ask whether CBFs file instead of or in addition to Spark''s form'
+  - Operator directives 2026-09-26 (devices/system of record assumed, never asked) and 2026-09-08 (all-in
+    rate, no separately-funded line)
+  plain: The call asks each applicant how many facilitators already have a working phone and mobile data,
+    and to price a separate plan for the rest; the per-meeting rate covers the work itself.
+  override: Ask about devices; devices costed separately
+  override_reasoning: 'Operator decision 2026-10-04 (Jonathan Jackson): we want to understand what each
+    applicant will do about devices. The listing now asks how many CBFs already have a working smartphone
+    and mobile data and, for the rest, a costed device plan stated separately from the per-meeting rate;
+    Dimagi agrees that cost at contract execution. This overrides the 2026-09-26 ''devices assumed, never
+    asked'' directive for this pilot only, because the PDD''s own evidence (Spark''s tablet-and-file-share
+    programme) argues against assuming smartphones. The work order §2/§6.1 follows. Whether CBFs file
+    instead of or in addition to Spark''s form is still not asked.'
+  plain_value: Ask about phones and data; price devices separately
+- id: program-reuse-vs-create-spark
+  phase: 4-connect
+  skill: connect-program-setup
+  question: Reuse an existing Connect program or create one, for the spark workspace copy?
+  ai-default: Create
+  options:
+  - Create
+  - Reuse e7ca0792 (MWK)
+  reasoning: 'Unfiltered scan of spark-pm-org-test: 0 programs. The clone cleared opp.yaml.connect so
+    the copy gets its own program in Spark''s PM org; the source program lives in ace-pm-org, outside
+    this tenancy. Created f537601b. Spot-check: opp.yaml connect.program.id.'
+  source: opp.yaml connect block (cleared by clone-to-new-workspace); connect_list_programs(spark-pm-org-test)
+  supersedes: program-reuse-vs-create-2208
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+  plain: 'A new Spark programme was created in Spark''s own Connect workspace, with the same name, description
+    and kwacha pricing as the programme the design was reviewed against. Its budget ceiling was set to
+    32,760,000 MWK, ten times one opportunity''s budget, so later runs fit under it. The design''s warning
+    that the programme is priced in US dollars does not apply: the new programme is in kwacha.'
+  check_at: Connect › programme page
+  correct_looks_like: Malawi kwacha, Malawi, delivery type "ACE"; the description says whether the form
+    replaces or adds to Spark's form is for Spark to decide.
+- id: connect-ambiguity-program-currency-spark
+  phase: 4-connect
+  skill: connect-program-setup
+  question: PDD §14 warns the durable program is USD; which currency does this program use?
+  ai-default: new MWK program
+  options:
+  - new MWK program
+  - reuse USD program
+  reasoning: 'This spark copy creates a fresh program in spark-pm-org-test with MWK / Malawi, so no USD
+    program is in play. Spot-check: Connect › program f537601b › currency.'
+  source: PDD §14 Locale warning for Phase 4
+  supersedes: connect-ambiguity-program-currency-2208
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §14 Locale warning: durable program a115e4f2 is USD'
+  - 'PDD §14 opportunity_currency: MWK; checkProgramLocale(MWI, MWK) ok'
+  check_at: Connect › programme page
+  correct_looks_like: Malawi kwacha, Malawi, delivery type "ACE"; the description says whether the form
+    replaces or adds to Spark's form is for Spark to decide.
+  plain: The Connect programme is new and priced in Malawi kwacha, so the design's warning about a US-dollar
+    programme does not apply.
+- id: connect-latitude-payment-amount-spark
+  phase: 4-connect
+  skill: connect-opp-setup
+  question: Which FLW amount within the PDD's proposed MWK 5,000-10,000 band is configured?
+  ai-default: '7500'
+  options:
+  - '7500'
+  - '5000'
+  - '10000'
+  reasoning: 'Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate.
+    Spot-check: Connect › payment unit › amount.'
+  source: PDD §10.1, §14 payment_rate_min/max [PROPOSED]
+  supersedes: connect-latitude-payment-amount-2208
+  status: ai-default
+  value_set_by: external
+  evidence_basis: inferred
+  plain: Worker payment is set at 7,500 MWK, the middle of the design's proposed 5,000–10,000 MWK. It
+    is a placeholder that the awarded rate replaces.
+  check_at: Connect › opportunity › payment units
+  correct_looks_like: 7,500 MWK per verified meeting.
+  plain_question: What should a facilitator be paid per verified community meeting?
+  plain_value: 7,500 MWK
+  review_ask: recommended-confirmation
+  confirm_reason: The design marks the worker rate as proposed (5,000–10,000 MWK per verified community
+    meeting); the build uses 7,500 MWK as a placeholder, and Connect pays whatever figure is set.
+- id: open-question-recording-path-whole-community-group-declines
+  phase: 3-commcare
+  skill: pdd-to-deliver-app
+  question: No recording path when a whole community group declines the meeting photo (photo is required
+    on the paid form; the statement lets individuals step out of frame) — how should this be handled?
+  ai-default: Not decided — built as described
+  options:
+  - Not decided — built as described
+  - Change the build
+  source: run_state phases.commcare-setup.residuals
+  status: ai-default
+  value_set_by: external
+  evidence_basis: inferred
+  plain: The paid form requires a group photo, and there is no way to record a meeting where the whole
+    group declines the photo, so a meeting that happened could go unpaid.
+  review_ask: recommended-confirmation
+  confirm_reason: Only Spark and the implementing organisation can decide how a meeting is recorded when
+    the whole group declines the photo; as built, that meeting goes unpaid.
+  plain_question: How should a meeting be recorded when the whole group declines the photo?
+  plain_value: No way to record it yet — the meeting goes unpaid
+  check_at: Deliver app › Community Meeting Record › meeting photo

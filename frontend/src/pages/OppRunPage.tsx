@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ExternalLink, History } from "lucide-react";
 
@@ -18,6 +18,13 @@ import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
 import { ClonedToBanner } from "@/components/opps/ClonedToBanner";
+import {
+  LineageFilterBar,
+  LineageProvider,
+  LineageStrip,
+  useDecisionLineage,
+} from "@/components/opps/decisions/lineage/Lineage";
+import type { LineageFilter } from "@/components/opps/decisions/lineage/lineageDisplay";
 
 // Per-opp view tabs. Phases is THE per-run view (Jon, 2026-10-02: "The
 // Phases UI is all I use"): the old Workbench tab is gone, and the step
@@ -75,6 +82,25 @@ export default function OppRunPage() {
     workspaceSlug ?? "",
     slug,
     state.kind === "loaded" ? state.snapshot.current_run.run_id : null,
+  );
+
+  // Decision lineage: where this run's decisions came from (the runs it was
+  // forked / seeded / cloned from). Fetched beside the snapshot, never
+  // blocking it; the filter narrows every phase's decisions panel.
+  const [lineageScope, setLineageScope] = useState<"lineage" | "opp">("lineage");
+  const lineage = useDecisionLineage(
+    workspaceSlug ?? "",
+    slug,
+    state.kind === "loaded" ? state.snapshot.current_run.run_id : null,
+    lineageScope,
+  );
+  const [lineageFilter, setLineageFilter] = useState<LineageFilter>("all");
+  const liveDecisionIds = useMemo(
+    () =>
+      state.kind === "loaded"
+        ? state.snapshot.current_run.decisions.filter((d) => !d.superseded_by).map((d) => d.id)
+        : [],
+    [state],
   );
 
   // ?fork=<phase> — auto-open ForkOppDialog when a Slack deep-link lands here.
@@ -258,6 +284,17 @@ export default function OppRunPage() {
         slug={slug}
         runId={snapshot.current_run.run_id}
       />
+      {lineage && lineage.chain.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border bg-background px-6 py-2">
+          <LineageStrip lineage={lineage} plain={false} onScopeChange={setLineageScope} />
+          <LineageFilterBar
+            lineage={lineage}
+            ids={liveDecisionIds}
+            filter={lineageFilter}
+            onChange={setLineageFilter}
+          />
+        </div>
+      )}
       <div className="flex items-center border-b border-border bg-background">
         <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={changeView} />
         {!(replay.active && view === "phase") && (
@@ -314,6 +351,9 @@ export default function OppRunPage() {
       )}
       {view === "phase" && (
         <div className="min-h-0 flex-1">
+          <LineageProvider
+            value={{ lineage, filter: lineageFilter, setFilter: setLineageFilter, plain: false }}
+          >
           <PhaseView
             replay={replay}
             snapshot={snapshot}
@@ -327,6 +367,7 @@ export default function OppRunPage() {
             stepHref={stepHref}
             onCloseStep={closeStep}
           />
+          </LineageProvider>
         </div>
       )}
       {forkPhaseQuery && (

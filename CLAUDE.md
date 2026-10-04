@@ -635,6 +635,21 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   run's verdict plainly with no better/worse framing. Says WHAT changed, never WHY
   (ACE changes for many reasons between runs). Answers are compared ignoring case,
   spacing and trailing punctuation ("weekly" -> "Weekly" is not a change).
+  **Decision lineage** (`apps/opps/decision_lineage.py`, `GET
+  /api/opps/public/<ws>/<opp>/runs/<run>/lineage[?scope=opp]`): the chain this
+  run was built from — `clone.from` (wins: a clone's copied `forked_from` names
+  the SOURCE's parent), else `seeded_from` / `forked_from` + `forked_from_phase`,
+  else a `RunClone` row — and per live decision an origin (`new` / `carried` /
+  `changed` / `reaffirmed` / `human`) plus its value in each earlier run. Rows
+  match by id, then an id the log marks as replaced by it (`superseded_by`
+  chains: `…-payment-amount` → `…-2208` → `…-spark`), then the retired
+  `<id>-<run>` shape; anything else is "no earlier match", never guessed.
+  Shaped per viewer: outsiders get the strip and badges in plain words (no run
+  ids, no history); members get ids, history and `scope=opp`, and links only
+  into workspaces they belong to (a clone's source elsewhere is a label). Core
+  cached 120s (`opp-lineage:v1:…`). UI: `components/opps/decisions/lineage/`
+  — strip + filter on the Workbench run page (`LineageProvider` feeds the
+  Phases decisions panels) and on the summary's Decisions tab.
   `load_run_compare` checks the loaded run id matches the requested one, because
   the snapshot loader falls back to the latest run for an unknown id. Backend
   `apps/opps/run_compare.py` (pure, over two cached rich snapshots). Replaced the

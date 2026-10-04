@@ -25,6 +25,7 @@ import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { cn } from "@/lib/utils";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
 import { SummaryOrientation } from "@/components/opps/summary/SummaryOrientation";
+import { useDecisionLineage } from "@/components/opps/decisions/lineage/Lineage";
 import {
   AccessUnknownTag,
   AdminOnlyTag,
@@ -367,6 +368,10 @@ export default function OppSummaryPage() {
   // full history) so the row re-renders as changed immediately instead of
   // waiting out the 60s payload cache and looking like nothing happened.
   const [edits, setEdits] = useState<Record<string, PublicDecisionEdit>>({});
+  // Where each decision came from across runs — fetched alongside, never
+  // blocking the page (it renders nothing until it lands, or if it fails).
+  const [lineageScope, setLineageScope] = useState<"lineage" | "opp">("lineage");
+  const lineage = useDecisionLineage(workspace, slug, runId, lineageScope);
 
   async function handleReact(decisionId: string, body: ReactionSubmit) {
     const saved = await postDecisionReaction(workspace, slug, runId, decisionId, body);
@@ -1034,6 +1039,8 @@ export default function OppSummaryPage() {
                 viewerIsMember={!!viewer?.is_member}
                 onReact={handleReact}
                 onEdit={handleEdit}
+                lineage={lineage}
+                onLineageScopeChange={setLineageScope}
               />
             </SummarySection>
           )}

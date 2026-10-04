@@ -1394,6 +1394,36 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/lineage": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Decision lineage of a run: where each decision came from
+         * @description The run's lineage chain (the run it was forked / seeded / cloned from,
+         *     and so on back), and for every live decision row its origin — ``new`` /
+         *     ``carried`` / ``changed`` / ``reaffirmed`` / ``human`` — plus, for
+         *     members, its value in each earlier run (``apps/opps/decision_lineage``).
+         *
+         *     Served on the public path because the public run summary renders it, the
+         *     way it renders the summary: anyone with the link reads the strip and the
+         *     badges in plain words; a signed-in member of this workspace additionally
+         *     gets run ids, the per-decision history, ``scope=opp`` (every run of the
+         *     opp, not just the chain), and links — but only into workspaces they are a
+         *     member of. A clone's source run in another workspace is a label otherwise.
+         */
+        readonly get: operations["apps_opps_api_public_decision_lineage"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/edit": {
         readonly parameters: {
             readonly query?: never;
@@ -7272,6 +7302,34 @@ export interface operations {
     readonly apps_opps_api_public_opp_summary: {
         readonly parameters: {
             readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readonly apps_opps_api_public_decision_lineage: {
+        readonly parameters: {
+            readonly query?: {
+                readonly scope?: string;
+            };
             readonly header?: never;
             readonly path: {
                 readonly workspace: string;

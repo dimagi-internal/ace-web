@@ -53,6 +53,7 @@ export function DecisionItem({
   onReact,
   onEdit,
   tags,
+  lineageSlot,
 }: {
   decision: ReviewDecision;
   open: boolean;
@@ -65,6 +66,8 @@ export function DecisionItem({
   onEdit: (decisionId: string, body: DecisionEditSubmit) => Promise<void>;
   /** Extra header chips from the caller (e.g. "internal"). */
   tags?: React.ReactNode;
+  /** The decision's history across runs, drawn in the expanded detail. */
+  lineageSlot?: React.ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +188,8 @@ export function DecisionItem({
           <SignInToEdit />
         </div>
       )}
+
+      {lineageSlot}
 
       {edit && (
         <DecisionHistory

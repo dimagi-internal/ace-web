@@ -7,6 +7,12 @@ import { DecisionHistory } from "@/components/opps/decisions/DecisionHistory";
 import { DecisionRow as SharedDecisionRow } from "@/components/opps/decisions/DecisionRow";
 import { DecisionSection } from "@/components/opps/decisions/DecisionSection";
 import { SupersededVersions } from "@/components/opps/decisions/SupersededVersions";
+import {
+  DecisionLineageHistory,
+  OriginBadge,
+  passesFilter,
+  useLineageContext,
+} from "@/components/opps/decisions/lineage/Lineage";
 
 import type { EditOp } from "./decisions/decisionsReducer";
 import { splitSuperseded } from "./decisions/supersession";
@@ -79,15 +85,25 @@ export function DecisionsPanel({
     };
   }, [decisions, phase]);
 
-  if (phaseRows.length === 0 && retired.length === 0) return null;
+  // The run page's lineage filter (carried / new / changed / set by a
+  // person) narrows every phase's panel at once.
+  const lineageCtx = useLineageContext();
+  const filtering = !!lineageCtx.lineage && lineageCtx.filter !== "all";
+  const shownRows = filtering
+    ? phaseRows.filter((d) => passesFilter(lineageCtx, d.id, savedOverrides?.[d.id]))
+    : phaseRows;
 
-  const overridden = phaseRows.filter((d) => d.status === "overridden").length;
+  if (shownRows.length === 0 && (filtering || retired.length === 0)) return null;
+
+  const overridden = shownRows.filter(
+    (d) => d.status === "overridden" || d.status === "human-decided",
+  ).length;
 
   return (
     <DecisionsPanelInner
-      phaseRows={phaseRows}
+      phaseRows={shownRows}
       earlierBy={earlierBy}
-      retired={retired}
+      retired={filtering ? [] : retired}
       overridden={overridden}
       editBuffer={editBuffer}
       savedOverrides={savedOverrides}
@@ -192,6 +208,10 @@ function DecisionRow({
     (savedOverride ? (savedOverride.reasoning ?? "") : (decision.override_reasoning ?? ""));
   const isEdited = !!pendingEdit;
   const canEdit = !!onEdit;
+  const { lineage } = useLineageContext();
+  const origin = lineage ? (
+    <OriginBadge lineage={lineage} id={decision.id} plain={false} edit={savedOverride} />
+  ) : null;
 
   return (
     <SharedDecisionRow
@@ -203,8 +223,9 @@ function DecisionRow({
       pending={isEdited}
       optionsLabel={canEdit ? "Pick option" : "Options"}
       badges={
-        isEdited || earlier.length > 0 ? (
+        isEdited || earlier.length > 0 || origin ? (
           <>
+            {origin}
             {earlier.length > 0 && (
               <span
                 className="shrink-0 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground"
@@ -257,6 +278,7 @@ function DecisionRow({
         />
       )}
       <SupersededVersions live={decision} earlier={earlier} />
+      <DecisionLineageHistory lineage={lineage} id={decision.id} />
     </SharedDecisionRow>
   );
 }

@@ -1,0 +1,139 @@
+# Rows VERBATIM from the real dimagi-team/spark-facilitator/20260926-1800/decisions.yaml (2026-10-04),
+# trimmed to the decisions the lineage tests follow (8 of 117).
+schema_version: 5
+run_id: 20260926-1800
+decisions:
+- id: working-language
+  phase: 1-design
+  skill: idea-to-pdd
+  question: Working language(s) and who reviews translations?
+  ai-default: English source plus Chichewa (nya) and Tumbuka (tum)
+  options:
+  - English source plus Chichewa (nya) and Tumbuka (tum)
+  - English only
+  reasoning: Matches Spark's own app. Translations are ACE-authored and needs-review; native review is
+    a downstream obligation.
+  source: FCAP extract (app languages en/nya/tum); CCZ has en, nya, tum folders
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: learn-latitude-baseline-pretest
+  phase: 3-commcare
+  skill: pdd-to-learn-app
+  question: PDD §4.2 names one 12-item bank — does the Learn app also carry a baseline pre-test?
+  ai-default: 6-item non-gating pre-test added
+  options:
+  - 6-item non-gating pre-test added
+  - gate only, no pre-test
+  reasoning: 'ACE''s assessment-gate standard wants a baseline distinct from the gate; it carries learn_module
+    only, never connect.assessment, so it cannot unlock Deliver. Spot-check: Learn app › Before you start
+    › Starting quiz.'
+  source: PDD §4.2 [ACE]
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: inferred
+- id: deliver-latitude-education-codes
+  phase: 3-commcare
+  skill: pdd-to-deliver-app
+  question: PDD §5.1 education option list is to be reconciled with Spark's — which list ships?
+  ai-default: Spark's five codes
+  options:
+  - Spark's five codes
+  - PDD list with other
+  reasoning: 'none/primary/secondary/tertiary/university, verbatim from modules-2/forms-0.xml. Spot-check:
+    Deliver app › Facilitator Registration › cbf_education.'
+  source: PDD §5.1; Spark CF Registration Form [ACE]
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: program-currency-usd-vs-mwk
+  phase: 4-connect
+  skill: connect-program-setup
+  question: Reuse the USD Spark program (convert at award) or create a replacement MWK program?
+  ai-default: Create new MWK program
+  options:
+  - Create new MWK program
+  - Reuse USD program and convert at award
+  reasoning: 'HUMAN-DECIDED by the operator (jjackson@dimagi.com, 2026-09-26T00:30Z, orchestrator AskUserQuestion
+    at the Phase 3->4 boundary); recorded as ai-default only because the write boundary refuses a caller-asserted
+    human-decided status (ace#2307) and no inputs/decision-overrides.yaml ruling exists. Created program
+    9e82982e (MWK, MWI); USD program a115e4f2 left in place, flagged superseded in opp.yaml. Spot-check:
+    Connect › program 9e82982e › currency.'
+  source: run_state.yaml operator_decisions.program-currency-usd-vs-mwk; PDD §14 locale warning, §15.3
+  status: ai-default
+  value_set_by: external
+  evidence_basis: stated
+  params:
+    decided_by: jjackson@dimagi.com
+    decided_at: '2026-09-26T00:30:00Z'
+    record: 'run_state.yaml operator_decisions.program-currency-usd-vs-mwk (status: human-decided)'
+    new_program: 9e82982e-7638-44bc-9de2-2bfcefae550d
+    superseded_program: a115e4f2-6af6-401b-8add-8b97af80f43c
+- id: program-reuse-vs-create
+  phase: 4-connect
+  skill: connect-program-setup
+  question: Reuse an existing Connect program or create one?
+  ai-default: Create
+  options:
+  - Create
+  - Reuse a115e4f2 (USD)
+  reasoning: 'Only domain+archetype match was a115e4f2, whose currency (USD) diverges from the PDD''s
+    MWK; the operator chose replacement. Spot-check: opp.yaml connect.program.id.'
+  source: connect_list_programs(ai-demo-space) unfiltered, 45 programs; operator decision program-currency-usd-vs-mwk
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated
+- id: connect-latitude-payment-amount
+  phase: 4-connect
+  skill: connect-opp-setup
+  question: Which single FLW amount does the payment unit carry within the PROPOSED MWK 5,000-10,000 band?
+  ai-default: '7500'
+  options:
+  - '7500'
+  - '5000'
+  - '10000'
+  reasoning: 'Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate.
+    Spot-check: Connect › payment unit › amount.'
+  source: PDD §10.1, §14 payment_rate_min/max [PROPOSED]
+  status: ai-default
+  value_set_by: external
+  evidence_basis: inferred
+- id: connect-ambiguity-program-currency
+  phase: 4-connect
+  skill: connect-opp-setup
+  question: The durable program was USD while the PDD is fixed in MWK — how is that resolved?
+  ai-default: new MWK program
+  options:
+  - new MWK program
+  - reuse USD and convert
+  reasoning: 'Operator decision (jjackson@dimagi.com, 2026-09-26). Spot-check: Connect › program 9e82982e
+    › currency.'
+  source: PDD §14 locale warning; run_state operator_decisions.program-currency-usd-vs-mwk
+  status: ai-default
+  value_set_by: external
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'PDD §14 opportunity_currency: MWK'
+  - 'Connect program a115e4f2 currency: USD (create-time only)'
+- id: solicitation-all-in-rate-and-devices
+  phase: 8-solicitation-management
+  skill: solicitation-create
+  question: How is the rate framed on the listing, and where do device costs sit?
+  ai-default: All-in, devices inside the rate
+  options:
+  - All-in, devices inside the rate
+  - Devices costed separately (work order §2)
+  reasoning: Standing operator directive (2026-09-08) requires an all-in per-verified-unit rate with no
+    separately-funded line and an explicit worker-vs-organisation split (ace#2265). The PDD band (MWK
+    5,000-10,000 to the CBF + MWK 3,000 organisation floor, both PROPOSED; Phase 4 payment unit 7,500
+    + 3,000) is shown as an indicative all-in MWK 8,000-13,000. This deviates from work order §2 / PDD
+    §12, which let the partner cost device provision separately; the listing instead asks how any device
+    gap is carried inside the rate. The work order text should be reconciled at contract execution.
+  source: PDD §10.1, §12, §14; work order §2, §6.2; run_state connect-setup payment_units
+  status: ai-default
+  value_set_by: external
+  evidence_basis: conflicting
+  conflict_signals:
+  - 'Work order §2 / PDD §12: device provision costed separately, funded only if Dimagi agrees'
+  - 'Operator directive 2026-09-08 (solicitation-create design principle): rate is all-in, never invite
+    a separately-funded line'
