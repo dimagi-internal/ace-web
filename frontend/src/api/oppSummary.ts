@@ -37,6 +37,12 @@ export type LinkAccess = "public" | "admin" | "unknown" | "reviewer";
 export type ReviewDecision = Decision & {
   phase_label: string;
   phase_ordinal: number;
+  /**
+   * The plain stage name ("App build") an outside reader sees in place of
+   * "Phase 3 · CommCare Setup". `null` when the run's phase tag names no
+   * known stage; absent on a payload cached before it shipped.
+   */
+  stage_label?: string | null;
 };
 
 /**
@@ -432,6 +438,20 @@ export interface OppSummaryPayload {
        * question and not that it gates Phase 8.
        */
       blocking: string | null;
+      // The outsider fields (2026-10). Optional because a payload cached
+      // before they shipped lacks them; the page falls back to the raw
+      // fields above.
+      /** Which run first raised it — ACE's audit trail. */
+      raised_by?: string | null;
+      /** `blocking` in plain words ("Before the app build stage"). */
+      needed_by?: string | null;
+      /** That stage has already run in this run, so the deadline passed. */
+      overdue?: boolean;
+      /**
+       * The reviewer's question (`true`), or one Dimagi is resolving —
+       * every owner is ACE / Operator / Connect team / Dimagi (`false`).
+       */
+      for_reviewer?: boolean;
     }[];
   } | null;
   /**
@@ -479,6 +499,10 @@ export interface OppSummaryPayload {
       verdict: string | null;
       text: string;
     }[];
+    // The plain status for a run that stopped by design ("Paused — waiting
+    // for an implementing organisation"), else null. Replaces "In progress"
+    // in the hero. Absent on a payload cached before it shipped.
+    paused?: string | null;
   } | null;
   // Rendered reviewer feedback ledgers ("where did my comment go?"), one
   // stable doc per review event. Newest first.

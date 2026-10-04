@@ -1475,6 +1475,33 @@ def test_stage_treats_a_skipped_phase_as_not_part_of_the_run():
         )
     # The halt verdict is the run stopping, not a defect in Phase 8's work.
     assert not any(c["phase"] == "solicitation-management" for c in stage["caveats"])
+    # …and the hero must not call it "In progress".
+    assert stage["paused"] == "Paused — waiting for an implementing organisation"
+
+
+def test_a_run_still_going_is_not_paused():
+    p = _payload_for(_state_with_phase_meta({
+        "execution-management": {"status": "pending", "products": {}},
+        "closeout": {"status": "pending", "products": {}},
+    }))
+    assert p["stage"]["paused"] is None
+
+
+def test_skipping_a_middle_phase_of_a_finished_run_is_not_a_pause():
+    """Every phase after the last one that ran must be skipped — a run
+    that skipped OCS and went on to closeout is finished, not paused."""
+    p = _payload_for(_state_with_phase_meta({"ocs-setup": {"status": "skipped"}}))
+    assert p["stage"]["skipped"]
+    assert p["stage"]["paused"] is None
+
+
+def test_a_run_whose_remaining_phases_were_all_skipped_is_paused_without_a_halt():
+    p = _payload_for(_state_with_phase_meta({
+        "solicitation-management": {"status": "skipped"},
+        "execution-management": {"status": "skipped"},
+        "closeout": {"status": "skipped"},
+    }))
+    assert p["stage"]["paused"] == "Paused after the QA and training stage"
 
 
 def test_a_skipped_phase_prefers_its_own_reason():
@@ -1777,6 +1804,9 @@ def test_decision_rows_carry_a_phase_label_and_ordinal_for_grouping():
     assert rows["archetype-selection"]["phase_ordinal"] == 1
     assert rows["solicitation-expected-period"]["phase_label"] == "Solicitation management"
     assert rows["solicitation-expected-period"]["phase_ordinal"] == 8
+    # The plain stage name an outsider sees instead of "Phase 1".
+    assert rows["archetype-selection"]["stage_label"] == "Design"
+    assert rows["solicitation-expected-period"]["stage_label"] == "Solicitation"
 
 
 def test_a_reordered_pipeline_cannot_relabel_an_old_decision():
@@ -1794,6 +1824,7 @@ def test_a_reordered_pipeline_cannot_relabel_an_old_decision():
     assert row["phase"] == "ocs-setup"          # the ordinal projection
     assert row["phase_label"] == "Connect"      # …but the label follows the run
     assert row["phase_ordinal"] == 4
+    assert row["stage_label"] == "Connect setup"  # so does the plain name
 
 
 def test_phase_label_falls_back_to_the_tag_without_a_plugin_registry(monkeypatch):
@@ -1965,6 +1996,11 @@ def test_open_questions_parse_owner_and_where_it_gets_answered():
         # field. Null, not absent: the key is on every item so the page
         # never has to check whether a row has the shape it expects.
         "blocking": None,
+        "raised_by": None,
+        "needed_by": None,
+        "overdue": False,
+        # "responding LLO + partner" is not purely internal.
+        "for_reviewer": True,
     }
 
 
@@ -1982,6 +2018,11 @@ def test_open_questions_unparseable_bullet_still_renders():
         "owner": None,
         "answered_in": None,
         "blocking": None,
+        "raised_by": None,
+        "needed_by": None,
+        "overdue": False,
+        # No owner is an unassigned question — shown to the reviewer.
+        "for_reviewer": True,
     }]
 
 
@@ -2395,6 +2436,91 @@ def test_a_ledger_with_no_open_heading_still_renders_every_row():
 
     assert [q["title"] for q in items] == ["Rate confirmation", "Device reality"]
     assert items[0]["owner"] == "responding LLO + partner"
+
+
+# ─── Open questions, as an outside reviewer reads them ─────────────
+
+
+def test_field_labelled_rows_carry_who_raised_them():
+    first, _second = _open_questions(_TWO_SECTION_LEDGER)
+    assert first["raised_by"] == "20260503-0835"
+
+
+@pytest.mark.parametrize("blocking,ran,expected", [
+    # Phase number → stage name; overdue only once that phase has RUN.
+    ("Before Phase 3", {"commcare-setup"}, ("Before the app build stage", True)),
+    ("Before Phase 3", set(), ("Before the app build stage", False)),
+    # Ledger bookkeeping after the prefix is dropped (kept in `blocking`).
+    ("Before Phase 8. Sibling of continuation-meeting-reduced-payment",
+     {"solicitation-management"}, ("Before the solicitation stage", True)),
+    ("Before Phase 9 (go-live)", {"solicitation-management"},
+     ("Before the execution (go-live) stage", False)),
+    ("Before closeout", set(), ("Before the closeout stage", False)),
+    ("Before award (Phase 8 review)", {"solicitation-management"},
+     ("Before an implementing organisation is chosen", False)),
+    ("Post-pilot", set(), ("After the pilot", False)),
+    ("Non-blocking", set(), ("Not blocking — can be settled at any point", False)),
+    ("Non-blocking for the pilot", set(), ("Doesn't hold up the pilot", False)),
+    ("Non-blocking; before the program is shown to an outside reviewer", set(),
+     ("Not blocking — before the program is shown to an outside reviewer", False)),
+    # A phase named mid-sentence is named, never marked overdue.
+    ("Once Phase 4 has run", {"connect-setup"}, ("Once the Connect setup stage has run", False)),
+    # Unrecognised text passes through unchanged.
+    ("Before expansion", set(), ("Before expansion", False)),
+    ("Before Phase 42", set(), ("Before Phase 42", False)),
+    (None, set(), (None, False)),
+])
+def test_needed_by_is_a_stage_name_and_says_when_it_has_passed(blocking, ran, expected):
+    """spark-facilitator/20261001-2208 showed "Needed by: Before Phase 3"
+    to an outsider — a number they cannot decode, on a run that had
+    already built its apps, so the deadline had also gone by."""
+    from apps.opps.summary import _plain_needed_by
+
+    assert _plain_needed_by(blocking, frozenset(ran)) == expected
+
+
+@pytest.mark.parametrize("owner,internal", [
+    ("ACE", True),
+    ("Operator / ACE", True),
+    ("Connect team", True),
+    ("Dimagi", True),
+    ("Spark", False),
+    ("Spark / ACE", False),                # anyone outside makes it theirs
+    ("Spark / awarded LLO", False),
+    ("responding LLO + partner", False),
+    ("Spark M&E", False),
+    (None, False),                         # unassigned is shown, not hidden
+])
+def test_a_question_is_dimagis_only_when_every_owner_is_internal(owner, internal):
+    from apps.opps.summary import _owner_is_internal
+
+    assert _owner_is_internal(owner) is internal
+
+
+def test_open_questions_on_the_payload_carry_the_outsider_fields():
+    """End to end: a "Before Phase 3" question on a run whose app build
+    ran is overdue; a "Before Phase 9" one on a run that skipped execution
+    is not; an ACE-only owner is Dimagi's question."""
+    tree = _full_tree(state_yaml=_state_with_phase_meta({
+        "commcare-setup": {"status": "done"},
+        "execution-management": {"status": "skipped"},
+    }))
+    tree["ACE"]["turmeric"]["open-questions.md"] = (
+        "## Open\n\n"
+        "- **id:** a **question:** Which district? **raised_by:** 20260926-1413 "
+        "**owner:** Spark **blocking:** Before Phase 3 **latest:** m0f3 bind.\n"
+        "- **id:** b **question:** Who signs? **owner:** ACE "
+        "**blocking:** Before Phase 9 **latest:** Layer B.\n"
+    )
+    a, b = _payload(tree)["open_questions"]["items"]
+    assert (a["needed_by"], a["overdue"], a["for_reviewer"]) == (
+        "Before the app build stage", True, True,
+    )
+    assert a["blocking"] == "Before Phase 3"     # the original stays
+    assert a["raised_by"] == "20260926-1413"
+    assert (b["needed_by"], b["overdue"], b["for_reviewer"]) == (
+        "Before the execution (go-live) stage", False, False,
+    )
 
 
 # ─── Build status: a partial phase must not read as a clean one ────

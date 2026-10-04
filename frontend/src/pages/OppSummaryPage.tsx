@@ -518,7 +518,9 @@ export default function OppSummaryPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Top utility bar — display name on the left (human-readable),
-          run id on the right (technical reference). */}
+          run id on the right (technical reference) for members only. An
+          outside reader gets nothing from "run 20261001-2208" as the first
+          thing on the page; the footer still carries it. */}
       <div className="border-b border-border">
         <div
           className={cn(
@@ -527,13 +529,20 @@ export default function OppSummaryPage() {
           )}
         >
           <div className="truncate text-muted-foreground">{opp.display_name}</div>
-          <div className="font-mono tracking-tight text-muted-foreground/70">
-            run {opp.run_id}
-          </div>
+          {viewer?.is_member && (
+            <div className="font-mono tracking-tight text-muted-foreground/70">
+              run {opp.run_id}
+            </div>
+          )}
         </div>
       </div>
 
-      <SummaryHero opp={opp} cycleGrade={cycle_grade} widthClass={width} />
+      <SummaryHero
+        opp={opp}
+        cycleGrade={cycle_grade}
+        pausedText={stage?.paused}
+        widthClass={width}
+      />
 
       {hasReviewSurface && (
         <div className="border-b border-border">
@@ -1005,7 +1014,7 @@ export default function OppSummaryPage() {
                   What this run could <span className="text-foreground">not</span> settle —
                   each one already has an owner and a place it gets answered.
                 </p>
-                <OpenQuestionsList items={open_questions.items} />
+                <OpenQuestionsList items={open_questions.items} plain={!viewer?.is_member} />
                 {open_questions.url && (
                   <p className="mt-4 flex items-center justify-end gap-2 text-sm">
                     <a

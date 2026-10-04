@@ -3,6 +3,12 @@ import type { OppSummaryPayload } from "@/api/oppSummary";
 interface Props {
   opp: OppSummaryPayload["opp"];
   cycleGrade?: OppSummaryPayload["cycle_grade"];
+  /**
+   * `stage.paused` — set when the run stopped by design. Replaces "In
+   * progress", which contradicted every later section on a run halted
+   * after its solicitation. Never overrides Active / Closed.
+   */
+  pausedText?: string | null;
   /** Column width — the decisions tab widens the whole page, hero included. */
   widthClass?: string;
 }
@@ -42,9 +48,15 @@ const STATUS_DATE_PREFIX: Record<OppSummaryPayload["opp"]["status"], string> = {
  * ``--status-ok`` token; matches the way Connect treats live state in
  * its own headers.
  */
-export function SummaryHero({ opp, cycleGrade, widthClass = "max-w-3xl" }: Props) {
+export function SummaryHero({
+  opp, cycleGrade, pausedText, widthClass = "max-w-3xl",
+}: Props) {
   const formattedEnd = formatEndDate(opp.end_date);
   const showGrade = opp.status === "closed" && cycleGrade?.letter;
+  const paused = opp.status === "in_progress" && pausedText ? pausedText : null;
+  const statusLabel = paused ?? STATUS_LABEL[opp.status];
+  // A stop by design is not a warning — neutral, like Closed.
+  const dotColor = paused ? "var(--muted-foreground)" : STATUS_DOT_COLOR[opp.status];
 
   return (
     <header className="border-b border-border">
@@ -52,14 +64,14 @@ export function SummaryHero({ opp, cycleGrade, widthClass = "max-w-3xl" }: Props
         <div className="mb-6 flex items-center gap-4 text-xs">
           <span
             className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/50 px-2.5 py-1 font-medium text-foreground"
-            aria-label={`Status: ${STATUS_LABEL[opp.status]}`}
+            aria-label={`Status: ${statusLabel}`}
           >
             <span
               className="size-1.5 rounded-full"
-              style={{ backgroundColor: STATUS_DOT_COLOR[opp.status] }}
+              style={{ backgroundColor: dotColor }}
               aria-hidden
             />
-            {STATUS_LABEL[opp.status]}
+            {statusLabel}
           </span>
           {showGrade && (
             <span

@@ -814,7 +814,13 @@ carries its sections with a plain reason ("Not part of this run — …"), and
 `stage.caveats[]`, one plain line per section it owns (Phase 3 excluded —
 `build` already qualifies it). Non-members get an orientation block at the
 top of the Overview (`SummaryOrientation`: who drafted it, what we need, how
-to respond, who reads replies, LLO/FLW/Connect defined). A decision row whose
+to respond, who reads replies, LLO/FLW/Connect defined). Non-members also get
+plain stage names, never phase numbers: open questions carry `needed_by` /
+`overdue` (a "Before Phase N" whose phase already ran) and `for_reviewer`
+(false only when every owner is ACE / Operator / Connect team / Dimagi), with
+ACE's `latest:` notes behind a collapsed "Working notes"; decision groups use
+`stage_label`; the hero reads `stage.paused` instead of "In progress" on a run
+that stopped by design, and the top bar drops the run id. A decision row whose
 headline is ACE's `plain` sentence and has no `plain_value` shows no raw value
 line — the exact option sits in the expanded detail.
 
