@@ -18,6 +18,7 @@ Format reference: docs/plans/2026-04-20-drop-multi-run-simplify.md.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 # --- Dataclasses for parsed manifests ---
@@ -119,7 +120,7 @@ class Decision:
     override: str = ""
     options_considered: list[str] = field(default_factory=list)
     source: str = ""
-    status: str = "ai-default"  # ai-default | overridden
+    status: str = "ai-default"  # DECISION_STATUSES
     notes: str = ""
     # Human's rationale when status=overridden. Mirrors the AI's ``notes``
     # (which carries the AI's ``reasoning``) but for the override side.
@@ -170,6 +171,22 @@ class Decision:
     audience: str = ""
     scope: str = ""
     enforcement: str = ""
+    # The ask fields (ACE docs/superpowers/specs/2026-10-04-open-questions-
+    # into-decisions-design.md): a decision whose default someone outside ACE
+    # must confirm or answer. ``owner`` — who answers (``partner`` |
+    # ``implementing-org`` | ``dimagi`` | free text); ``needed_by`` — the
+    # lifecycle gate (``award`` | ``go-live`` | ``closeout`` | ``extension``);
+    # ``answer_channel`` — where the answer arrives (``review`` |
+    # ``solicitation:<question-id>`` | ``call``); ``revisit_when`` — one plain
+    # sentence, only on a ``status: deferred`` row. ``review_ask`` gains
+    # ``required-before`` (paired with ``needed_by``).
+    owner: str = ""
+    needed_by: str = ""
+    answer_channel: str = ""
+    revisit_when: str = ""
+    # The run this row was carried in from (a fork / clone). Read so the
+    # review surface can say where a carried row came from.
+    inherited_from_run: str = ""
 
 
 #: The optional review-surface fields on a decisions row, in one place so
@@ -185,7 +202,46 @@ DECISION_EXTRA_FIELDS: tuple[str, ...] = (
     "audience",
     "scope",
     "enforcement",
+    "owner",
+    "needed_by",
+    "answer_channel",
+    "revisit_when",
+    "inherited_from_run",
 )
+
+#: Every ``status`` a decisions row may carry. ``human-decided`` is a ruling a
+#: person made outright; ``deferred`` is "not needed for this pilot — revisit
+#: when <revisit_when>". Anything else reads as ``ai-default``.
+DECISION_STATUSES: tuple[str, ...] = ("ai-default", "overridden", "human-decided", "deferred")
+
+RECOMMENDED_CONFIRMATION = "recommended-confirmation"
+REQUIRED_BEFORE = "required-before"
+NEEDED_BY_VALUES: tuple[str, ...] = ("award", "go-live", "closeout", "extension")
+
+_REQUIRED_BEFORE_RE = re.compile(r"^required[- ]before\s*:?\s*(.*)$", re.IGNORECASE)
+
+
+def normalize_decision_status(value: object) -> str:
+    """A row's ``status``, or ``ai-default`` when it is not one ACE writes."""
+    text = str(value or "").strip()
+    return text if text in DECISION_STATUSES else "ai-default"
+
+
+def _normalize_ask(out: dict[str, str]) -> None:
+    """Fold ``review_ask: required-before: award`` into
+    ``review_ask: required-before`` + ``needed_by: award``.
+
+    The spec writes the gated ask both ways (a bare ``required-before`` paired
+    with ``needed_by``, and the inline ``required-before: <needed_by>`` form);
+    readers see one shape. An explicit ``needed_by`` wins over the inline one.
+    """
+    m = _REQUIRED_BEFORE_RE.match(out.get("review_ask", ""))
+    if m is None:
+        return
+    out["review_ask"] = REQUIRED_BEFORE
+    inline = m.group(1).strip().lower()
+    if inline and not out.get("needed_by"):
+        out["needed_by"] = inline
 
 
 def decision_extras(raw: dict) -> dict[str, str]:
@@ -201,4 +257,5 @@ def decision_extras(raw: dict) -> dict[str, str]:
             out[key] = ""
         else:
             out[key] = str(value).strip()
+    _normalize_ask(out)
     return out

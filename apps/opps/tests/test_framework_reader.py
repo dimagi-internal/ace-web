@@ -209,6 +209,48 @@ def test_review_fields_reach_the_serialized_snapshot():
     assert rows["d2"]["review_ask"] == "" and rows["d2"]["plain"] == ""
 
 
+def test_ask_fields_and_new_statuses_reach_the_workbench():
+    """The Workbench reads the same ask fields as the summary (ACE spec
+    2026-10-04), and keeps ``deferred`` / ``human-decided`` — canopy's mapper
+    only knows ``ai-default`` / ``overridden``."""
+    from apps.opps.serializers import serialize_run_detail
+
+    tree = _demo_multi_run_tree()
+    tree["ACE"]["demo"]["runs"]["20260601-0900"]["decisions.yaml"] = (
+        "decisions:\n"
+        "  - id: d1\n"
+        "    phase: 8-solicitation-management\n"
+        "    skill: solicitation-create\n"
+        "    question: Trial overlap?\n"
+        "    ai-default: OPEN\n"
+        "    review_ask: 'required-before: award'\n"
+        "    owner: partner\n"
+        "    answer_channel: solicitation:q-7\n"
+        "  - id: d2\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Rwanda?\n"
+        "    ai-default: Not needed\n"
+        "    status: deferred\n"
+        "    revisit_when: Expansion is planned.\n"
+        "  - id: d3\n"
+        "    phase: 1-design\n"
+        "    skill: idea-to-pdd\n"
+        "    question: Currency?\n"
+        "    ai-default: MWK\n"
+        "    status: human-decided\n"
+    )
+    client = FakeDriveClient.from_tree(tree)
+    snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
+    rows = {r["id"]: r for r in serialize_run_detail(snap.current_run)["decisions"]}
+    assert rows["d1"]["review_ask"] == "required-before"
+    assert rows["d1"]["needed_by"] == "award"
+    assert rows["d1"]["answer_channel"] == "solicitation:q-7"
+    assert rows["d2"]["status"] == "deferred"
+    assert rows["d2"]["revisit_when"] == "Expansion is planned."
+    assert rows["d3"]["status"] == "human-decided"
+
+
 def test_multi_run_attaches_judge_verdict_via_store():
     """Step status + judge verdict come from the framework store + map."""
     client = FakeDriveClient.from_tree(_demo_multi_run_tree())

@@ -1481,7 +1481,25 @@ def _read_open_questions(
 
     ``ran_phases`` — the phases this run has already run (``_phases_ran``)
     — is what lets a "Before Phase 3" deadline say it is now overdue.
+
+    **The ledger is being folded into decision rows** (ACE spec
+    2026-10-04, open-questions into decisions). Once ACE writes the
+    generated opp-level ``open-asks.yaml``, the asks ARE decision rows —
+    rendered on the Decisions tab under "Confirm before launch" / "Answer
+    before …" — so this section stops repeating them: it returns
+    ``source: "decisions"`` with no items, and the page points at the
+    Decisions tab instead. Until then the legacy ledger is read as before
+    (``source: "ledger"``).
     """
+    open_asks = _read_open_asks(drive, opp_folder_id)
+    if open_asks is not None:
+        return {
+            "url": None,
+            "access": ACCESS_UNKNOWN,
+            "items": [],
+            "source": "decisions",
+            "asks_run_id": open_asks.get("run_id"),
+        }
     for folder_id in (opp_folder_id, run_folder_id):
         if not folder_id:
             continue
@@ -1511,8 +1529,38 @@ def _read_open_questions(
                 access.tag(file_id=f.id) if access is not None else ACCESS_UNKNOWN
             ),
             "items": items,
+            "source": "ledger",
+            "asks_run_id": None,
         }
     return None
+
+
+def _read_open_asks(drive: DriveClient, opp_folder_id: str) -> dict | None:
+    """``ACE/<opp>/open-asks.yaml`` — the generated list of a run's live
+    decision rows with an unanswered ``review_ask`` or a ``deferred`` status
+    (``{schema_version, opp, run_id, generated_at, asks: [rows]}``).
+
+    Its PRESENCE is what matters here: it means the opp is on the decision-
+    row model and the legacy ledger is retired. ``None`` when absent or
+    unreadable (an unreadable file must not hide the ledger fallback).
+    """
+    if not opp_folder_id:
+        return None
+    f = _find_in_folder(drive, opp_folder_id, "open-asks.yaml")
+    if f is None:
+        return None
+    try:
+        data = _read_yaml(drive, f.id, f.mime_type)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("summary: read open-asks %s failed: %s", f.id, exc)
+        return None
+    if not isinstance(data, dict) or not data:
+        return None
+    asks = data.get("asks")
+    return {
+        "run_id": str(data.get("run_id") or "").strip() or None,
+        "asks": [a for a in asks if isinstance(a, dict)] if isinstance(asks, list) else [],
+    }
 
 
 #: ATX heading at H1 or H2 — the only levels that close the ``## Open``
@@ -2165,7 +2213,13 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
     The doc itself is an internal working artifact and is not shared, so
     no link is emitted — the content is the payload.
     """
-    from apps.opps.parsers import Decision, decision_extras
+    from apps.opps.parsers import (
+        RECOMMENDED_CONFIRMATION,
+        REQUIRED_BEFORE,
+        Decision,
+        decision_extras,
+        normalize_decision_status,
+    )
     from apps.opps.serializers import serialize_decision
 
     f = _find_in_folder(drive, run_folder_id, "decisions.yaml")
@@ -2178,7 +2232,12 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
 
     rows: list[dict] = []
     live = 0
-    counts = {"stated": 0, "inferred": 0, "conflicting": 0, "overridden": 0}
+    counts = {
+        "stated": 0, "inferred": 0, "conflicting": 0, "overridden": 0,
+        # Asks (ACE 2026-10-04): rows a reviewer is asked to confirm or
+        # answer, and rows parked as "not needed for this pilot".
+        "to_confirm": 0, "to_answer": 0, "deferred": 0,
+    }
     phase_index = _plugin_phase_index()
     for raw in raw_rows:
         if not isinstance(raw, dict):
@@ -2191,8 +2250,7 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
             log.warning("summary: decision row missing id/question (keys=%s) — skipped",
                         sorted(raw))
             continue
-        status = raw.get("status")
-        status = status if status in ("ai-default", "overridden") else "ai-default"
+        status = normalize_decision_status(raw.get("status"))
         basis = raw.get("evidence_basis")
         basis = basis if basis in ("stated", "inferred", "conflicting") else "stated"
         decision = Decision(
@@ -2247,8 +2305,14 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
             continue
         live += 1
         counts[basis] += 1
-        if status == "overridden":
+        if status in ("overridden", "human-decided"):
             counts["overridden"] += 1
+        if status == "deferred":
+            counts["deferred"] += 1
+        elif serialized.get("review_ask") == RECOMMENDED_CONFIRMATION:
+            counts["to_confirm"] += 1
+        elif serialized.get("review_ask") == REQUIRED_BEFORE:
+            counts["to_answer"] += 1
 
     if not live:
         return None

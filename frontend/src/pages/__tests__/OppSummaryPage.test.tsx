@@ -1440,3 +1440,145 @@ describe("deep QA", () => {
     expect(screen.queryByText(/does not describe what is running today/i)).toBeNull();
   });
 });
+
+/**
+ * The open-questions ledger folds into decision rows (ACE spec 2026-10-04).
+ * Rows follow spark/spark-facilitator/20261001-2208: the real
+ * `working-language` confirmation, the spec's one gated question
+ * (`rct-sample-overlap`, required before award, answered through the
+ * solicitation) and a deferred expansion row.
+ */
+describe("review asks", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const row = (over: Record<string, unknown>) =>
+    ({ ...DECISION, ...over }) as api.ReviewDecision;
+  const ROWS = [
+    row({
+      id: "working-language",
+      question: "Working language(s) and who reviews translations?",
+      plain_question: "Have the Chichewa and Tumbuka translations been checked?",
+      review_ask: "recommended-confirmation",
+      confirm_reason: "The text was produced by AI.",
+      owner: "partner",
+      answer_channel: "review",
+    }),
+    row({
+      id: "rct-sample-overlap",
+      phase_raw: "8-solicitation-management",
+      phase_label: "Solicitation",
+      phase_ordinal: 8,
+      question: "Trial overlap?",
+      plain_question: "Can pilot communities overlap with Spark's trial communities?",
+      ai_default: "OPEN",
+      options_considered: ["OPEN"],
+      review_ask: "required-before",
+      needed_by: "award",
+      confirm_reason: "The award could pick trial communities.",
+      owner: "partner",
+      answer_channel: "solicitation:q-rct-overlap",
+    }),
+    row({
+      id: "rwanda-two-cbf-attribution",
+      question: "How is payment attributed where two CBFs share one community?",
+      status: "deferred",
+      revisit_when: "Spark plans an expansion beyond Malawi.",
+      owner: "Spark",
+    }),
+    row({ id: "routine", question: "A routine call" }),
+  ];
+  const DECISIONS = {
+    total: 4,
+    counts: {
+      stated: 4, inferred: 0, conflicting: 0, overridden: 0,
+      to_confirm: 1, to_answer: 1, deferred: 1,
+    },
+    rows: ROWS,
+  } as NonNullable<OppSummaryPayload["decisions"]>;
+  const LEDGER = {
+    url: null,
+    access: "unknown" as const,
+    source: "ledger" as const,
+    asks_run_id: null,
+    items: [{
+      title: "Which district for the pilot?",
+      detail: "notes",
+      owner: "Spark",
+      answered_in: null,
+      blocking: null,
+      raised_by: null,
+      needed_by: null,
+      overdue: false,
+      for_reviewer: true,
+    }],
+  };
+
+  it("groups the gated question under 'Answer before …' with who answers and where", async () => {
+    renderWith({ ...BASE, decisions: DECISIONS });
+    await openDecisionsTab();
+    expect(
+      await screen.findByText("Answer before an implementing organisation is chosen"),
+    ).toBeTruthy();
+    expect(screen.getByText("Confirm before launch", { selector: "span.text-sm" })).toBeTruthy();
+    expect(screen.getByText("Answer before award")).toBeTruthy();
+    // The solicitation channel, in plain words — and no question id for an outsider.
+    expect(
+      screen.getByText(/Through the call for implementing organisations/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/q-rct-overlap/)).toBeNull();
+    expect(screen.getAllByText(/The programme partner/).length).toBe(2);
+  });
+
+  it("shows a member the solicitation question id", async () => {
+    renderWith({ ...BASE, viewer: { is_member: true }, decisions: DECISIONS });
+    await openDecisionsTab();
+    expect(await screen.findByText(/question q-rct-overlap/)).toBeTruthy();
+  });
+
+  it("parks a deferred row, collapsed, with when to revisit it", async () => {
+    renderWith({ ...BASE, decisions: DECISIONS });
+    await openDecisionsTab();
+    const heading = await screen.findByText("Not needed for this pilot");
+    expect(screen.getByText("1 to revisit later")).toBeTruthy();
+    // Collapsed: the row is not on the page until the section is opened.
+    expect(screen.queryByText(/Spark plans an expansion/)).toBeNull();
+    fireEvent.click(heading);
+    expect(await screen.findByText(/Spark plans an expansion beyond Malawi/)).toBeTruthy();
+    // One decision, one home: it is not also under "Choices ACE made".
+    expect(
+      screen.getAllByText("How is payment attributed where two CBFs share one community?"),
+    ).toHaveLength(1);
+  });
+
+  it("counts both kinds of ask in the orientation block", async () => {
+    renderWith({ ...BASE, decisions: DECISIONS });
+    expect(
+      await screen.findByText(
+        /Please answer the 1 question marked “Answer before …”, and confirm the 1 decision/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/1 question to answer, and 1 recommended to confirm/)).toBeTruthy();
+  });
+
+  it("keeps rendering the legacy ledger while a run still has one", async () => {
+    renderWith({ ...BASE, decisions: DECISIONS, open_questions: LEDGER });
+    await openDecisionsTab();
+    expect(await screen.findByText("Open questions")).toBeTruthy();
+    expect(screen.getByText("Which district for the pilot?")).toBeTruthy();
+  });
+
+  it("points at the Decisions tab instead of repeating the asks once they are rows", async () => {
+    renderWith({
+      ...BASE,
+      decisions: DECISIONS,
+      open_questions: { ...LEDGER, source: "decisions", asks_run_id: "20261001-2208", items: [] },
+    });
+    expect(await screen.findByText("Questions for you")).toBeTruthy();
+    expect(screen.getByText(/they are on the Decisions tab/)).toBeTruthy();
+    expect(screen.queryByText(/Separately,/)).toBeNull();
+    await openDecisionsTab();
+    expect(screen.queryByText("Open questions")).toBeNull();
+  });
+});

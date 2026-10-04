@@ -5,7 +5,15 @@ import {
   DETAIL_GRID,
   DecisionDetailFields,
 } from "@/components/opps/decisions/DecisionDetailFields";
-import { asksConfirmation, decisionDisplay } from "@/components/opps/decisions/decisionDisplay";
+import {
+  answerChannelLabel,
+  asksAnswer,
+  asksConfirmation,
+  decisionDisplay,
+  isDeferred,
+  neededByShort,
+  ownerLabel,
+} from "@/components/opps/decisions/decisionDisplay";
 import { EvidenceBadge } from "@/components/opps/decisions/EvidenceBadge";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +67,7 @@ export function DecisionRow({
   pending = false,
   statusChip = true,
   muted = false,
+  showAskIds = true,
   children,
 }: {
   decision: Decision;
@@ -82,6 +91,11 @@ export function DecisionRow({
   statusChip?: boolean;
   /** History (a superseded row): drawn quieter, never tinted as a choice. */
   muted?: boolean;
+  /**
+   * Show ACE's own ids in the ask line (a solicitation question id). Off for
+   * an outside reader, to whom they mean nothing.
+   */
+  showAskIds?: boolean;
   children?: React.ReactNode;
 }) {
   // "Overridden" = the effective answer differs from the AI default,
@@ -106,6 +120,12 @@ export function DecisionRow({
 
   const shown = decisionDisplay(decision, effectiveValue);
   const asks = asksConfirmation(decision);
+  const answers = asksAnswer(decision);
+  const deferred = isDeferred(decision);
+  // Who answers and where — said plainly on every ask (ACE spec 2026-10-04).
+  const owner = (asks || answers || deferred) ? ownerLabel(decision.owner) : "";
+  const channel =
+    asks || answers ? answerChannelLabel(decision.answer_channel, showAskIds) : "";
   const check = [decision.check_at, decision.correct_looks_like]
     .map((x) => x?.trim())
     .filter(Boolean);
@@ -152,10 +172,33 @@ export function DecisionRow({
               {shown.summary}
             </span>
           )}
-          {asks && decision.confirm_reason?.trim() && (
+          {(asks || answers) && decision.confirm_reason?.trim() && (
             <span className="text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
-              <span className="text-foreground">Why confirm: </span>
+              <span className="text-foreground">{answers ? "Why it matters: " : "Why confirm: "}</span>
               {decision.confirm_reason.trim()}
+            </span>
+          )}
+          {deferred && decision.revisit_when?.trim() && (
+            <span className="text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
+              <span className="text-foreground">Revisit when: </span>
+              {decision.revisit_when.trim()}
+            </span>
+          )}
+          {(owner || channel) && (
+            <span className="text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
+              {owner && (
+                <>
+                  <span className="text-foreground">Who answers: </span>
+                  {owner}
+                </>
+              )}
+              {owner && channel && <span aria-hidden> · </span>}
+              {channel && (
+                <>
+                  <span className="text-foreground">Where: </span>
+                  {channel}
+                </>
+              )}
             </span>
           )}
           {check.length > 0 && (
@@ -164,8 +207,24 @@ export function DecisionRow({
               {check.join(" — ")}
             </span>
           )}
-          {(asks || badges || decision.evidence_basis === "conflicting" || (statusChip && chip)) && (
+          {(asks || answers || deferred || badges || decision.evidence_basis === "conflicting" || (statusChip && chip)) && (
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {answers && (
+                <span
+                  className="shrink-0 rounded border border-rose-500/40 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rose-400"
+                  title="There is no working answer yet; it is needed by this point"
+                >
+                  Answer {neededByShort(decision.needed_by)}
+                </span>
+              )}
+              {deferred && (
+                <span
+                  className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                  title="Not needed for this pilot"
+                >
+                  Not needed yet
+                </span>
+              )}
               {asks && (
                 <span
                   className="shrink-0 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400"

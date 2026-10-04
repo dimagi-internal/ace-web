@@ -46,7 +46,10 @@ interface Props {
  */
 const STATUS_RANK: Record<Decision["status"], number> = {
   overridden: 0,
+  "human-decided": 0,
   "ai-default": 1,
+  // Not needed for this pilot — last, under the live choices.
+  deferred: 2,
 };
 
 export function DecisionsPanel({

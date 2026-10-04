@@ -55,7 +55,7 @@ from apps.opps.attribution import creator_label
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.drive_export import read_prose
 from apps.opps.output_previews import load_output_previews
-from apps.opps.parsers import decision_extras
+from apps.opps.parsers import decision_extras, normalize_decision_status
 from apps.opps.release_readiness import load_release_readiness
 
 log = logging.getLogger(__name__)
@@ -222,6 +222,10 @@ def attach_row_extras(client: DriveClient, run_children: list[DriveFile], decisi
     def _stamp(d, row: dict | None) -> None:
         row = row or {}
         d.superseded_by = str(row.get("superseded_by") or "").strip()
+        # canopy's mapper keeps only the statuses it knows; the raw row is
+        # the authority for ``human-decided`` / ``deferred``.
+        if row.get("status"):
+            d.status = normalize_decision_status(row.get("status"))
         for key, value in decision_extras(row).items():
             setattr(d, key, value)
 

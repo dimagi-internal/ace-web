@@ -772,7 +772,11 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
         "summary_url", "new_pdd_url", "iteration_warranted", "access",
     }),
     # The list key is `items`. NOT `questions`.
-    "open_questions": frozenset({"url", "access", "items"}),
+    # `source` — "ledger" (the legacy open-questions.md) or "decisions" (ACE
+    # writes open-asks.yaml: the asks are decision rows, so `items` is empty
+    # and the page points at the Decisions tab). `asks_run_id` — the run that
+    # generated open-asks.yaml, null for the ledger. ACE spec 2026-10-04.
+    "open_questions": frozenset({"url", "access", "items", "source", "asks_run_id"}),
     # `blocking` — when the question has to be answered by. The ledger
     # always carried it; the reader discarded it, so a question gating
     # Phase 8 looked the same as a post-pilot one (ace#1867).
@@ -796,6 +800,10 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     "decisions": frozenset({"total", "counts", "rows"}),
     "decisions.counts": frozenset({
         "stated", "inferred", "conflicting", "overridden",
+        # The reviewer's asks (ACE spec 2026-10-04): `review_ask:
+        # recommended-confirmation`, `review_ask: required-before`, and
+        # `status: deferred` rows. Live rows only.
+        "to_confirm", "to_answer", "deferred",
     }),
     # Projected through the SAME `serialize_decision` the Workbench uses,
     # plus the grouping fields this surface adds. One shape, two
@@ -812,6 +820,9 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
         "review_ask", "confirm_reason", "plain", "plain_question", "plain_value",
         "check_at",
         "correct_looks_like", "audience", "scope", "enforcement",
+        # The ask fields (ACE spec 2026-10-04) and where a carried row came
+        # from — "" on a row that lacks them.
+        "owner", "needed_by", "answer_channel", "revisit_when", "inherited_from_run",
     }),
     "reactions": frozenset({"total", "by_decision"}),
     "workbench": frozenset({"url", "access"}),

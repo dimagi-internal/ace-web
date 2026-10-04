@@ -123,7 +123,11 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        verdict file is no longer read. A warm v20 entry would carry the
 #        old key, which the frontend no longer reads, so every validated
 #        run would show "Not validated" until its Drive files next changed.
-_KEY_VERSION = "v21"
+#   v22 — Decision gained the ask fields (``owner`` / ``needed_by`` /
+#        ``answer_channel`` / ``revisit_when``, ``inherited_from_run``) and
+#        ``status`` keeps ``human-decided`` / ``deferred``. A warm v21 entry
+#        would serve a deferred row as a live ai-default choice.
+_KEY_VERSION = "v22"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

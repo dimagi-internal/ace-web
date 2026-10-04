@@ -24,26 +24,46 @@ export function SummaryOrientation({
   isMember,
   confirmOutstanding,
   confirmTotal,
+  answerOutstanding = 0,
+  answerTotal = 0,
   hasDecisions,
   onOpenDecisions,
 }: {
   isMember: boolean;
-  /** Recommended confirmations still waiting — `confirmationCounts`. */
+  /** Recommended confirmations still waiting — `askCounts(...).confirm`. */
   confirmOutstanding: number;
   confirmTotal: number;
+  /** Questions that must be answered before a stage — `askCounts(...).answer`. */
+  answerOutstanding?: number;
+  answerTotal?: number;
   /** Whether there is a Decisions tab to send the reader to. */
   hasDecisions: boolean;
   onOpenDecisions: () => void;
 }) {
   if (isMember) return null;
 
+  // Both kinds of ask count (ACE spec 2026-10-04): the confirmations and the
+  // questions that must be answered before a stage.
+  const parts: string[] = [];
+  if (answerOutstanding > 0) {
+    parts.push(
+      `answer the ${answerOutstanding} ${
+        answerOutstanding === 1 ? "question" : "questions"
+      } marked “Answer before …”`,
+    );
+  }
+  if (confirmOutstanding > 0) {
+    parts.push(
+      `confirm the ${confirmOutstanding} ${
+        confirmOutstanding === 1 ? "decision" : "decisions"
+      } marked “Confirm before launch”`,
+    );
+  }
   const ask =
-    confirmOutstanding > 0
-      ? `Please confirm the ${confirmOutstanding} ${
-          confirmOutstanding === 1 ? "decision" : "decisions"
-        } marked “Confirm before launch”. Comments on any other decision are welcome too.`
-      : confirmTotal > 0
-        ? "Every decision we asked you to confirm has been answered. Comments on any decision are still welcome."
+    parts.length > 0
+      ? `Please ${parts.join(", and ")}. Comments on any other decision are welcome too.`
+      : confirmTotal + answerTotal > 0
+        ? "Everything we asked you to confirm or answer has been answered. Comments on any decision are still welcome."
         : "Tell us about anything in the design or the decisions that looks wrong.";
 
   return (
