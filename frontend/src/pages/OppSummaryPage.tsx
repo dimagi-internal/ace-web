@@ -24,6 +24,7 @@ import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { cn } from "@/lib/utils";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
+import { SummaryOrientation } from "@/components/opps/summary/SummaryOrientation";
 import {
   AccessUnknownTag,
   AdminOnlyTag,
@@ -87,6 +88,23 @@ function Placeholder({ label, text }: { label: string; text: string }) {
 
 function NotCreated({ label }: { label: string }) {
   return <Placeholder label={label} text="Not created" />;
+}
+
+/**
+ * One plain line qualifying a section whose phase finished without a
+ * clean verdict — `stage.caveats[]`, worded server-side. On
+ * spark-facilitator/20261001-2208 the training pack came from a
+ * `proceed-with-warn` phase and the dashboards from
+ * `passed-with-deferred-evals`, and both rendered exactly like a clean
+ * run's. Same visual move as `BuildCaveats` and `SyntheticNotice`.
+ */
+function SectionCaveat({ text }: { text: string | undefined }) {
+  if (!text) return null;
+  return (
+    <p className="mb-3 border-l-2 border-border pl-3 text-[0.85rem] leading-[1.6] text-muted-foreground">
+      {text}
+    </p>
+  );
 }
 
 /**
@@ -446,12 +464,28 @@ export default function OppSummaryPage() {
   const notStartedText = stage?.label
     ? `Not started — this run is at the ${stage.label} stage`
     : "Not started yet";
-  const slot = (section: string, label: string, key?: string) =>
-    pending.has(section) ? (
+  // A phase the run deliberately SKIPPED is neither: nothing is coming,
+  // and nothing went missing. Its sections read the run's reason instead
+  // ("Not part of this run — it stopped after the solicitation stage, by
+  // design"), never "Not created".
+  const skipped = new Map<string, string>();
+  for (const entry of stage?.skipped ?? []) {
+    for (const section of entry.sections) skipped.set(section, entry.reason);
+  }
+  const slot = (section: string, label: string, key?: string) => {
+    const skipReason = skipped.get(section);
+    if (skipReason) return <Placeholder key={key} label={label} text={skipReason} />;
+    return pending.has(section) ? (
       <Placeholder key={key} label={label} text={notStartedText} />
     ) : (
       <NotCreated key={key} label={label} />
     );
+  };
+  // Per-section verdict caveats, looked up by payload key like `slot`.
+  const caveats = new Map<string, string>();
+  for (const entry of stage?.caveats ?? []) {
+    for (const section of entry.sections) caveats.set(section, entry.text);
+  }
 
   // The tab strip only exists when there is something to review. A run
   // with no decisions log and no open questions renders exactly as it did
@@ -516,6 +550,16 @@ export default function OppSummaryPage() {
       <main className={cn("mx-auto space-y-14 px-4 py-14 sm:px-6", width)}>
         {showOverview && (
           <>
+          {/* Orientation — what this page is and what we need from the
+              reader. Outsiders only; a member already knows. */}
+          <SummaryOrientation
+            isMember={!!viewer?.is_member}
+            confirmOutstanding={confirm.outstanding}
+            confirmTotal={confirm.total}
+            hasDecisions={hasReviewSurface}
+            onOpenDecisions={() => setTab("decisions")}
+          />
+
           {/* "What changed because you asked" — first, because
               it answers a returning reviewer's first question: did the
               thing I asked for happen. Before this the page showed 105
@@ -532,6 +576,7 @@ export default function OppSummaryPage() {
           {/* Design — what everything below was built from and what a
               reviewer comments on. */}
           <SummarySection title="Design">
+            <SectionCaveat text={caveats.get("design")} />
             {design && design.docs.length > 0 ? (
               design.docs.map((doc) => (
                 <SummaryRow
@@ -621,6 +666,7 @@ export default function OppSummaryPage() {
 
           {/* Connect opportunity — opp slot only (program URL 404s publicly) */}
           <SummarySection title="Connect opportunity">
+            <SectionCaveat text={caveats.get("connect")} />
             {connect?.opportunity ? (
               <SummaryRow
                 label="Opp"
@@ -657,6 +703,7 @@ export default function OppSummaryPage() {
 
           {/* Support assistant */}
           <SummarySection title="Support assistant">
+            <SectionCaveat text={caveats.get("assistant")} />
             {assistant ? (
               <SummaryRow
                 label="Bot"
@@ -692,6 +739,7 @@ export default function OppSummaryPage() {
 
           {/* Training pack */}
           <SummarySection title="Training pack">
+            <SectionCaveat text={caveats.get("training")} />
             {training && (training.deck || training.docs.length > 0) ? (
               <>
                 {training.deck && (
@@ -726,6 +774,7 @@ export default function OppSummaryPage() {
                 that looks like a recording of real fieldwork is the
                 more misleading of the two. */}
             {walkthroughs.length > 0 && <SyntheticNotice synthetic={synthetic} />}
+            {walkthroughs.length > 0 && <SectionCaveat text={caveats.get("walkthroughs")} />}
             {walkthroughs.length > 0 ? (
               walkthroughs.map((w, i) =>
                 w.availability === "withheld" || !w.url ? (
@@ -771,6 +820,7 @@ export default function OppSummaryPage() {
           {/* Dashboards */}
           <SummarySection title="Dashboards">
             <SyntheticNotice synthetic={synthetic} />
+            {dashboards.length > 0 && <SectionCaveat text={caveats.get("dashboards")} />}
             {dashboards.length > 0 ? (
               dashboards.map((d) => (
                 <SummaryRow
@@ -787,6 +837,7 @@ export default function OppSummaryPage() {
 
           {/* Solicitation */}
           <SummarySection title="Solicitation">
+            <SectionCaveat text={caveats.get("solicitation")} />
             {solicitation ? (
               <SummaryRow
                 label="RFP"

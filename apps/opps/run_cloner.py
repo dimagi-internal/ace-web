@@ -8,8 +8,9 @@ a fork point, a clone:
   ``<opp-slug>/runs/<same run-id>/``;
 * copies the run verbatim — every phase folder, including the Phase 6
   screenshots and videos a reviewer needs (a fork skips those);
-* brings the opp-level files (``opp.yaml``, ``pdd.md``, ``inputs/`` …) the
-  first time an opp is cloned into a workspace, so the new opp is workable;
+* brings the opp-level files (``opp.yaml``, ``pdd.md``, ``inputs/``,
+  ``open-questions.md`` …) the first time an opp is cloned into a workspace,
+  so the new opp is workable and its run summary keeps its open questions;
   a later clone of another run of the same opp reuses them;
 * creates the target ``OppWorkspace`` with the TARGET workspace's default
   tenancy — the new opp's assets belong in the new workspace's areas.
@@ -65,9 +66,16 @@ def _child(files: list[DriveFile], name: str, *, folder: bool) -> DriveFile | No
 
 
 # The opp-level files a clone carries: identity (opp.yaml), the idea and PDD,
-# and the inputs the PDD was built from. Anything else at the opp root is ACE's
-# internal working state and stays in the source workspace.
-_OPP_LEVEL_FILES = frozenset({"opp.yaml", "idea.md", "pdd.md", "inputs"})
+# the inputs the PDD was built from, and the open-questions ledger. Anything
+# else at the opp root is ACE's internal working state and stays in the source
+# workspace.
+#
+# open-questions.md is carried because the public run summary renders its
+# CONTENT (`summary._read_open_questions` reads it from the opp root, never the
+# run): it is half of the review surface, "what we could not decide". Left
+# behind, every cloned run's page read "Open questions — Not created" while
+# the source opp had the doc.
+_OPP_LEVEL_FILES = frozenset({"opp.yaml", "idea.md", "pdd.md", "inputs", "open-questions.md"})
 
 
 class _Copier:
@@ -210,9 +218,9 @@ def _copy(drive, record, source, target, opp_slug, run_id, owner,
             dst_opp_id = drive.create_folder(target.drive_root_folder_id, opp_slug)
             # Opp-level files, once — an ALLOWLIST, not "everything above
             # runs/". The opp root is where ACE keeps its own working notes
-            # (open-questions.md, eval-calibration/, the inbox-triage
-            # comms-log, parked email drafts), and a clone exists to be shown
-            # to outside reviewers. spark-facilitator's root held all four,
+            # (eval-calibration/, the inbox-triage comms-log, parked email
+            # drafts), and a clone exists to be shown
+            # to outside reviewers. spark-facilitator's root held all of them,
             # including an unsent draft addressed to the reviewer. Other runs
             # are not copied either — a clone is one run.
             copier.tree(src_opp.id, dst_opp_id, only=_OPP_LEVEL_FILES)

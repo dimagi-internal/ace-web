@@ -807,7 +807,16 @@ frozen **claim set**, "What changed because you asked" (verdicts
 `MET`/`UNMET`/`NOT REACHED`/`INDETERMINATE` from the plugin's
 `lib/run-claims.ts`; an unknown verdict is carried as "no verdict", never
 coerced — PR #773). Audit it anonymously (`/ace:run-surface-audit`) before
-sending anyone the URL.
+sending anyone the URL. **Phase state on the page is three-way, not two:** a
+`status: skipped` phase is neither started nor pending — `stage.skipped[]`
+carries its sections with a plain reason ("Not part of this run — …"), and
+`stage.label` ignores it; a phase that ran without a clean verdict lands in
+`stage.caveats[]`, one plain line per section it owns (Phase 3 excluded —
+`build` already qualifies it). Non-members get an orientation block at the
+top of the Overview (`SummaryOrientation`: who drafted it, what we need, how
+to respond, who reads replies, LLO/FLW/Connect defined). A decision row whose
+headline is ACE's `plain` sentence and has no `plain_value` shows no raw value
+line — the exact option sits in the expanded detail.
 
 **Skill registry is dynamic:** `apps/opps/skills.py` imports agent frontmatter
 and the artifact manifest from `ACE_PLUGIN_PATH` at first access. Adding or

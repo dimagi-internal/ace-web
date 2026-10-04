@@ -26,8 +26,9 @@ def _tree():
                 "opp.yaml": "slug: spark-facilitator\n",
                 "pdd.md": "# PDD\n",
                 "inputs": {"brief.md": "brief"},
+                # Carried: the run summary renders its content.
+                "open-questions.md": "- **Rate?** Owner: LLO.\n",
                 # ACE's internal working state at the opp root — never cloned.
-                "open-questions.md": "internal",
                 "eval-calibration": {"known-issues.md": "internal"},
                 "inbox-triage_comms-log": "internal",
                 "Spark — parked outbound draft for Anne": "internal",
@@ -99,7 +100,9 @@ def test_copies_the_whole_run_and_the_opp_files(drive, source_ws, target_ws, own
     result = clone_run(drive=drive, source=source_ws, target=target_ws,
                        opp_slug="spark-facilitator", run_id=RUN, owner=owner)
 
-    assert _names(drive, "SPARK/spark-facilitator") == ["inputs", "opp.yaml", "pdd.md", "runs"]
+    assert _names(drive, "SPARK/spark-facilitator") == [
+        "inputs", "open-questions.md", "opp.yaml", "pdd.md", "runs",
+    ]
     assert _names(drive, "SPARK/spark-facilitator/inputs") == ["brief.md"]
     # Only the cloned run, under the same run id.
     assert _names(drive, "SPARK/spark-facilitator/runs") == [RUN]
@@ -116,7 +119,7 @@ def test_copies_the_whole_run_and_the_opp_files(drive, source_ws, target_ws, own
     assert _names(drive, f"SPARK/spark-facilitator/runs/{RUN}/6-qa-and-training") == [
         "guide.md", "screenshots", "videos",
     ]
-    assert result.files_copied == 10
+    assert result.files_copied == 11
     # The source is untouched.
     assert _names(drive, "DT/spark-facilitator/runs") == ["20260920-0900", RUN]
 
@@ -141,9 +144,18 @@ def test_internal_opp_level_files_are_not_cloned(drive, source_ws, target_ws, ow
     clone_run(drive=drive, source=source_ws, target=target_ws,
               opp_slug="spark-facilitator", run_id=RUN, owner=owner)
     names = _names(drive, "SPARK/spark-facilitator")
-    for internal in ("open-questions.md", "eval-calibration", "inbox-triage_comms-log",
+    for internal in ("eval-calibration", "inbox-triage_comms-log",
                      "Spark — parked outbound draft for Anne"):
         assert internal not in names
+
+
+def test_the_open_questions_ledger_is_cloned(drive, source_ws, target_ws, owner):
+    # The public summary reads `open-questions.md` from the opp ROOT and renders
+    # its content. Left behind, a cloned run's page read "Open questions — Not
+    # created" while the source opp had the doc.
+    clone_run(drive=drive, source=source_ws, target=target_ws,
+              opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+    assert "open-questions.md" in _names(drive, "SPARK/spark-facilitator")
 
 
 def test_second_run_of_same_opp_reuses_the_opp_folder(drive, source_ws, target_ws, owner):
@@ -152,7 +164,9 @@ def test_second_run_of_same_opp_reuses_the_opp_folder(drive, source_ws, target_w
     clone_run(drive=drive, source=source_ws, target=target_ws,
               opp_slug="spark-facilitator", run_id="20260920-0900", owner=owner)
     assert _names(drive, "SPARK") == ["spark-facilitator"]
-    assert _names(drive, "SPARK/spark-facilitator") == ["inputs", "opp.yaml", "pdd.md", "runs"]
+    assert _names(drive, "SPARK/spark-facilitator") == [
+        "inputs", "open-questions.md", "opp.yaml", "pdd.md", "runs",
+    ]
     assert _names(drive, "SPARK/spark-facilitator/runs") == ["20260920-0900", RUN]
 
 

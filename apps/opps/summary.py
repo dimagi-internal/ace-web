@@ -335,6 +335,10 @@ def _state_drive_file_ids(state: dict) -> list[str]:
     training = _phase_products(state, "qa-and-training", "training")
     materials = _phase_products(state, "qa-and-training", "training_materials")
     docs_block = training.get("docs") or {}
+    # The two guides get a plain title of our own, whatever the run wrote:
+    # ACE titles them "LLO manager guide" / "FLW training guide", and an
+    # outside reader knows neither acronym. The acronym stays, in brackets,
+    # because the documents themselves use it throughout.
     candidates = [training.get("deck"), materials.get("deck")]
     for key in ("llo_guide", "flw_guide", "quick_reference", "faq", "onboarding_email"):
         candidates.append(docs_block.get(key))
@@ -597,7 +601,30 @@ def _connect_domain(state: dict) -> str | None:
     )
 
 
-def _read_connect(state: dict, access: LinkAccessReader | None = None) -> dict | None:
+def _display_opportunity_name(name: str, run_id: str | None) -> str:
+    """The opportunity name without ACE's leading ``<run_id> · ``.
+
+    ACE prefixes every per-run opportunity's name with its run id on
+    purpose — several runs of one opp each create an opportunity, and the
+    prefix is what tells them apart inside Connect. On this page the run
+    id is already in the header, and a title that opens with
+    ``20261001-2208 ·`` reads to an outsider as a code, not a name. Only
+    the DISPLAYED name changes; the opportunity in Connect keeps it.
+    """
+    if not run_id:
+        return name
+    stripped = re.sub(
+        rf"^\s*{re.escape(run_id)}\s*[·•|:—–-]\s*", "", name,
+    )
+    return stripped or name
+
+
+def _read_connect(
+    state: dict,
+    access: LinkAccessReader | None = None,
+    *,
+    run_id: str | None = None,
+) -> dict | None:
     """Public payload surfaces only the Connect *opportunity*.
 
     The program URL (``connect.dimagi.com/a/<domain>/program/<uuid>/``) is
@@ -620,7 +647,10 @@ def _read_connect(state: dict, access: LinkAccessReader | None = None) -> dict |
         return None
     return {
         "opportunity": {
-            "name": opp.get("name") or connect.get("opportunity_name") or "Connect opportunity",
+            "name": _display_opportunity_name(
+                opp.get("name") or connect.get("opportunity_name") or "Connect opportunity",
+                run_id,
+            ),
             "url": opp_url,
             "start_date": opp.get("start_date") or connect.get("start_date"),
             "end_date": opp.get("end_date") or connect.get("end_date"),
@@ -629,6 +659,12 @@ def _read_connect(state: dict, access: LinkAccessReader | None = None) -> dict |
             "access": _tenant_tag(bool(access) and access.tenancy.connect(opp_url)),
         },
     }
+
+
+_TRAINING_DOC_TITLES = {
+    "llo_guide": "Guide for the implementing organisation (LLO)",
+    "flw_guide": "Guide for field workers (FLW)",
+}
 
 
 def _read_training(state: dict, access: LinkAccessReader) -> dict | None:
@@ -656,13 +692,21 @@ def _read_training(state: dict, access: LinkAccessReader) -> dict | None:
         }
 
     docs_block = training.get("docs") or {}
+    # The two guides get a plain title of our own, whatever the run wrote:
+    # ACE titles them "LLO manager guide" / "FLW training guide", and an
+    # outside reader knows neither acronym. The acronym stays, in brackets,
+    # because the documents themselves use it throughout.
     docs: list[dict] = []
     # Preserve a stable display order matching agent-doc convention.
     for key in ("llo_guide", "flw_guide", "quick_reference", "faq", "onboarding_email"):
         doc = docs_block.get(key) or materials.get(key) or {}
         if doc.get("web_view_link") or doc.get("file_id"):
             docs.append({
-                "title": doc.get("title") or key.replace("_", " ").title(),
+                "title": (
+                    _TRAINING_DOC_TITLES.get(key)
+                    or doc.get("title")
+                    or key.replace("_", " ").title()
+                ),
                 "url": doc.get("web_view_link"),
                 "access": access.tag(
                     file_id=doc.get("file_id"), url=doc.get("web_view_link"),
@@ -2559,6 +2603,78 @@ _PHASE_ORDER: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 # are "not started", not "missing".
 _NOT_STARTED_STATUSES = {"", "pending", "not_started", "not-started", "queued", "todo"}
 
+#: A phase the run deliberately did not do. NOT "not started" (nothing is
+#: coming) and NOT "started" (nothing was made): spark-facilitator/
+#: 20261001-2208 halted by design at the Phase 8→9 boundary and wrote
+#: `execution-management` and `closeout` as `status: skipped`, which the
+#: old two-way split counted as STARTED — so `stage.label` read
+#: "closeout" and LLO / Live / Score / Learnings rendered "Not created".
+_SKIPPED_STATUSES = {"skipped", "skip", "not-applicable", "n/a"}
+
+#: The phase block keys that may carry the run's own reason for a skip,
+#: in preference order. The run's words beat anything derived here.
+_SKIP_REASON_KEYS = ("reason", "skip_reason", "skipped_reason", "note", "status_note")
+
+#: Phases whose sections already carry a dedicated verdict qualifier, so a
+#: second, generic caveat would only repeat it: Phase 3 has `build`.
+_CAVEAT_COVERED_ELSEWHERE = {"commcare-setup"}
+
+
+def _skip_reason(block: dict, last_ran: tuple[str, dict] | None) -> str:
+    """One plain line for a skipped phase's sections.
+
+    The phase's own ``reason`` / ``note`` wins. Otherwise it is derived
+    from the last phase that DID run: a ``halt-…`` verdict there (ACE
+    writes ``halt-at-phase-8-to-9-boundary``) means the run stopped on
+    purpose, which is exactly what a reader needs to hear instead of
+    "Not created".
+    """
+    for key in _SKIP_REASON_KEYS:
+        value = block.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"Not part of this run — {' '.join(value.split())}"
+    if last_ran is not None:
+        label, ran_block = last_ran
+        verdict = str(ran_block.get("verdict") or "").strip().lower()
+        if verdict.startswith("halt"):
+            return (
+                f"Not part of this run — it stopped after the {label} stage, by design"
+            )
+    return "Not part of this run — this stage was skipped"
+
+
+def _verdict_caveat(status: str, verdict: str) -> str | None:
+    """A plain one-line caveat for a phase that did not finish clean, or
+    ``None`` when there is nothing to say.
+
+    ACE's verdict vocabulary is open-ended (``proceed-with-warn``,
+    ``passed-with-deferred-evals``, ``partial-…``), so this matches on
+    the words that carry the meaning and falls back to a generic line
+    that quotes the verdict verbatim — an unknown verdict must not
+    become silence, and must not be guessed into something friendlier.
+
+    Not caveated: clean verdicts, ``seeded`` (the phase was carried from
+    an earlier run rather than rebuilt — provenance, not quality), and a
+    ``halt-…`` verdict (the run stopping on purpose is what `stage`
+    reports; it says nothing about the phase's own work).
+    """
+    v = verdict.strip().lower()
+    if v.startswith("halt") or v == "seeded":
+        v = ""
+    if v in _CLEAN_PHASE_VERDICTS:
+        if status in _INCOMPLETE_PHASE_STATUSES:
+            return "Only partly finished — some of this stage's work did not complete."
+        return None
+    if "deferred" in v:
+        return "Built; some quality checks were deferred."
+    if "warn" in v:
+        return "Finished with warnings that were accepted so the run could continue."
+    if "partial" in v:
+        return "Only partly finished — some of this stage's checks did not pass."
+    if any(token in v for token in _FAILING_VERDICTS):
+        return "Did not pass its own quality checks."
+    return f"Finished without a clean pass (ACE recorded “{verdict.strip()}”)."
+
 
 def _read_stage(state: dict) -> dict | None:
     """Where the run stopped, and which sections that makes premature.
@@ -2567,37 +2683,65 @@ def _read_stage(state: dict) -> dict | None:
     launch, no score and no learnings — correctly. Rendering all four as
     "Not created" alongside genuinely-missing things made a healthy
     paused run read as an abandoned build. This block lets the page say
-    "not started yet" for sections whose phase simply hasn't run.
+    "not started yet" for sections whose phase simply hasn't run, and
+    "not part of this run" for those whose phase was skipped.
 
     ``pending_sections`` names payload keys, so the page can look each
-    section up directly. ``label`` is the furthest phase that HAS run.
+    section up directly. ``label`` is the furthest phase that HAS run —
+    a skipped phase does not count. ``skipped[]`` carries each skipped
+    phase's sections with one plain reason. ``caveats[]`` carries each
+    phase that ran without a clean verdict, so the page can qualify the
+    sections it produced (a training pack from a ``proceed-with-warn``
+    phase used to render exactly like a clean one).
     """
     phases = state.get("phases")
     if not isinstance(phases, dict) or not phases:
         return None
 
     current_label: str | None = None
+    last_ran: tuple[str, dict] | None = None
     pending: list[str] = []
+    skipped: list[dict] = []
+    caveats: list[dict] = []
     for name, label, sections in _PHASE_ORDER:
         block = phases.get(name)
         if not isinstance(block, dict):
             continue
         status = str(block.get("status") or "").strip().lower()
+        if status in _SKIPPED_STATUSES:
+            skipped.append({
+                "phase": name,
+                "sections": list(sections),
+                "reason": _skip_reason(block, last_ran),
+            })
+            continue
         # A phase that wrote products has run, whatever its status says —
         # older runs (and every test fixture) carry products with no
         # status at all, and calling those "not started" would be worse
         # than the bug this fixes.
         started = status not in _NOT_STARTED_STATUSES or bool(block.get("products"))
-        if started:
-            current_label = label
-        else:
+        if not started:
             pending.extend(sections)
+            continue
+        current_label = label
+        last_ran = (label, block)
+        verdict = str(block.get("verdict") or "")
+        caveat = _verdict_caveat(status, verdict)
+        if caveat and sections and name not in _CAVEAT_COVERED_ELSEWHERE:
+            caveats.append({
+                "phase": name,
+                "sections": list(sections),
+                "verdict": verdict.strip() or None,
+                "text": caveat,
+            })
 
-    if current_label is None and not pending:
+    if current_label is None and not pending and not skipped:
         return None
     return {
         "label": current_label,
         "pending_sections": sorted(set(pending)),
+        "skipped": skipped,
+        "caveats": caveats,
     }
 
 
@@ -2724,7 +2868,7 @@ def build_summary_payload(
         # `run_state.yaml`. `None` — and so absent from the page
         # entirely — on every run that never took the deep gate.
         "deep_qa": _read_deep_qa(drive, run_folder.id, state),
-        "connect": _read_connect(state, access),
+        "connect": _read_connect(state, access, run_id=run_id),
         "training": _read_training(state, access),
         "assistant": _read_assistant(state),
         "walkthroughs": _read_walkthroughs(state),
