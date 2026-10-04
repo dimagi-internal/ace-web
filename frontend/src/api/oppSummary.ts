@@ -468,6 +468,17 @@ export interface OppSummaryPayload {
   stage: {
     label: string | null;
     pending_sections: string[];
+    // Phases the run deliberately did not do — their sections read the
+    // reason ("not part of this run …"), never "Not created".
+    skipped: { phase: string; sections: string[]; reason: string }[];
+    // Phases that ran without a clean verdict: one plain line, shown in
+    // each section the phase produced. Empty on a clean run.
+    caveats: {
+      phase: string;
+      sections: string[];
+      verdict: string | null;
+      text: string;
+    }[];
   } | null;
   // Rendered reviewer feedback ledgers ("where did my comment go?"), one
   // stable doc per review event. Newest first.

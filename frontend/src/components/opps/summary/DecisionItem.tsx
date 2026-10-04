@@ -155,7 +155,7 @@ export function DecisionItem({
                   disabled={busy}
                   onClick={() => void write({ value: answer, confirm: true })}
                   className="rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={`Confirm: ${decisionDisplay(decision, answer).value}`}
+                  aria-label={`Confirm: ${decisionDisplay(decision, answer).value || answer}`}
                 >
                   {busy ? "Saving…" : "Confirm"}
                 </button>

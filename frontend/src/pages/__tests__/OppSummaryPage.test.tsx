@@ -432,7 +432,12 @@ describe("OppSummaryPage", () => {
   it("distinguishes 'not started yet' from 'Not created'", async () => {
     renderWith({
       ...BASE,
-      stage: { label: "solicitation", pending_sections: ["selected_llo", "launch"] },
+      stage: {
+        label: "solicitation",
+        pending_sections: ["selected_llo", "launch"],
+        skipped: [],
+        caveats: [],
+      },
     });
     const notStarted = await screen.findAllByText(
       "Not started — this run is at the solicitation stage",
@@ -441,6 +446,100 @@ describe("OppSummaryPage", () => {
     expect(notStarted.length).toBe(2);
     // Sections whose phase HAS run keep the plain missing state.
     expect(screen.getAllByText("Not created").length).toBeGreaterThan(0);
+  });
+
+  it("gives a skipped phase's sections the run's reason, never 'Not created'", async () => {
+    // spark-facilitator/20261001-2208: halted by design after Phase 8, so
+    // Execution and Outcomes are not part of the run at all.
+    const reason = "Not part of this run — it stopped after the solicitation stage, by design";
+    renderWith({
+      ...BASE,
+      stage: {
+        label: "solicitation",
+        pending_sections: [],
+        skipped: [
+          { phase: "execution-management", sections: ["selected_llo", "launch"], reason },
+          {
+            phase: "closeout",
+            sections: ["cycle_grade", "opp_eval", "learnings"],
+            reason,
+          },
+        ],
+        caveats: [],
+      },
+    });
+    // LLO, Live, Score, Learnings.
+    expect((await screen.findAllByText(reason)).length).toBe(4);
+    expect(screen.queryByText(/Not started/)).toBeNull();
+  });
+
+  it("qualifies a section whose phase finished without a clean verdict", async () => {
+    renderWith({
+      ...BASE,
+      training: {
+        deck: null,
+        docs: [{ title: "FAQ", url: "https://docs/faq", access: "public" }],
+      },
+      dashboards: [{ title: "Programme", url: "https://labs/d/1", access: "public" }],
+      stage: {
+        label: "solicitation",
+        pending_sections: [],
+        skipped: [],
+        caveats: [
+          {
+            phase: "qa-and-training",
+            sections: ["training"],
+            verdict: "proceed-with-warn",
+            text: "Finished with warnings that were accepted so the run could continue.",
+          },
+          {
+            phase: "synthetic-data-and-workflows",
+            sections: ["walkthroughs", "dashboards"],
+            verdict: "passed-with-deferred-evals",
+            text: "Built; some quality checks were deferred.",
+          },
+        ],
+      },
+    });
+    expect(
+      await screen.findByText(
+        "Finished with warnings that were accepted so the run could continue.",
+      ),
+    ).toBeTruthy();
+    // Dashboards carry it; walkthroughs has no entries, so no caveat there.
+    expect(screen.getAllByText("Built; some quality checks were deferred.").length).toBe(1);
+  });
+
+  // ── Orientation (run-surface audit, 2026-10-03) ─────────────────
+
+  it("tells an outside reader who drafted this, what we need and how to respond", async () => {
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 1,
+        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
+        rows: [{ ...DECISION, review_ask: "recommended-confirmation" }],
+      },
+    });
+    const about = await screen.findByRole("region", { name: "About this page" });
+    const text = about.textContent ?? "";
+    expect(text).toContain("ACE, Dimagi’s AI program engine");
+    expect(text).toContain("Dimagi staff review it");
+    expect(text).toContain("confirm the 1 decision marked “Confirm before launch”");
+    expect(text).toContain("reply to the email that sent you this link");
+    expect(text).toContain("Dimagi’s team reads every reply");
+    expect(text).toContain("LLO");
+    expect(text).toContain("FLW");
+    expect(text).not.toContain("CommCare Connect");
+    // The orientation's own link goes to the Decisions tab.
+    fireEvent.click(screen.getByText("Go to the decisions"));
+    expect(await screen.findByText("A question")).toBeTruthy();
+  });
+
+  it("draws no orientation for a workspace member", async () => {
+    renderWith({ ...BASE, viewer: { is_member: true } });
+    await screen.findByText("Program Design Document");
+    expect(screen.queryByRole("region", { name: "About this page" })).toBeNull();
   });
 
   it("shows the Workbench link to an anonymous visitor, tagged admin only", async () => {
@@ -789,6 +888,32 @@ describe("OppSummaryPage", () => {
     const header = (await screen.findByText("A question")).closest("button")!;
     expect(header.textContent).toContain("9000");
     expect(header.textContent).not.toContain("7,500 MWK");
+  });
+
+  it("leads with ACE's plain sentence and keeps the raw option behind the row", async () => {
+    // A row with `plain` but no `plain_value`: the sentence already states
+    // the answer, so the raw option (jargon to an outsider) moves to the
+    // expanded detail as "Exact option".
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 1,
+        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
+        rows: [{
+          ...DECISION,
+          question: "How is the 3-per-step payment cap enforced?",
+          ai_default: "payable_slot in key plus Phase 4 rule",
+          options_considered: ["payable_slot in key plus Phase 4 rule", "clamped key only"],
+          plain: "Only the 1st to 3rd meeting on a step is paid.",
+        }],
+      },
+    });
+    await openDecisionsTab();
+    const q = await screen.findByText("Only the 1st to 3rd meeting on a step is paid.");
+    const header = q.closest("button")!;
+    expect(header.textContent).not.toContain("payable_slot");
+    fireEvent.click(q);
+    expect(screen.getByText("Exact option")).toBeTruthy();
   });
 
   // ── Members write; everyone reads ───────────────────────────────

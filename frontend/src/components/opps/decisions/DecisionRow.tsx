@@ -127,21 +127,26 @@ export function DecisionRow({
           {shown.headline}
         </span>
         <span className="col-start-1 row-start-2 flex min-w-0 flex-col gap-1 md:col-start-2 md:row-start-1">
-          <span className="text-[13px] leading-snug [overflow-wrap:anywhere]">
-            <span aria-hidden className="mr-1 text-muted-foreground/60">
-              →
+          {/* No value line when the plain headline already states the
+              answer (see `decisionDisplay`); the exact option is in the
+              detail. */}
+          {!shown.valueInHeadline && (
+            <span className="text-[13px] leading-snug [overflow-wrap:anywhere]">
+              <span aria-hidden className="mr-1 text-muted-foreground/60">
+                →
+              </span>
+              <span
+                className={cn(
+                  "font-medium",
+                  muted
+                    ? "text-muted-foreground line-through decoration-muted-foreground/40"
+                    : "text-foreground",
+                )}
+              >
+                {shown.value || "—"}
+              </span>
             </span>
-            <span
-              className={cn(
-                "font-medium",
-                muted
-                  ? "text-muted-foreground line-through decoration-muted-foreground/40"
-                  : "text-foreground",
-              )}
-            >
-              {shown.value || "—"}
-            </span>
-          </span>
+          )}
           {shown.summary && (
             <span className="text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
               {shown.summary}

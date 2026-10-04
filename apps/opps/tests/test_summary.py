@@ -262,7 +262,10 @@ def test_complete_run_returns_full_payload():
     assert p["training"]["deck"]["title"] == "Turmeric Market Survey — Training Deck"
     titles = [d["title"] for d in p["training"]["docs"]]
     assert titles == [
-        "LLO manager guide", "FLW training guide", "Quick reference card",
+        # The two guides get plain titles whatever the run wrote — an outside
+        # reader knows neither "LLO" nor "FLW".
+        "Guide for the implementing organisation (LLO)",
+        "Guide for field workers (FLW)", "Quick reference card",
         "FAQ", "Onboarding email",
     ]
 
@@ -1435,6 +1438,127 @@ def test_stage_treats_a_phase_with_products_as_started_even_without_status():
     )
     assert "training" not in p["stage"]["pending_sections"]
     assert "apps" not in p["stage"]["pending_sections"]
+
+
+def _payload_for(state_yaml: str) -> dict:
+    drive = FakeDriveClient.from_tree(_full_tree(state_yaml=state_yaml))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    return build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+
+
+def test_stage_treats_a_skipped_phase_as_not_part_of_the_run():
+    """spark-facilitator/20261001-2208: halted by design at the Phase 8→9
+    boundary, with `execution-management` and `closeout` written as
+    `status: skipped`. The old split counted `skipped` as STARTED, so the
+    stage read "closeout" and LLO / Live / Score / Learnings rendered
+    "Not created". A skipped phase is neither started nor pending."""
+    p = _payload_for(_state_with_phase_meta({
+        "solicitation-management": {
+            "status": "done", "verdict": "halt-at-phase-8-to-9-boundary",
+            "products": {"solicitation": {"url": "https://labs/s/1"}},
+        },
+        "execution-management": {"status": "skipped"},
+        "closeout": {"status": "skipped"},
+    }))
+    stage = p["stage"]
+    assert stage["label"] == "solicitation"
+    assert stage["pending_sections"] == []
+    by_phase = {s["phase"]: s for s in stage["skipped"]}
+    assert by_phase["execution-management"]["sections"] == ["selected_llo", "launch"]
+    assert by_phase["closeout"]["sections"] == ["cycle_grade", "opp_eval", "learnings"]
+    # Derived from the last phase that ran: a `halt-…` verdict is a stop by design.
+    for entry in stage["skipped"]:
+        assert entry["reason"] == (
+            "Not part of this run — it stopped after the solicitation stage, by design"
+        )
+    # The halt verdict is the run stopping, not a defect in Phase 8's work.
+    assert not any(c["phase"] == "solicitation-management" for c in stage["caveats"])
+
+
+def test_a_skipped_phase_prefers_its_own_reason():
+    p = _payload_for(_state_with_phase_meta({
+        "closeout": {"status": "skipped", "reason": "the partner has not started yet"},
+    }))
+    (entry,) = [s for s in p["stage"]["skipped"] if s["phase"] == "closeout"]
+    assert entry["reason"] == "Not part of this run — the partner has not started yet"
+
+
+def test_a_skip_with_no_reason_and_no_halt_still_says_so_plainly():
+    p = _payload_for(_state_with_phase_meta({"closeout": {"status": "skipped"}}))
+    (entry,) = [s for s in p["stage"]["skipped"] if s["phase"] == "closeout"]
+    assert entry["reason"] == "Not part of this run — this stage was skipped"
+
+
+@pytest.mark.parametrize("verdict,text", [
+    ("proceed-with-warn",
+     "Finished with warnings that were accepted so the run could continue."),
+    ("passed-with-deferred-evals", "Built; some quality checks were deferred."),
+    ("partial-faq-eval-blocked",
+     "Only partly finished — some of this stage's checks did not pass."),
+    ("fail", "Did not pass its own quality checks."),
+    # Unknown: honest and verbatim, never guessed into something friendlier.
+    ("needs-human-look", "Finished without a clean pass (ACE recorded “needs-human-look”)."),
+])
+def test_a_non_pass_phase_verdict_becomes_a_caveat_on_its_sections(verdict, text):
+    p = _payload_for(_state_with_phase_meta({
+        "qa-and-training": {"status": "done", "verdict": verdict},
+    }))
+    (caveat,) = [c for c in p["stage"]["caveats"] if c["phase"] == "qa-and-training"]
+    assert caveat == {
+        "phase": "qa-and-training", "sections": ["training"],
+        "verdict": verdict, "text": text,
+    }
+
+
+def test_the_demo_phase_caveat_covers_both_of_its_sections():
+    p = _payload_for(_state_with_phase_meta({
+        "synthetic-data-and-workflows": {
+            "status": "done", "verdict": "passed-with-deferred-evals",
+            "products": {"synthetic": {}},
+        },
+    }))
+    (caveat,) = [
+        c for c in p["stage"]["caveats"] if c["phase"] == "synthetic-data-and-workflows"
+    ]
+    assert caveat["sections"] == ["walkthroughs", "dashboards"]
+
+
+@pytest.mark.parametrize("verdict", ["pass", "passed", "done", "seeded", ""])
+def test_a_pass_like_verdict_gets_no_caveat(verdict):
+    p = _payload_for(_state_with_phase_meta({
+        "qa-and-training": {"status": "done", "verdict": verdict},
+    }))
+    assert p["stage"]["caveats"] == []
+
+
+def test_phase_3_is_not_caveated_twice():
+    """`build` already qualifies the apps section; a second generic line
+    would only repeat it."""
+    p = _payload_for(_state_with_phase_meta({
+        "commcare-setup": {"status": "partial", "verdict": "partial-x"},
+    }))
+    assert p["build"] is not None
+    assert not any(c["phase"] == "commcare-setup" for c in p["stage"]["caveats"])
+
+
+@pytest.mark.parametrize("raw,shown", [
+    # What ACE writes: the run id first, to keep per-run opportunities apart
+    # inside Connect. The page already shows the run id in its header.
+    ("20260503-0835 · Turmeric Market Survey", "Turmeric Market Survey"),
+    ("20260503-0835 - Turmeric Market Survey", "Turmeric Market Survey"),
+    # Another run's id, or the id mid-name, is left alone.
+    ("20260101-0000 · Turmeric Market Survey", "20260101-0000 · Turmeric Market Survey"),
+    ("Turmeric · 20260503-0835", "Turmeric · 20260503-0835"),
+])
+def test_the_displayed_opportunity_name_drops_the_leading_run_id(raw, shown):
+    import yaml as _yaml
+
+    state = _yaml.safe_load(_state_yaml())
+    state["phases"]["connect-setup"]["products"]["connect"]["opportunity"]["name"] = raw
+    p = _payload_for(_yaml.dump(state))
+    assert p["connect"]["opportunity"]["name"] == shown
 
 
 def test_stage_is_none_when_run_state_has_no_phases():

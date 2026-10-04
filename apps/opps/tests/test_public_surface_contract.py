@@ -141,6 +141,13 @@ def _maximal_state_yaml() -> str:
             },
         },
     })
+    # A phase that ran without a clean verdict, so `stage.caveats[]` is
+    # populated and its key set frozen below. Verbatim from
+    # spark-facilitator/20261001-2208, whose training pack rendered with
+    # no qualifier at all.
+    state["phases"]["qa-and-training"].update({
+        "status": "done", "verdict": "proceed-with-warn",
+    })
     # The other half of every `deep_qa.stages[].freshness` comparison.
     # `_read_deep_qa` compares the verdict's own identifier against these
     # EXACT fields and emits nothing when either side is missing, so a
@@ -772,7 +779,12 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     "open_questions.items[]": frozenset({
         "title", "detail", "owner", "answered_in", "blocking",
     }),
-    "stage": frozenset({"label", "pending_sections"}),
+    # `skipped[]` (a phase the run deliberately did not do — "not part of
+    # this run", never "Not created") and `caveats[]` (a phase that ran
+    # without a clean verdict, qualifying the sections it produced). Both
+    # are LISTS, empty when there is nothing to say.
+    "stage": frozenset({"label", "pending_sections", "skipped", "caveats"}),
+    "stage.caveats[]": frozenset({"phase", "sections", "verdict", "text"}),
     "feedback[]": frozenset({"title", "url", "access"}),
     "decisions": frozenset({"total", "counts", "rows"}),
     "decisions.counts": frozenset({
@@ -950,6 +962,29 @@ def test_a_deep_qa_stage_that_did_not_run_keeps_the_same_shape():
     assert set(stages[0]) == set(stages[1])
     assert stages[1]["gate"] is None and stages[1]["score"] is None
     assert stages[1]["counts"] == {"total": 0, "pass": 0, "warn": 0, "fail": 0}
+
+
+def test_a_skipped_phase_names_its_sections_and_a_reason():
+    """`stage.skipped[]` shape. The maximal fixture runs every phase, so the
+    skipped shape is frozen here — the same move as the deep-QA stage that
+    did not run. Every entry names the payload sections it owns and carries
+    a non-empty reason, because the page renders that reason where the
+    section would otherwise say "Not created"."""
+    tree = _maximal_tree()
+    run = tree["ACE"][OPP_SLUG]["runs"][RUN_ID]
+    state = yaml.safe_load(run["run_state.yaml"])
+    state["phases"]["execution-management"] = {"status": "skipped"}
+    run["run_state.yaml"] = yaml.safe_dump(state)
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    payload = build_summary_payload(
+        drive, workspace=ws, opp_slug=OPP_SLUG, run_id=RUN_ID,
+    )
+    skipped = payload["stage"]["skipped"]
+    assert skipped, "the fixture skipped execution-management"
+    for entry in skipped:
+        assert set(entry) == {"phase", "sections", "reason"}
+        assert entry["reason"]
 
 
 def test_the_whole_deep_qa_section_is_absent_when_the_gate_never_ran():
