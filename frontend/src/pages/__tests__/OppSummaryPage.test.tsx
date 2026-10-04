@@ -631,11 +631,30 @@ describe("OppSummaryPage", () => {
     // Phase is the structure of the tab, not something you reach by
     // expanding a disclosure — a reader has to be able to see WHERE in
     // the flow a call came from (Jonathan, 2026-08-14).
-    renderWith(TWO_PHASES);
+    renderWith({ ...TWO_PHASES, viewer: { is_member: true } });
     await openDecisionsTab();
     expect(await screen.findByText("Design")).toBeTruthy();
     expect(screen.getByText("Connect setup")).toBeTruthy();
     expect(screen.getByText("Phase 4")).toBeTruthy();
+  });
+
+  it("labels an outsider's phase groups with plain stage names, no ordinal", async () => {
+    // "PHASE 3 · CommCare Setup" means nothing outside ACE.
+    const rows = TWO_PHASES.decisions!.rows;
+    renderWith({
+      ...TWO_PHASES,
+      decisions: {
+        ...TWO_PHASES.decisions!,
+        rows: [
+          { ...rows[0], phase_label: "CommCare Setup", stage_label: "App build" },
+          rows[1],
+        ],
+      },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("App build")).toBeTruthy();
+    expect(screen.queryByText("CommCare Setup")).toBeNull();
+    expect(screen.queryByText(/^Phase \d+$/)).toBeNull();
   });
 
   it("shows every row's question and answer in full without expanding it", async () => {
@@ -1165,6 +1184,94 @@ describe("OppSummaryPage", () => {
     });
     expect(await screen.findByText("Verification")).toBeTruthy();
     expect(screen.queryByText(/Demonstration data/)).toBeNull();
+  });
+
+  // ─── The outsider pass (spark-facilitator/20261001-2208) ───────────
+
+  const OQ_ITEMS: NonNullable<OppSummaryPayload["open_questions"]>["items"] = [
+    {
+      title: "Which district for the pilot?",
+      detail: "m0f3 bind: hh_count_tt calculate=0",
+      owner: "Spark / ACE",
+      answered_in: null,
+      blocking: "Before Phase 3",
+      raised_by: "20260926-1413",
+      needed_by: "Before the app build stage",
+      overdue: true,
+      for_reviewer: true,
+    },
+    {
+      title: "Who renders the review page?",
+      detail: "Layer B / C wiring",
+      owner: "Operator / ACE",
+      answered_in: null,
+      blocking: "Non-blocking",
+      raised_by: null,
+      needed_by: "Not blocking — can be settled at any point",
+      overdue: false,
+      for_reviewer: false,
+    },
+  ];
+
+  it("groups an outsider's open questions and tucks ACE's notes away", async () => {
+    renderWith({
+      ...BASE,
+      open_questions: { url: null, access: "unknown", items: OQ_ITEMS },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("Questions for you")).toBeTruthy();
+    const dimagi = screen.getByText("Questions Dimagi is resolving");
+    // The second group is collapsed by default.
+    expect(dimagi.closest("details")?.open).toBe(false);
+    // The question is the text; the working notes sit in a closed disclosure.
+    expect(screen.getByText("Which district for the pilot?")).toBeTruthy();
+    const notes = screen.getByText("m0f3 bind: hh_count_tt calculate=0");
+    expect(notes.closest("details")?.open).toBe(false);
+    expect(screen.getByText("Raised by: 20260926-1413")).toBeTruthy();
+    expect(screen.getByText("ACE's deadline: Before Phase 3")).toBeTruthy();
+    // Plain deadline, with the overdue call-out.
+    expect(screen.getByText("Before the app build stage")).toBeTruthy();
+    expect(screen.getByText(/that stage has already run, so this is now overdue/)).toBeTruthy();
+  });
+
+  it("keeps a member's open questions flat and raw", async () => {
+    renderWith({
+      ...BASE,
+      viewer: { is_member: true },
+      open_questions: { url: null, access: "unknown", items: OQ_ITEMS },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("Which district for the pilot?")).toBeTruthy();
+    expect(screen.queryByText("Questions for you")).toBeNull();
+    expect(screen.queryByText("Working notes")).toBeNull();
+    expect(
+      screen.getByText("m0f3 bind: hh_count_tt calculate=0").closest("details"),
+    ).toBeNull();
+    expect(screen.getByText("Before Phase 3")).toBeTruthy();
+  });
+
+  it("says a run that stopped by design is paused, and drops the run id for outsiders", async () => {
+    renderWith({
+      ...BASE,
+      opp: { ...BASE.opp, status: "in_progress", end_date: null },
+      stage: {
+        label: "solicitation",
+        pending_sections: [],
+        skipped: [],
+        caveats: [],
+        paused: "Paused — waiting for an implementing organisation",
+      },
+    });
+    expect(
+      await screen.findByText("Paused — waiting for an implementing organisation"),
+    ).toBeTruthy();
+    expect(screen.queryByText("In progress")).toBeNull();
+    expect(screen.queryByText("run 20260813-2126")).toBeNull();
+  });
+
+  it("still shows a member the run id in the top bar", async () => {
+    renderWith({ ...BASE, viewer: { is_member: true } });
+    expect(await screen.findByText("run 20260813-2126")).toBeTruthy();
   });
 
   it("shows an open question's title, and when it has to be answered by", async () => {

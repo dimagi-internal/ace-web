@@ -1452,6 +1452,7 @@ def _read_open_questions(
     opp_folder_id: str,
     run_folder_id: str | None = None,
     access: LinkAccessReader | None = None,
+    ran_phases: frozenset[str] = frozenset(),
 ) -> dict | None:
     """Open Questions — the "what we could NOT decide" half of the review
     surface. Content, not just a link.
@@ -1477,6 +1478,9 @@ def _read_open_questions(
 
     The run folder is still checked as a fallback so any older run that
     did write a run-local copy keeps rendering.
+
+    ``ran_phases`` — the phases this run has already run (``_phases_ran``)
+    — is what lets a "Before Phase 3" deadline say it is now overdue.
     """
     for folder_id in (opp_folder_id, run_folder_id):
         if not folder_id:
@@ -1495,7 +1499,10 @@ def _read_open_questions(
             body = read_prose(drive, f)
         except Exception as exc:  # noqa: BLE001
             log.warning("summary: read open-questions %s failed: %s", f.id, exc)
-        items = _parse_open_questions(_open_section(body))
+        items = [
+            _annotate_open_question(q, ran_phases)
+            for q in _parse_open_questions(_open_section(body))
+        ]
         if not (f.web_view_link or items):
             continue
         return {
@@ -1673,6 +1680,9 @@ def _parse_field_labelled_row(raw: str) -> dict | None:
         "owner": _oq_value(fields, "owner"),
         "answered_in": _oq_value(fields, "answered_where", "answered_in"),
         "blocking": _oq_value(fields, "blocking"),
+        # Which run first raised it — ACE's audit trail, shown to an
+        # outside reader only inside the collapsed "Working notes".
+        "raised_by": _oq_value(fields, "raised_by"),
     }
 
 
@@ -1734,6 +1744,7 @@ def _parse_open_questions(body: str) -> list[dict]:
             "owner": (owner or "").rstrip(".").strip() or None,
             "answered_in": (answered or "").rstrip(".").strip() or None,
             "blocking": None,
+            "raised_by": None,
         })
     return out
 
@@ -2220,6 +2231,11 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
         # Ordinal always comes from the tag the RUN wrote — see
         # ``_registry_label_agrees``.
         serialized["phase_ordinal"] = _decision_phase_ordinal(decision.phase)
+        # The plain stage name an outside reader sees instead of
+        # "Phase 3 · CommCare Setup" — the same names `stage` uses. Read
+        # from the run's own TAG, not the ordinal-projected ``phase``,
+        # for the reason ``_registry_label_agrees`` gives.
+        serialized["stage_label"] = _stage_name_for_tag(decision.phase)
         rows.append(serialized)
         if superseded_by:
             # HISTORY, not a choice this run stands behind: a row a later row
@@ -2599,6 +2615,113 @@ _PHASE_ORDER: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("closeout", "closeout", ("cycle_grade", "opp_eval", "learnings")),
 )
 
+#: Phase NUMBER (as ACE's open-questions ledger writes it: "Before Phase 3")
+#: → (phase name, stage label). Numbered in `_PHASE_ORDER` order, legacy
+#: ``design`` key skipped: 1 design … 8 solicitation, 9 execution, 10 closeout.
+_PHASE_BY_NUMBER: dict[int, tuple[str, str]] = {
+    n: (name, label)
+    for n, (name, label, _sections) in enumerate(
+        (p for p in _PHASE_ORDER if p[0] != "design"), start=1,
+    )
+}
+
+#: Where a bare stage label would leave an outsider guessing what it means.
+_STAGE_PHRASE = {"execution-management": "execution (go-live)"}
+
+
+def _stage_name_for_tag(phase_raw: str) -> str | None:
+    """The capitalised stage label ("App build") for a decision row's phase
+    TAG (``3-commcare``): the first phase whose name contains every word of
+    the tag. ``None`` when none does — the page keeps ``phase_label``."""
+    _, _, tail = str(phase_raw or "").partition("-")
+    tag_words = _words(tail or phase_raw)
+    if not tag_words:
+        return None
+    for name, label, _sections in _PHASE_ORDER:
+        if tag_words <= _words(name):
+            return label[:1].upper() + label[1:]
+    return None
+
+
+_BEFORE_PHASE_RE = re.compile(r"^\s*before\s+phase\s+(\d{1,2})\b", re.IGNORECASE)
+_PHASE_MENTION_RE = re.compile(r"\bphase\s+(\d{1,2})\b", re.IGNORECASE)
+_NON_BLOCKING_RE = re.compile(r"^\s*non[- ]blocking\b[\s;:,.]*(.*)$", re.IGNORECASE | re.DOTALL)
+
+
+def _plain_needed_by(blocking: str | None, ran: frozenset[str]) -> tuple[str | None, bool]:
+    """ACE's ``blocking:`` deadline in words an outsider can read, and
+    whether it has already passed.
+
+    "Before Phase 3" names a stage by a number nobody outside ACE knows,
+    and on a run that has already built its apps it is also a deadline
+    that went by. A ``Before Phase N`` prefix becomes the stage name and
+    is OVERDUE when that phase has run in this run — anything after the
+    prefix ("Sibling of …", "(go-live)") is ledger bookkeeping and is
+    dropped here; the original text stays in ``blocking``. A few other
+    stock phrases are reworded; a ``Phase N`` mentioned mid-sentence is
+    named but never marked overdue (it is not the deadline itself).
+    Unrecognised text passes through unchanged.
+    """
+    if not blocking:
+        return None, False
+    text = blocking.strip()
+    low = text.lower()
+    m = _BEFORE_PHASE_RE.match(text)
+    if m and int(m.group(1)) in _PHASE_BY_NUMBER:
+        name, label = _PHASE_BY_NUMBER[int(m.group(1))]
+        return f"Before the {_STAGE_PHRASE.get(name, label)} stage", name in ran
+    if low.startswith("before closeout"):
+        return "Before the closeout stage", "closeout" in ran
+    if low.startswith("before award"):
+        return "Before an implementing organisation is chosen", False
+    if low.startswith(("post-pilot", "post pilot")):
+        return "After the pilot", False
+    nb = _NON_BLOCKING_RE.match(text)
+    if nb:
+        rest = nb.group(1).strip()
+        if not rest:
+            return "Not blocking — can be settled at any point", False
+        if rest.lower().startswith("for "):
+            return f"Doesn't hold up {rest[4:]}", False
+        return f"Not blocking — {rest}", False
+
+    def _name(match: re.Match) -> str:
+        entry = _PHASE_BY_NUMBER.get(int(match.group(1)))
+        if entry is None:
+            return match.group(0)
+        return f"the {_STAGE_PHRASE.get(entry[0], entry[1])} stage"
+
+    return _PHASE_MENTION_RE.sub(_name, text), False
+
+
+#: Owners who are Dimagi's side of the table. A question owned ONLY by
+#: these is one Dimagi is resolving; anyone else on the owner line
+#: (the partner, an awarded LLO, "Spark M&E") makes it a question for
+#: the reviewer. Matched per owner after splitting on / , & + "and".
+_INTERNAL_OWNERS = frozenset({"ace", "operator", "connect team", "dimagi"})
+_OWNER_SPLIT_RE = re.compile(r"\s*(?:/|,|&|\+|\band\b)\s*", re.IGNORECASE)
+
+
+def _owner_is_internal(owner: str | None) -> bool:
+    """True when every named owner is internal. No owner is NOT internal —
+    an unassigned question is shown to the reviewer, not hidden."""
+    parts = [p.strip().lower() for p in _OWNER_SPLIT_RE.split(owner or "") if p.strip()]
+    return bool(parts) and all(p in _INTERNAL_OWNERS for p in parts)
+
+
+def _annotate_open_question(item: dict, ran: frozenset[str]) -> dict:
+    """Add the outsider-facing fields to one parsed open question:
+    ``needed_by`` / ``overdue`` (see `_plain_needed_by`) and
+    ``for_reviewer`` (see `_owner_is_internal`)."""
+    needed_by, overdue = _plain_needed_by(item.get("blocking"), ran)
+    return {
+        **item,
+        "needed_by": needed_by,
+        "overdue": overdue,
+        "for_reviewer": not _owner_is_internal(item.get("owner")),
+    }
+
+
 # A phase in one of these states has not run yet — the sections it owns
 # are "not started", not "missing".
 _NOT_STARTED_STATUSES = {"", "pending", "not_started", "not-started", "queued", "todo"}
@@ -2676,6 +2799,46 @@ def _verdict_caveat(status: str, verdict: str) -> str | None:
     return f"Finished without a clean pass (ACE recorded “{verdict.strip()}”)."
 
 
+def _phase_state(block: dict) -> str:
+    """``"skipped"``, ``"pending"`` or ``"ran"`` for one phase block —
+    the three-way split `_read_stage` and `_phases_ran` share.
+
+    A phase that wrote products has run, whatever its status says —
+    older runs (and every test fixture) carry products with no status at
+    all, and calling those "not started" would be worse than the bug
+    this fixes.
+    """
+    status = str(block.get("status") or "").strip().lower()
+    if status in _SKIPPED_STATUSES:
+        return "skipped"
+    if status not in _NOT_STARTED_STATUSES or bool(block.get("products")):
+        return "ran"
+    return "pending"
+
+
+def _phases_ran(state: dict) -> frozenset[str]:
+    """Names of the phases this run has run (skipped and pending excluded)."""
+    phases = state.get("phases")
+    if not isinstance(phases, dict):
+        return frozenset()
+    return frozenset(
+        name for name, block in phases.items()
+        if isinstance(block, dict) and _phase_state(block) == "ran"
+    )
+
+
+def _paused_text(last_ran: tuple[str, str, dict] | None) -> str:
+    """The plain status for a run that stopped by design. Stopping after
+    the solicitation is the common case and has a precise reason: no
+    implementing organisation has been chosen yet."""
+    if last_ran is None:
+        return "Paused"
+    name, label, _block = last_ran
+    if name == "solicitation-management":
+        return "Paused — waiting for an implementing organisation"
+    return f"Paused after the {label} stage"
+
+
 def _read_stage(state: dict) -> dict | None:
     """Where the run stopped, and which sections that makes premature.
 
@@ -2693,13 +2856,20 @@ def _read_stage(state: dict) -> dict | None:
     phase that ran without a clean verdict, so the page can qualify the
     sections it produced (a training pack from a ``proceed-with-warn``
     phase used to render exactly like a clean one).
+
+    ``paused`` is the plain status for a run that STOPPED BY DESIGN, else
+    ``None``: the furthest phase that ran carries a ``halt-…`` verdict and
+    a later phase was skipped, or every phase after it was skipped and
+    none is pending. Without it the hero said "In progress" over a page
+    whose every later section says the run stopped on purpose.
     """
     phases = state.get("phases")
     if not isinstance(phases, dict) or not phases:
         return None
 
     current_label: str | None = None
-    last_ran: tuple[str, dict] | None = None
+    last_ran: tuple[str, str, dict] | None = None
+    skipped_after_last_ran = False
     pending: list[str] = []
     skipped: list[dict] = []
     caveats: list[dict] = []
@@ -2708,23 +2878,21 @@ def _read_stage(state: dict) -> dict | None:
         if not isinstance(block, dict):
             continue
         status = str(block.get("status") or "").strip().lower()
-        if status in _SKIPPED_STATUSES:
+        phase_state = _phase_state(block)
+        if phase_state == "skipped":
             skipped.append({
                 "phase": name,
                 "sections": list(sections),
-                "reason": _skip_reason(block, last_ran),
+                "reason": _skip_reason(block, last_ran[1:] if last_ran else None),
             })
+            skipped_after_last_ran = True
             continue
-        # A phase that wrote products has run, whatever its status says —
-        # older runs (and every test fixture) carry products with no
-        # status at all, and calling those "not started" would be worse
-        # than the bug this fixes.
-        started = status not in _NOT_STARTED_STATUSES or bool(block.get("products"))
-        if not started:
+        if phase_state == "pending":
             pending.extend(sections)
             continue
         current_label = label
-        last_ran = (label, block)
+        last_ran = (name, label, block)
+        skipped_after_last_ran = False
         verdict = str(block.get("verdict") or "")
         caveat = _verdict_caveat(status, verdict)
         if caveat and sections and name not in _CAVEAT_COVERED_ELSEWHERE:
@@ -2737,11 +2905,16 @@ def _read_stage(state: dict) -> dict | None:
 
     if current_label is None and not pending and not skipped:
         return None
+    halted = last_ran is not None and str(
+        last_ran[2].get("verdict") or ""
+    ).strip().lower().startswith("halt")
+    stopped = (halted and bool(skipped)) or (skipped_after_last_ran and not pending)
     return {
         "label": current_label,
         "pending_sections": sorted(set(pending)),
         "skipped": skipped,
         "caveats": caveats,
+        "paused": _paused_text(last_ran) if stopped else None,
     }
 
 
@@ -2884,6 +3057,7 @@ def build_summary_payload(
         "learnings": _read_learnings(state, access),
         "open_questions": _read_open_questions(
             drive, opp_folder.id, run_folder.id, access=access,
+            ran_phases=_phases_ran(state),
         ),
         "stage": _read_stage(state),
         # What the run itself says is still unproven and needs a human

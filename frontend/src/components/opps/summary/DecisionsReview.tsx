@@ -51,6 +51,16 @@ interface PhaseGroup {
   rows: ReviewDecision[];
 }
 
+/**
+ * The heading a phase group reads under. Members see the Workbench's
+ * phase name; an outside reader sees the plain stage name ("App build")
+ * the rest of the page uses, falling back to the phase name when the
+ * row carries none.
+ */
+export function phaseGroupLabel(d: ReviewDecision, plain: boolean): string {
+  return (plain && d.stage_label) || d.phase_label;
+}
+
 /** A row ACE recommends the reviewer confirm before launch. Live rows only. */
 export function isRecommendedConfirmation(d: ReviewDecision): boolean {
   return asksConfirmation(d);
@@ -137,13 +147,13 @@ export function DecisionsReview({
       else
         byPhase.set(key, {
           key,
-          label: d.phase_label,
+          label: phaseGroupLabel(d, !viewerIsMember),
           ordinal: d.phase_ordinal,
           rows: [d],
         });
     }
     return [...byPhase.values()].sort((a, b) => a.ordinal - b.ordinal);
-  }, [visible]);
+  }, [visible, viewerIsMember]);
 
   // Phases start OPEN: a collapsed row says what was decided in full, so
   // the open list is the scannable summary; a phase is collapsed by choice.
@@ -261,6 +271,7 @@ export function DecisionsReview({
           <PhaseSection
             key={g.key}
             group={g}
+            showOrdinal={viewerIsMember}
             open={!closedPhases[g.key]}
             onToggle={() =>
               setClosedPhases((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
@@ -366,16 +377,19 @@ function ToggleChip({
 
 /**
  * One phase's heading + its rows, on the shared `DecisionSection` shell.
- * Leads with the ordinal and name the Workbench's `PhaseTile` shows.
+ * Leads with the ordinal and name the Workbench's `PhaseTile` shows —
+ * the ordinal for members only: "PHASE 3" means nothing to an outsider.
  */
 function PhaseSection({
   group,
+  showOrdinal,
   open,
   onToggle,
   changed,
   children,
 }: {
   group: PhaseGroup;
+  showOrdinal: boolean;
   open: boolean;
   onToggle: () => void;
   changed: number;
@@ -388,7 +402,7 @@ function PhaseSection({
       className="mt-3"
       lead={
         <>
-          {group.ordinal < 99 && (
+          {showOrdinal && group.ordinal < 99 && (
             <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               Phase {group.ordinal}
             </span>

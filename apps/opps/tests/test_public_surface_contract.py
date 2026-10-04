@@ -778,12 +778,19 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     # Phase 8 looked the same as a post-pilot one (ace#1867).
     "open_questions.items[]": frozenset({
         "title", "detail", "owner", "answered_in", "blocking",
+        # The outsider pass (ace-web, 2026-10): who first raised it (ACE's
+        # audit trail, behind "Working notes"); `blocking` in plain words
+        # and whether that stage has already run; and whether it is the
+        # reviewer's question or one Dimagi is resolving.
+        "raised_by", "needed_by", "overdue", "for_reviewer",
     }),
     # `skipped[]` (a phase the run deliberately did not do — "not part of
     # this run", never "Not created") and `caveats[]` (a phase that ran
     # without a clean verdict, qualifying the sections it produced). Both
     # are LISTS, empty when there is nothing to say.
-    "stage": frozenset({"label", "pending_sections", "skipped", "caveats"}),
+    # `paused` — the plain status for a run that stopped by design, null
+    # otherwise. ACE's auditor reads only `label` / `pending_sections`.
+    "stage": frozenset({"label", "pending_sections", "skipped", "caveats", "paused"}),
     "stage.caveats[]": frozenset({"phase", "sections", "verdict", "text"}),
     "feedback[]": frozenset({"title", "url", "access"}),
     "decisions": frozenset({"total", "counts", "rows"}),
@@ -791,10 +798,10 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
         "stated", "inferred", "conflicting", "overridden",
     }),
     # Projected through the SAME `serialize_decision` the Workbench uses,
-    # plus the two grouping fields this surface adds. One shape, two
+    # plus the grouping fields this surface adds. One shape, two
     # surfaces, no drift.
     "decisions.rows[]": frozenset({
-        "id", "phase", "phase_raw", "phase_label", "phase_ordinal", "skill",
+        "id", "phase", "phase_raw", "phase_label", "phase_ordinal", "stage_label", "skill",
         "question", "ai_default", "override", "options_considered", "source",
         "status", "notes", "override_reasoning", "evidence_basis",
         "conflict_signals",
