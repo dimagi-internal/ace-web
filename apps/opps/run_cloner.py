@@ -74,8 +74,12 @@ def _child(files: list[DriveFile], name: str, *, folder: bool) -> DriveFile | No
 # CONTENT (`summary._read_open_questions` reads it from the opp root, never the
 # run): it is half of the review surface, "what we could not decide". Left
 # behind, every cloned run's page read "Open questions — Not created" while
-# the source opp had the doc.
-_OPP_LEVEL_FILES = frozenset({"opp.yaml", "idea.md", "pdd.md", "inputs", "open-questions.md"})
+# the source opp had the doc. open-asks.yaml is its successor (ACE folds the
+# ledger into decision rows, 2026-10-04); its presence is what tells the page
+# the asks are decision rows, so a clone must carry it too.
+_OPP_LEVEL_FILES = frozenset({
+    "opp.yaml", "idea.md", "pdd.md", "inputs", "open-questions.md", "open-asks.yaml",
+})
 
 
 class _Copier:

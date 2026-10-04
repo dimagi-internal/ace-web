@@ -1775,6 +1775,7 @@ def test_decisions_are_surfaced_as_rows_not_a_link():
     assert d["total"] == 3
     assert d["counts"] == {
         "stated": 1, "inferred": 1, "conflicting": 1, "overridden": 1,
+        "to_confirm": 0, "to_answer": 0, "deferred": 0,
     }
     assert [r["id"] for r in d["rows"]] == [
         "archetype-selection", "solicitation-expected-period", "payment-rate",

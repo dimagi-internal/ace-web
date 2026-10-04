@@ -312,7 +312,11 @@ export interface Decision {
   override: string;
   options_considered: string[];
   source: string;
-  status: "ai-default" | "overridden";
+  /**
+   * `human-decided` — a person ruled on it outright; `deferred` — not needed
+   * for this pilot, revisit when `revisit_when` (ACE spec 2026-10-04).
+   */
+  status: "ai-default" | "overridden" | "human-decided" | "deferred";
   /** AI's rationale for the ai-default pick (read from YAML `reasoning`). */
   notes: string;
   /** Human's rationale when status=overridden (read from YAML `override_reasoning`). */
@@ -361,6 +365,17 @@ export interface Decision {
   scope?: string;
   /** Rule rows: `enforced` | `by-design` | `gap`. */
   enforcement?: string;
+  // ── The ask fields (ACE spec 2026-10-04, open questions into decisions).
+  /** Who must answer: `partner` | `implementing-org` | `dimagi` | free text. */
+  owner?: string;
+  /** With `review_ask: required-before`: `award` | `go-live` | `closeout` | `extension`. */
+  needed_by?: string;
+  /** Where the answer arrives: `review` | `solicitation:<question-id>` | `call`. */
+  answer_channel?: string;
+  /** On a `deferred` row: when to look at it again, in one plain sentence. */
+  revisit_when?: string;
+  /** The run this row was carried in from (a fork or clone). */
+  inherited_from_run?: string;
 }
 
 export interface Run {

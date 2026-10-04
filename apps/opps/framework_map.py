@@ -111,6 +111,7 @@ from apps.opps.parsers import (
     QAFailure,
     QAResult,
     StepManifest,
+    normalize_decision_status,
 )
 from apps.opps.sync import (
     ArtifactRef,
@@ -237,7 +238,7 @@ def map_decision(d: FwDecision) -> AceDecision:
         override=d.override,
         options_considered=list(d.options_considered or []),
         source=d.source,
-        status=d.status if d.status in ("ai-default", "overridden") else "ai-default",
+        status=normalize_decision_status(d.status),
         notes=d.reasoning or "",
         override_reasoning=d.override_reasoning,
         evidence_basis=d.evidence_basis or "stated",

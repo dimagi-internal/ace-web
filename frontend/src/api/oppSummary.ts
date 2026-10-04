@@ -426,6 +426,15 @@ export interface OppSummaryPayload {
   open_questions: {
     url: string | null;
     access: LinkAccess;
+    /**
+     * `decisions` once ACE writes `open-asks.yaml`: the asks are decision
+     * rows (Decisions tab, "Confirm before launch" / "Answer before …"),
+     * so `items` is empty. `ledger` (or absent, on an older payload) — the
+     * legacy `open-questions.md`, rendered as before.
+     */
+    source?: "ledger" | "decisions";
+    /** The run that generated `open-asks.yaml`; null for the ledger. */
+    asks_run_id?: string | null;
     items: {
       title: string;
       detail: string;
@@ -479,6 +488,10 @@ export interface OppSummaryPayload {
       inferred: number;
       conflicting: number;
       overridden: number;
+      // Absent on a payload cached before the asks shipped.
+      to_confirm?: number;
+      to_answer?: number;
+      deferred?: number;
     };
     rows: ReviewDecision[];
   } | null;

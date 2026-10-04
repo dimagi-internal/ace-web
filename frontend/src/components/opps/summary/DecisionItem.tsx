@@ -104,6 +104,7 @@ export function DecisionItem({
       anchorId={`decision-${decision.id}`}
       optionsLabel={canWrite ? "Confirm or change" : "Options"}
       statusChip={false}
+      showAskIds={canWrite}
       badges={
         <>
           {tags}

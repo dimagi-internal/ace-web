@@ -823,6 +823,18 @@ ACE's `latest:` notes behind a collapsed "Working notes"; decision groups use
 that stopped by design, and the top bar drops the run id. A decision row whose
 headline is ACE's `plain` sentence and has no `plain_value` shows no raw value
 line — the exact option sits in the expanded detail.
+**The Decisions tab is the only place a reviewer is asked anything** (ACE spec
+`2026-10-04-open-questions-into-decisions-design.md`): groups "Confirm before
+launch" (`review_ask: recommended-confirmation`), "Answer before <stage>" (one per
+`needed_by`, `review_ask: required-before` — the inline `required-before: award`
+form is folded server-side in `parsers.decision_extras`), the choices by phase, and
+a collapsed "Not needed for this pilot" (`status: deferred`, with `revisit_when`).
+Each ask shows `owner` and `answer_channel` plainly (`solicitation:<id>` = answered
+through the call for implementing organisations; the id is members-only). Once ACE
+writes opp-level `open-asks.yaml`, `open_questions.source` is `decisions`, the legacy
+ledger is not read and the Overview points at the Decisions tab; without it the
+ledger renders as before (`source: ledger`). The orientation block counts both ask
+kinds (`askCounts`).
 
 **Skill registry is dynamic:** `apps/opps/skills.py` imports agent frontmatter
 and the artifact manifest from `ACE_PLUGIN_PATH` at first access. Adding or

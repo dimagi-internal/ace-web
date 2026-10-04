@@ -15,7 +15,7 @@ import {
 import type { ReactionSubmit } from "@/components/opps/summary/DecisionReactions";
 import {
   DecisionsReview,
-  confirmationCounts,
+  askCounts,
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionsReview";
 import { ClaimsSection } from "@/components/opps/summary/ClaimsSection";
@@ -490,7 +490,10 @@ export default function OppSummaryPage() {
   // The tab strip only exists when there is something to review. A run
   // with no decisions log and no open questions renders exactly as it did
   // before: one page, no chrome for a tab that would be empty.
-  const openQuestionCount = open_questions?.items.length ?? 0;
+  // Once ACE writes `open-asks.yaml` the asks ARE decision rows: the legacy
+  // ledger is not read, and nothing here repeats what the Decisions tab asks.
+  const asksAreDecisions = open_questions?.source === "decisions";
+  const openQuestionCount = asksAreDecisions ? 0 : (open_questions?.items.length ?? 0);
   const hasReviewSurface = Boolean(decisions) || openQuestionCount > 0;
   const showOverview = !hasReviewSurface || tab === "overview";
   // What the reviewer is asked to DO: the recommended confirmations still
@@ -498,9 +501,15 @@ export default function OppSummaryPage() {
   // Decisions tab uses, so the two can never disagree (ace-web#771). This
   // replaced "N need your eye", which counted ACE's own uncertainty
   // (conflicting sources) rather than anything the reviewer must act on.
-  const confirm = decisions
-    ? confirmationCounts(decisions.rows, edits)
-    : { total: 0, outstanding: 0 };
+  const asks = decisions
+    ? askCounts(decisions.rows, edits)
+    : {
+        confirm: { total: 0, outstanding: 0 },
+        answer: { total: 0, outstanding: 0 },
+        total: 0,
+        outstanding: 0,
+      };
+  const confirm = asks.confirm;
   // The decisions tab is a dense two-column list and uses a wide screen;
   // the Overview stays a reading column. One width for the whole page so
   // the hero, tabs and body share a left edge.
@@ -565,6 +574,8 @@ export default function OppSummaryPage() {
             isMember={!!viewer?.is_member}
             confirmOutstanding={confirm.outstanding}
             confirmTotal={confirm.total}
+            answerOutstanding={asks.answer.outstanding}
+            answerTotal={asks.answer.total}
             hasDecisions={hasReviewSurface}
             onOpenDecisions={() => setTab("decisions")}
           />
@@ -624,10 +635,23 @@ export default function OppSummaryPage() {
                         decisions.total === 1 ? "call" : "calls"
                       } ACE made building this run. `}
                       <span className="text-foreground">
-                        {confirm.outstanding > 0
-                          ? `${confirm.outstanding} recommended to confirm before launch.`
-                          : confirm.total > 0
+                        {asks.outstanding > 0
+                          ? [
+                              asks.answer.outstanding > 0 &&
+                                `${asks.answer.outstanding} ${
+                                  asks.answer.outstanding === 1 ? "question" : "questions"
+                                } to answer`,
+                              confirm.outstanding > 0 &&
+                                `${confirm.outstanding} recommended to confirm before launch`,
+                            ]
+                              .filter(Boolean)
+                              .join(", and ") + "."
+                          : asks.answer.total === 0 && confirm.total > 0
                             ? `All ${confirm.total} recommended confirmations are answered.`
+                            : asks.total > 0
+                              ? `Everything ACE asked — ${asks.total} ${
+                                  asks.total === 1 ? "item" : "items"
+                                } — is answered.`
                             : "React to any of them."}
                       </span>
                       {openQuestionCount > 0 &&
@@ -644,6 +668,13 @@ export default function OppSummaryPage() {
                     </>
                   )}
                 </p>
+                {asksAreDecisions && asks.outstanding > 0 && (
+                  <p className="w-full text-[0.975rem] leading-[1.7] text-muted-foreground">
+                    <span className="font-medium text-foreground">Questions for you</span>
+                    {" "}— they are on the Decisions tab, each with who answers it and where,
+                    so nothing is asked twice.
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => setTab("decisions")}
@@ -1007,6 +1038,7 @@ export default function OppSummaryPage() {
             </SummarySection>
           )}
 
+          {!asksAreDecisions && (
           <SummarySection title="Open questions">
             {open_questions && open_questions.items.length > 0 ? (
               <>
@@ -1048,6 +1080,7 @@ export default function OppSummaryPage() {
               <NotCreated label="Doc" />
             )}
           </SummarySection>
+          )}
           </>
         )}
 

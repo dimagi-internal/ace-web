@@ -8,7 +8,13 @@ import type {
 } from "@/api/oppSummary";
 import { DecisionRow } from "@/components/opps/decisions/DecisionRow";
 import { DecisionSection } from "@/components/opps/decisions/DecisionSection";
-import { asksConfirmation } from "@/components/opps/decisions/decisionDisplay";
+import {
+  NEEDED_BY_ORDER,
+  asksAnswer,
+  asksConfirmation,
+  isDeferred,
+  neededByPhrase,
+} from "@/components/opps/decisions/decisionDisplay";
 import {
   DecisionItem,
   type DecisionEditSubmit,
@@ -30,7 +36,14 @@ export type { DecisionEditSubmit };
  *   rows (Jonathan: "it is the same data model … render those rows with
  *   the SAME row component"), so the shared row draws their marker and
  *   `confirm_reason`; nothing here is a separate card.
+ * - **Answer before <stage>** — one group per `needed_by`, in lifecycle
+ *   order: the rows ACE marks `review_ask: required-before`, which have no
+ *   working answer and gate that stage (ACE spec 2026-10-04: the
+ *   open-questions ledger folds into decision rows, so this tab is the only
+ *   place a reviewer is asked anything).
  * - **Choices ACE made** — every other live row, by phase.
+ * - **Not needed for this pilot** — `status: deferred` rows, collapsed, each
+ *   with its `revisit_when`. Never an ask.
  * - Hidden by default behind toggles: `audience: internal` rows and
  *   superseded rows (history the run replaced).
  *
@@ -89,11 +102,68 @@ export function confirmationCounts(
   rows: readonly ReviewDecision[],
   edits: Record<string, PublicDecisionEdit>,
 ): { total: number; outstanding: number } {
-  const asked = rows.filter(isRecommendedConfirmation);
+  return tally(rows.filter(isRecommendedConfirmation), edits);
+}
+
+function tally(
+  asked: readonly ReviewDecision[],
+  edits: Record<string, PublicDecisionEdit>,
+): { total: number; outstanding: number } {
   return {
     total: asked.length,
     outstanding: asked.filter((d) => !isConfirmationHandled(edits[d.id])).length,
   };
+}
+
+/**
+ * Every ask on the page, both kinds: confirmations (`recommended-confirmation`)
+ * and questions that must be answered before a stage (`required-before`).
+ * The orientation block and the Overview count from this, through the same
+ * predicates the tab groups by, so the numbers can never disagree.
+ */
+export function askCounts(
+  rows: readonly ReviewDecision[],
+  edits: Record<string, PublicDecisionEdit>,
+): {
+  confirm: { total: number; outstanding: number };
+  answer: { total: number; outstanding: number };
+  total: number;
+  outstanding: number;
+} {
+  const confirm = tally(rows.filter(isRecommendedConfirmation), edits);
+  const answer = tally(rows.filter(asksAnswer), edits);
+  return {
+    confirm,
+    answer,
+    total: confirm.total + answer.total,
+    outstanding: confirm.outstanding + answer.outstanding,
+  };
+}
+
+interface AnswerGroup {
+  key: string;
+  label: string;
+  rows: ReviewDecision[];
+}
+
+/** The `required-before` rows, one group per `needed_by`, lifecycle order. */
+export function answerGroups(rows: readonly ReviewDecision[]): AnswerGroup[] {
+  const byStage = new Map<string, ReviewDecision[]>();
+  for (const d of rows.filter(asksAnswer)) {
+    const key = (d.needed_by ?? "").trim().toLowerCase();
+    byStage.set(key, [...(byStage.get(key) ?? []), d]);
+  }
+  const rank = (k: string) => {
+    const i = (NEEDED_BY_ORDER as readonly string[]).indexOf(k);
+    return i < 0 ? NEEDED_BY_ORDER.length : i;
+  };
+  return [...byStage.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b))
+    .map(([key, list]) => ({
+      key,
+      label: `Answer ${neededByPhrase(key)}`,
+      rows: list,
+    }));
 }
 
 export function DecisionsReview({
@@ -119,8 +189,23 @@ export function DecisionsReview({
   const { counts, rows, total } = decisions;
 
   const toConfirm = useMemo(() => rows.filter(isRecommendedConfirmation), [rows]);
-  const confirmIds = useMemo(() => new Set(toConfirm.map((d) => d.id)), [toConfirm]);
-  const rest = useMemo(() => rows.filter((d) => !confirmIds.has(d.id)), [rows, confirmIds]);
+  const toAnswer = useMemo(() => answerGroups(rows), [rows]);
+  const deferred = useMemo(
+    () => rows.filter((d) => !d.superseded_by && isDeferred(d)),
+    [rows],
+  );
+  // One decision, one home: a row pinned in an ask group (or parked as
+  // deferred) is not repeated under "Choices ACE made".
+  const placedIds = useMemo(
+    () =>
+      new Set([
+        ...toConfirm.map((d) => d.id),
+        ...toAnswer.flatMap((g) => g.rows.map((d) => d.id)),
+        ...deferred.map((d) => d.id),
+      ]),
+    [toConfirm, toAnswer, deferred],
+  );
+  const rest = useMemo(() => rows.filter((d) => !placedIds.has(d.id)), [rows, placedIds]);
   const internalCount = rest.filter((d) => !d.superseded_by && isInternal(d)).length;
   const historyCount = rest.filter((d) => !!d.superseded_by).length;
   const visible = useMemo(
@@ -159,6 +244,8 @@ export function DecisionsReview({
   // the open list is the scannable summary; a phase is collapsed by choice.
   const [closedPhases, setClosedPhases] = useState<Record<string, boolean>>({});
   const [pinnedOpen, setPinnedOpen] = useState(true);
+  const [closedAsks, setClosedAsks] = useState<Record<string, boolean>>({});
+  const [deferredOpen, setDeferredOpen] = useState(false);
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
   const allOpen = groups.every((g) => !closedPhases[g.key]);
   const toggleRow = (id: string) =>
@@ -239,6 +326,30 @@ export function DecisionsReview({
         </DecisionSection>
       )}
 
+      {toAnswer.map((g) => {
+        const { outstanding: left } = tally(g.rows, edits);
+        return (
+          <DecisionSection
+            key={g.key || "unstaged"}
+            open={!closedAsks[g.key]}
+            onToggle={() => setClosedAsks((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
+            className="mt-6"
+            lead={<span className="text-sm font-semibold text-foreground">{g.label}</span>}
+            chips={
+              <span className="text-xs text-muted-foreground">
+                {left === 0
+                  ? `All ${g.rows.length} answered`
+                  : `${left} of ${g.rows.length} still to answer`}
+              </span>
+            }
+          >
+            {g.rows.map((d) => (
+              <li key={d.id}>{item(d)}</li>
+            ))}
+          </DecisionSection>
+        );
+      })}
+
       <div className="mt-9 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-[11px] font-medium uppercase tracking-[0.16em] text-foreground">
           Choices ACE made
@@ -298,6 +409,28 @@ export function DecisionsReview({
           </PhaseSection>
         ))}
       </div>
+
+      {deferred.length > 0 && (
+        <DecisionSection
+          open={deferredOpen}
+          onToggle={() => setDeferredOpen((v) => !v)}
+          className="mt-9"
+          lead={
+            <span className="text-sm font-semibold text-muted-foreground">
+              Not needed for this pilot
+            </span>
+          }
+          chips={
+            <span className="text-xs text-muted-foreground">
+              {deferred.length} to revisit later
+            </span>
+          }
+        >
+          {deferred.map((d) => (
+            <li key={d.id}>{item(d)}</li>
+          ))}
+        </DecisionSection>
+      )}
     </div>
   );
 }
