@@ -1,0 +1,19 @@
+# Rows VERBATIM from the real dimagi-team/spark-facilitator/20260926-1413/decisions.yaml (2026-10-04),
+# trimmed to the decisions the lineage tests follow (1 of 127).
+schema_version: 5
+run_id: 20260926-1413
+decisions:
+- id: working-language
+  phase: 1-design
+  skill: idea-to-pdd
+  question: Working languages and CommCare codes; who reviews translations?
+  ai-default: English source plus Chichewa (nya) and Tumbuka (tum)
+  options:
+  - English source plus Chichewa (nya) and Tumbuka (tum)
+  - English only
+  reasoning: Spark's own Malawi language set. ACE-authored translations land needs-review; review by native
+    speakers at the implementing organisation.
+  source: CCZ profile.ccpr and nya/ tum resources; FIYP overview
+  status: ai-default
+  value_set_by: ace
+  evidence_basis: stated

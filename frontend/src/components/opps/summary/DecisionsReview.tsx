@@ -21,6 +21,15 @@ import {
 } from "@/components/opps/summary/DecisionItem";
 import type { ReactionSubmit } from "@/components/opps/summary/DecisionReactions";
 import { SignInToEdit } from "@/components/opps/summary/SignInToEdit";
+import type { DecisionLineage } from "@/api/lineage";
+import {
+  DecisionLineageHistory,
+  LineageFilterBar,
+  LineageStrip,
+  OriginBadge,
+  passesFilter,
+} from "@/components/opps/decisions/lineage/Lineage";
+import type { LineageFilter } from "@/components/opps/decisions/lineage/lineageDisplay";
 import { cn } from "@/lib/utils";
 
 export type { DecisionEditSubmit };
@@ -173,6 +182,8 @@ export function DecisionsReview({
   viewerIsMember,
   onReact,
   onEdit,
+  lineage = null,
+  onLineageScopeChange,
 }: {
   decisions: NonNullable<OppSummaryPayload["decisions"]>;
   /** Reactions already collected, keyed by decision id. */
@@ -183,10 +194,31 @@ export function DecisionsReview({
   viewerIsMember: boolean;
   onReact: (decisionId: string, body: ReactionSubmit) => Promise<void>;
   onEdit: (decisionId: string, body: DecisionEditSubmit) => Promise<void>;
+  /** Where each decision came from across runs (`useDecisionLineage`). */
+  lineage?: DecisionLineage | null;
+  onLineageScopeChange?: (scope: "lineage" | "opp") => void;
 }) {
   const [showInternal, setShowInternal] = useState(false);
+  const [lineageFilter, setLineageFilter] = useState<LineageFilter>("all");
   const [showHistory, setShowHistory] = useState(false);
-  const { counts, rows, total } = decisions;
+  const { counts, total } = decisions;
+  // The lineage filter narrows every group at once — the asks included — so
+  // "what changed since the last run" reads as one list, not five.
+  const liveIds = useMemo(
+    () => decisions.rows.filter((d) => !d.superseded_by).map((d) => d.id),
+    [decisions.rows],
+  );
+  const rows = useMemo(
+    () =>
+      decisions.rows.filter(
+        (d) =>
+          lineageFilter === "all"
+            ? true
+            : !d.superseded_by &&
+              passesFilter({ lineage, filter: lineageFilter }, d.id, edits[d.id]),
+      ),
+    [decisions.rows, lineage, lineageFilter, edits],
+  );
 
   const toConfirm = useMemo(() => rows.filter(isRecommendedConfirmation), [rows]);
   const toAnswer = useMemo(() => answerGroups(rows), [rows]);
@@ -267,7 +299,13 @@ export function DecisionsReview({
       canWrite={viewerIsMember}
       onReact={onReact}
       onEdit={onEdit}
-      tags={isInternal(d) ? <InternalTag /> : undefined}
+      tags={
+        <>
+          <OriginBadge lineage={lineage} id={d.id} plain={!viewerIsMember} edit={edits[d.id]} />
+          {isInternal(d) && <InternalTag />}
+        </>
+      }
+      lineageSlot={<DecisionLineageHistory lineage={lineage} id={d.id} />}
     />
   );
 
@@ -291,6 +329,22 @@ export function DecisionsReview({
           <SignInToEdit>Sign in to confirm, change or comment</SignInToEdit>
         </div>
       )}
+
+      <LineageStrip
+        lineage={lineage}
+        plain={!viewerIsMember}
+        linkTo="summary"
+        className="mt-4"
+        onScopeChange={onLineageScopeChange}
+      />
+      <LineageFilterBar
+        lineage={lineage}
+        ids={liveIds}
+        edits={edits}
+        filter={lineageFilter}
+        onChange={setLineageFilter}
+        className="mt-3"
+      />
 
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
         <Count n={counts.stated} label="stated in a source" />

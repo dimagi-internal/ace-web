@@ -1,0 +1,13 @@
+# Trimmed from the real spark/spark-facilitator/20261001-2208 (2026-10-04): lineage keys only.
+run_id: 20261001-2208
+created: '2026-10-01T22:08:59.972432+00:00'
+forked_from: 20260926-1800
+forked_from_phase: commcare-setup
+forked_at: '2026-10-01T22:08:59.972432+00:00'
+seeded_from: 20260926-1800
+clone:
+  from:
+    workspace: dimagi-team
+    opp: spark-facilitator
+    run: 20261001-2208
+phases: {}

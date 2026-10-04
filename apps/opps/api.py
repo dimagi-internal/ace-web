@@ -7,7 +7,7 @@ from typing import Annotated
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import reverse
-from ninja import Path, Router
+from ninja import Path, Query, Router
 
 from apps.api.auth import session_auth
 from apps.api.deps import require_write_global, resolve_workspace_for_member
@@ -2493,6 +2493,108 @@ def public_opp_summary(
 
     _cache.set(cache_key, payload, timeout=60)
     return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# Decision lineage — how this run's decisions evolved across earlier runs.
+# ---------------------------------------------------------------------------
+
+#: Seconds the viewer-independent lineage core is cached. It reads one
+#: decisions.yaml per run of the chain (and, for ``scope=opp``, per run of the
+#: opp), through CachedDriveClient; the runs behind the head almost never
+#: change, so this mostly absorbs a refresh storm, like the summary's 60s.
+LINEAGE_CACHE_SECONDS = 120
+
+
+def _lineage_cache_key(workspace: str, slug: str, run_id: str, scope: str) -> str:
+    return f"opp-lineage:v1:{scope}:{workspace}:{slug}:{run_id}"
+
+
+@public_summary_router.get(
+    "/public/{workspace}/{slug}/runs/{run_id}/lineage",
+    response={200: dict},
+    summary="Decision lineage of a run: where each decision came from",
+)
+def public_decision_lineage(
+    request: HttpRequest,
+    workspace: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+    scope: Annotated[str, Query()] = "lineage",
+) -> HttpResponse:
+    """The run's lineage chain (the run it was forked / seeded / cloned from,
+    and so on back), and for every live decision row its origin — ``new`` /
+    ``carried`` / ``changed`` / ``reaffirmed`` / ``human`` — plus, for
+    members, its value in each earlier run (``apps/opps/decision_lineage``).
+
+    Served on the public path because the public run summary renders it, the
+    way it renders the summary: anyone with the link reads the strip and the
+    badges in plain words; a signed-in member of this workspace additionally
+    gets run ids, the per-decision history, ``scope=opp`` (every run of the
+    opp, not just the chain), and links — but only into workspaces they are a
+    member of. A clone's source run in another workspace is a label otherwise.
+    """
+    from django.core.cache import cache as _cache
+
+    from apps.opps.decision_lineage import (
+        build_lineage,
+        load_chain,
+        load_opp_runs,
+        shape_for_viewer,
+    )
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    from apps.workspaces.models import Workspace, WorkspaceMembership
+
+    accessible: set[str] = set()
+    if getattr(request.user, "is_authenticated", False):
+        accessible = set(
+            WorkspaceMembership.objects.filter(user=request.user)
+            .values_list("workspace__slug", flat=True)
+        )
+    is_member = workspace in accessible
+    if scope not in ("lineage", "opp") or not is_member:
+        scope = "lineage"
+
+    try:
+        head_ws = Workspace.objects.get(slug=workspace)
+    except Workspace.DoesNotExist as exc:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from exc
+    if not head_ws.drive_root_folder_id:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    bypass = request.GET.get("force") == "1"
+    key = _lineage_cache_key(workspace, slug, run_id, scope)
+    core = None if bypass else _cache.get(key)
+    if core is None:
+        def drive_for(ws_slug: str):
+            ws = head_ws if ws_slug == workspace else (
+                Workspace.objects.filter(slug=ws_slug).first()
+            )
+            if ws is None or not ws.drive_root_folder_id:
+                return None
+            try:
+                return (
+                    CachedDriveClient(get_drive_client(workspace=ws), bypass=bypass),
+                    ws.drive_root_folder_id,
+                )
+            except ServiceAccountNotFound:
+                return None
+
+        chain = load_chain(drive_for, workspace=workspace, opp=slug, run_id=run_id)
+        if not chain or not chain[0].readable:
+            raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+        others = load_opp_runs(drive_for, chain) if scope == "opp" else None
+        core = {**build_lineage(chain, others), "scope": scope}
+        _cache.set(key, core, timeout=LINEAGE_CACHE_SECONDS)
+
+    from django.conf import settings as dj_settings
+
+    script_name = (getattr(dj_settings, "FORCE_SCRIPT_NAME", "") or "").rstrip("/")
+    return JsonResponse(
+        shape_for_viewer(core, member=is_member, accessible=accessible, script_name=script_name)
+    )
 
 
 # ---------------------------------------------------------------------------

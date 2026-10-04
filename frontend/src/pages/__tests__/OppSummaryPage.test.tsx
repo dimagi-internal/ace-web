@@ -2,9 +2,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as lineageApi from "@/api/lineage";
 import * as api from "@/api/oppSummary";
 import type { OppSummaryPayload } from "@/api/oppSummary";
 import OppSummaryPage from "@/pages/OppSummaryPage";
+import {
+  MEMBER_LINEAGE,
+  OUTSIDER_LINEAGE,
+} from "@/components/opps/decisions/lineage/__tests__/sparkLineage.fixture";
 
 const BASE: OppSummaryPayload = {
   opp: {
@@ -1580,5 +1585,72 @@ describe("review asks", () => {
     expect(screen.queryByText(/Separately,/)).toBeNull();
     await openDecisionsTab();
     expect(screen.queryByText("Open questions")).toBeNull();
+  });
+});
+
+/**
+ * Decision lineage on the Decisions tab — the real spark clone's payload
+ * (`sparkLineage.fixture.ts`), joined to rows by id.
+ */
+describe("decision lineage on the Decisions tab", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const row = (over: Record<string, unknown>) =>
+    ({ ...DECISION, ...over }) as api.ReviewDecision;
+  const DECISIONS = {
+    total: 3,
+    counts: { stated: 3, inferred: 0, conflicting: 0, overridden: 0 },
+    rows: [
+      row({ id: "working-language", question: "Which working languages?" }),
+      row({ id: "program-reuse-vs-create-spark", question: "Reuse the program or create one?" }),
+      row({
+        id: "open-question-recording-path-whole-community-group-declines",
+        question: "What if a whole group declines?",
+      }),
+    ],
+  } as NonNullable<OppSummaryPayload["decisions"]>;
+
+  it("shows an outsider the strip and plain badges, and filters every group", async () => {
+    vi.spyOn(lineageApi, "getDecisionLineage").mockResolvedValue(OUTSIDER_LINEAGE);
+    renderWith({ ...BASE, decisions: DECISIONS });
+    await openDecisionsTab();
+    expect(await screen.findByText("This version")).toBeTruthy();
+    expect(
+      await screen.findByText("carried over unchanged from the 25 Sep 2026 version"),
+    ).toBeTruthy();
+    expect(screen.getByText("changed in this version")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Changed 1" }));
+    expect(screen.queryByText("Which working languages?")).toBeNull();
+    expect(screen.getByText("Reuse the program or create one?")).toBeTruthy();
+  });
+
+  it("gives a member run ids and the history", async () => {
+    vi.spyOn(lineageApi, "getDecisionLineage").mockResolvedValue(MEMBER_LINEAGE);
+    renderWith({ ...BASE, viewer: { is_member: true }, decisions: DECISIONS });
+    await openDecisionsTab();
+    expect(await screen.findByText("carried from dimagi-team / 20260925-1536 unchanged")).toBeTruthy();
+    await openRow("Which working languages?");
+    expect(screen.getByText("How this decision evolved")).toBeTruthy();
+  });
+
+  it("lets a member widen each history to every run of the opportunity", async () => {
+    const spy = vi
+      .spyOn(lineageApi, "getDecisionLineage")
+      .mockImplementation(async (_w, _s, _r, scope) => ({ ...MEMBER_LINEAGE, scope: scope ?? "lineage" }));
+    renderWith({ ...BASE, viewer: { is_member: true }, decisions: DECISIONS });
+    await openDecisionsTab();
+    fireEvent.click(await screen.findByText("History: the runs this one was built from"));
+    expect(await screen.findByText("History: every run of this opportunity")).toBeTruthy();
+    expect(spy).toHaveBeenLastCalledWith("dimagi-team", "spark-facilitator", "20260813-2126", "opp");
+  });
+
+  it("renders the tab as before when lineage cannot be read", async () => {
+    vi.spyOn(lineageApi, "getDecisionLineage").mockRejectedValue(new Error("500"));
+    renderWith({ ...BASE, decisions: DECISIONS });
+    await openDecisionsTab();
+    expect(await screen.findByText("Which working languages?")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: /Filter decisions/ })).toBeNull();
   });
 });

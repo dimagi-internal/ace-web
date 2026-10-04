@@ -1,0 +1,390 @@
+"""Decision lineage — how a run's decisions evolved across earlier runs.
+
+Fixtures are the REAL spark-facilitator runs, trimmed to the rows these
+tests follow (``fixtures/lineage/``, rows verbatim):
+
+    spark/20261001-2208          clone of ↓
+    dimagi-team/20261001-2208    forked from ↓ at commcare-setup (seeded)
+    dimagi-team/20260926-1800    forked from ↓ at synthetic-data-and-workflows
+    dimagi-team/20260925-1536    the root
+    dimagi-team/20260926-1413    an independent run of the same opp (not in the chain)
+
+The cases they pin are the ones that actually occur: a value carried
+unchanged across four runs (``working-language``), one re-written under a
+new id at every hop (``connect-latitude-payment-amount`` → ``…-2208`` →
+``…-spark``), one renamed by a fork (``learn-latitude-baseline-pretest`` →
+``learn-latitude-starting-quiz``), a human override, a changed value, and a
+row new in the clone with no earlier match.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+from django.contrib.auth import get_user_model
+
+from apps.opps.decision_lineage import (
+    ChainRun,
+    build_lineage,
+    load_chain,
+    parent_of,
+    run_date,
+    shape_for_viewer,
+)
+from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+from apps.workspaces.models import RunClone, Workspace, WorkspaceMembership
+
+FIX = Path(__file__).parent / "fixtures" / "lineage"
+OPP = "spark-facilitator"
+RUN = "20261001-2208"
+
+User = get_user_model()
+
+
+def _text(ws: str, run: str, name: str) -> str:
+    return (FIX / f"{ws}__{run}__{name}").read_text()
+
+
+def _rows(ws: str, run: str) -> list[dict]:
+    return yaml.safe_load(_text(ws, run, "decisions.yaml"))["decisions"]
+
+
+def _run(ws: str, run: str, via: str = "", at: str = "") -> ChainRun:
+    state = yaml.safe_load(_text(ws, run, "run_state.yaml"))
+    return ChainRun(ws, OPP, run, via, at, run_date(run, state), _rows(ws, run))
+
+
+def _spark_chain() -> list[ChainRun]:
+    return [
+        _run("spark", RUN, "cloned"),
+        _run("dimagi-team", RUN, "seeded", "commcare-setup"),
+        _run("dimagi-team", "20260926-1800", "forked", "synthetic-data-and-workflows"),
+        _run("dimagi-team", "20260925-1536"),
+    ]
+
+
+# ─── Origins ────────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="module")
+def spark_core() -> dict:
+    return build_lineage(_spark_chain())
+
+
+def test_a_value_unchanged_since_the_root_is_carried_from_the_root(spark_core):
+    o = spark_core["origins"]["working-language"]
+    assert o["kind"] == "carried"
+    # The badge names where the value was first set, not just the parent.
+    assert o["from_run"] == "20260925-1536"
+
+
+def test_a_value_rewritten_under_a_new_id_is_reaffirmed_not_new(spark_core):
+    """`connect-latitude-payment-amount` became `…-2208` then `…-spark`: same
+    7500 at every hop, re-written each time a phase re-ran."""
+    o = spark_core["origins"]["connect-latitude-payment-amount-spark"]
+    assert o["kind"] == "reaffirmed"
+    assert o["from_run"] == "20260925-1536"
+
+
+def test_a_human_override_says_a_person_set_it(spark_core):
+    o = spark_core["origins"]["sol-devices-and-system-of-record-2208"]
+    assert o["kind"] == "human"
+    assert o["status"] == "overridden"
+
+
+def test_a_value_that_differs_from_the_parent_is_changed_here(spark_core):
+    o = spark_core["origins"]["program-reuse-vs-create-spark"]
+    assert o["kind"] == "changed"
+    assert o["from_run"] == RUN
+    assert o["from_workspace"] == "dimagi-team"
+    assert o["previous_value"]
+
+
+def test_a_row_no_earlier_run_has_is_new(spark_core):
+    rid = "open-question-recording-path-whole-community-group-declines"
+    assert spark_core["origins"][rid]["kind"] == "new"
+    hist = spark_core["histories"][rid]
+    # Honest: every earlier run says "not found", nothing is guessed.
+    assert [e["found"] for e in hist] == [False, False, False, True]
+
+
+def test_superseded_rows_get_no_origin(spark_core):
+    assert "connect-latitude-payment-amount-2208" not in spark_core["origins"]
+    assert "learn-latitude-baseline-pretest" not in spark_core["origins"]
+
+
+def test_counts_add_up_to_the_live_rows(spark_core):
+    live = [r for r in _rows("spark", RUN) if not r.get("superseded_by")]
+    assert sum(spark_core["counts"].values()) == len(live)
+
+
+# ─── Histories ──────────────────────────────────────────────────────
+
+
+def test_history_runs_oldest_first_and_follows_renamed_ids(spark_core):
+    hist = spark_core["histories"]["connect-latitude-payment-amount-spark"]
+    assert [(e["workspace"], e["run_id"]) for e in hist] == [
+        ("dimagi-team", "20260925-1536"),
+        ("dimagi-team", "20260926-1800"),
+        ("dimagi-team", RUN),
+        ("spark", RUN),
+    ]
+    assert [e["row_id"] for e in hist] == [
+        "connect-latitude-payment-amount",
+        "connect-latitude-payment-amount",
+        "connect-latitude-payment-amount-2208",
+        "connect-latitude-payment-amount-spark",
+    ]
+    assert {e["value"] for e in hist} == {"7500"}
+
+
+def test_history_shows_a_fork_renaming_a_decision(spark_core):
+    hist = spark_core["histories"]["learn-latitude-starting-quiz"]
+    by_run = {(e["workspace"], e["run_id"]): e for e in hist}
+    old = by_run[("dimagi-team", "20260926-1800")]
+    assert old["row_id"] == "learn-latitude-baseline-pretest"
+    assert old["match"] == "earlier-id"
+    assert old["value"] != by_run[("spark", RUN)]["value"]
+
+
+def test_history_carries_the_humans_reason_on_an_override(spark_core):
+    last = spark_core["histories"]["sol-devices-and-system-of-record-2208"][-1]
+    assert last["status"] == "overridden"
+    assert last["value"] == "Ask about devices; devices costed separately"
+    assert last["reason"].startswith("Operator decision 2026-10-04")
+    # The display value describes the AI default — it must not mask a human answer.
+    assert last["plain_value"] == ""
+
+
+def test_retired_id_shape_is_matched_when_nothing_else_links_it():
+    """A fork retires `<id>` as `<id>-<source-run>`; with no supersession
+    chain linking it (an older log), the suffix alone still finds it."""
+    parent = ChainRun("ws", OPP, "20260101-0900", rows=[
+        {"id": "rate", "ai-default": "5", "status": "ai-default"},
+    ], date="2026-01-01")
+    child = ChainRun("ws", OPP, "20260102-0900", via="forked", rows=[
+        {"id": "rate-20260101-0900", "ai-default": "5"},
+    ], date="2026-01-02")
+    head = ChainRun("ws", OPP, "20260103-0900", via="forked", rows=[
+        {"id": "rate-20260101-0900", "ai-default": "6"},
+    ], date="2026-01-03")
+    core = build_lineage([head, child, parent])
+    hist = core["histories"]["rate-20260101-0900"]
+    assert hist[0]["match"] == "retired-id" and hist[0]["row_id"] == "rate"
+    assert core["origins"]["rate-20260101-0900"]["kind"] == "changed"
+
+
+def test_scope_opp_adds_runs_outside_the_chain():
+    chain = _spark_chain()
+    other = _run("dimagi-team", "20260926-1413")
+    other.in_lineage = False
+    core = build_lineage(chain, [other])
+    hist = core["histories"]["working-language"]
+    outside = [e for e in hist if not e["in_lineage"]]
+    assert [e["run_id"] for e in outside] == ["20260926-1413"]
+    # Runs outside the chain never move the origin.
+    assert core["origins"]["working-language"]["kind"] == "carried"
+
+
+def test_a_run_with_no_lineage_has_only_new_and_human_rows():
+    core = build_lineage([_run("dimagi-team", "20260925-1536")])
+    assert set(core["counts"]) >= {"new", "human"}
+    assert core["counts"]["carried"] == core["counts"]["changed"] == 0
+
+
+# ─── Parent resolution ──────────────────────────────────────────────
+
+
+def test_a_clone_block_wins_over_the_copied_forked_from():
+    """A clone copies run_state verbatim, so its `forked_from` names the
+    SOURCE's parent; the clone's real parent is the source run."""
+    state = yaml.safe_load(_text("spark", RUN, "run_state.yaml"))
+    assert parent_of(state, workspace="spark", opp=OPP) == (
+        "dimagi-team", OPP, RUN, "cloned", "",
+    )
+
+
+def test_a_seeded_fork_names_its_phase():
+    state = yaml.safe_load(_text("dimagi-team", RUN, "run_state.yaml"))
+    assert parent_of(state, workspace="dimagi-team", opp=OPP) == (
+        "dimagi-team", OPP, "20260926-1800", "seeded", "commcare-setup",
+    )
+
+
+def test_the_root_has_no_parent():
+    state = yaml.safe_load(_text("dimagi-team", "20260925-1536", "run_state.yaml"))
+    assert parent_of(state, workspace="dimagi-team", opp=OPP) is None
+
+
+# ─── Drive walk + endpoint ──────────────────────────────────────────
+
+
+def _run_tree(ws: str, runs: list[str]) -> dict:
+    return {OPP: {"runs": {
+        r: {
+            "run_state.yaml": _text(ws, r, "run_state.yaml"),
+            "decisions.yaml": _text(ws, r, "decisions.yaml"),
+        } for r in runs
+    }}}
+
+
+def _two_workspace_drive() -> FakeDriveClient:
+    return FakeDriveClient.from_tree({
+        "DT": _run_tree("dimagi-team", [RUN, "20260926-1800", "20260925-1536", "20260926-1413"]),
+        "SPARK": _run_tree("spark", [RUN]),
+    })
+
+
+def test_load_chain_crosses_into_the_clone_source_workspace():
+    drive = _two_workspace_drive()
+    roots = {"dimagi-team": drive.folder_id("DT"), "spark": drive.folder_id("SPARK")}
+    chain = load_chain(lambda ws: (drive, roots[ws]) if ws in roots else None,
+                       workspace="spark", opp=OPP, run_id=RUN)
+    assert [(r.workspace, r.run_id, r.via, r.at_phase) for r in chain] == [
+        ("spark", RUN, "cloned", ""),
+        ("dimagi-team", RUN, "seeded", "commcare-setup"),
+        ("dimagi-team", "20260926-1800", "forked", "synthetic-data-and-workflows"),
+        ("dimagi-team", "20260925-1536", "", ""),
+    ]
+    assert chain[0].date == "2026-10-01"
+
+
+def test_an_unknown_source_workspace_is_named_but_not_read():
+    drive = _two_workspace_drive()
+    chain = load_chain(lambda ws: (drive, drive.folder_id("SPARK")) if ws == "spark" else None,
+                       workspace="spark", opp=OPP, run_id=RUN)
+    assert [(r.workspace, r.readable) for r in chain] == [("spark", True), ("dimagi-team", False)]
+
+
+def test_a_cycle_in_lineage_pointers_stops():
+    tree = {"R": {OPP: {"runs": {
+        "20260101-0900": {"run_state.yaml": "forked_from: '20260102-0900'\n"},
+        "20260102-0900": {"run_state.yaml": "forked_from: '20260101-0900'\n"},
+    }}}}
+    drive = FakeDriveClient.from_tree(tree)
+    chain = load_chain(lambda ws: (drive, drive.folder_id("R")),
+                       workspace="w", opp=OPP, run_id="20260101-0900")
+    assert [r.run_id for r in chain] == ["20260101-0900", "20260102-0900"]
+
+
+@pytest.fixture
+def lineage_workspaces(db, monkeypatch):
+    from django.core.cache import cache
+
+    cache.clear()
+    drive = _two_workspace_drive()
+    creator = User.objects.create_user(email="lineage-creator@example.com")
+    dt = Workspace.objects.create(slug="dimagi-team", display_name="Dimagi",
+                                  drive_root_folder_id=drive.folder_id("DT"), created_by=creator)
+    spark = Workspace.objects.create(slug="spark", display_name="Spark",
+                                     drive_root_folder_id=drive.folder_id("SPARK"),
+                                     created_by=creator)
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client",
+                        lambda workspace=None: drive)
+    return dt, spark
+
+
+_URL = f"/api/opps/public/spark/{OPP}/runs/{RUN}/lineage"
+
+
+@pytest.mark.django_db
+def test_an_outsider_gets_the_strip_and_badges_in_plain_words(client, lineage_workspaces):
+    body = client.get(_URL).json()
+    assert body["viewer"] == {"is_member": False}
+    assert [s["via"] for s in body["chain"]] == ["cloned", "seeded", "forked", ""]
+    # No run plumbing for a non-member: no ids, no workspaces, no links, no history.
+    for step in body["chain"]:
+        assert step["run_id"] is None and step["workspace"] is None
+        assert step["workbench_url"] is None and step["summary_url"] is None
+    assert body["chain"][1]["stage"] == "app build"
+    assert body["histories"] == {}
+    o = body["origins"]["working-language"]
+    assert o["kind"] == "carried" and o["from_run"] is None
+    assert o["from_date"] == "2026-09-25"
+
+
+@pytest.mark.django_db
+def test_a_clone_member_sees_the_source_as_a_label_not_a_link(client, lineage_workspaces):
+    _dt, spark = lineage_workspaces
+    user = User.objects.create_user(email="partner@example.org")
+    WorkspaceMembership.objects.create(workspace=spark, user=user, role="viewer")
+    client.force_login(user)
+    body = client.get(_URL).json()
+    assert body["viewer"] == {"is_member": True}
+    head, source = body["chain"][0], body["chain"][1]
+    assert head["workbench_url"] == f"/w/spark/opps/{OPP}/runs/{RUN}"
+    assert source["workspace"] == "dimagi-team" and source["run_id"] == RUN
+    assert source["workbench_url"] is None and source["summary_url"] is None
+    hist = body["histories"]["working-language"]
+    assert [e["linked"] for e in hist] == [False, False, False, True]
+
+
+@pytest.mark.django_db
+def test_a_member_of_both_workspaces_gets_links_all_the_way_back(client, lineage_workspaces):
+    dt, spark = lineage_workspaces
+    user = User.objects.create_user(email="staff@dimagi.com")
+    for ws in (dt, spark):
+        WorkspaceMembership.objects.create(workspace=ws, user=user, role="editor")
+    client.force_login(user)
+    body = client.get(_URL).json()
+    assert all(s["workbench_url"] for s in body["chain"])
+    assert body["chain"][2]["summary_url"] == (
+        f"/opps/dimagi-team/{OPP}/runs/20260926-1800/summary"
+    )
+
+
+@pytest.mark.django_db
+def test_scope_opp_is_members_only(client, lineage_workspaces):
+    dt, _spark = lineage_workspaces
+    url = f"/api/opps/public/dimagi-team/{OPP}/runs/{RUN}/lineage?scope=opp"
+    assert client.get(url).json()["scope"] == "lineage"
+    user = User.objects.create_user(email="staff2@dimagi.com")
+    WorkspaceMembership.objects.create(workspace=dt, user=user, role="editor")
+    client.force_login(user)
+    body = client.get(url).json()
+    assert body["scope"] == "opp"
+    outside = [e for e in body["histories"]["working-language"] if not e["in_lineage"]]
+    assert [e["run_id"] for e in outside] == ["20260926-1413"]
+
+
+@pytest.mark.django_db
+def test_a_run_clone_row_stands_in_for_a_missing_clone_block(
+    client, lineage_workspaces, monkeypatch,
+):
+    """A clone whose run_state was never stamped still finds its source."""
+    dt, spark = lineage_workspaces
+    RunClone.objects.create(source_workspace=dt, target_workspace=spark, opp_slug=OPP,
+                            run_id=RUN, status="done")
+    drive = FakeDriveClient.from_tree({
+        "DT": _run_tree("dimagi-team", [RUN, "20260926-1800", "20260925-1536"]),
+        "SPARK": {OPP: {"runs": {RUN: {
+            "run_state.yaml": f"run_id: '{RUN}'\n",
+            "decisions.yaml": _text("spark", RUN, "decisions.yaml"),
+        }}}},
+    })
+    dt.drive_root_folder_id = drive.folder_id("DT")
+    dt.save()
+    spark.drive_root_folder_id = drive.folder_id("SPARK")
+    spark.save()
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client",
+                        lambda workspace=None: drive)
+    body = client.get(_URL).json()
+    assert body["chain"][0]["via"] == "cloned"
+    assert len(body["chain"]) == 4
+
+
+@pytest.mark.django_db
+def test_an_unknown_run_is_a_404(client, lineage_workspaces):
+    assert client.get(f"/api/opps/public/spark/{OPP}/runs/nope/lineage").status_code == 404
+    assert client.get(f"/api/opps/public/nope/{OPP}/runs/{RUN}/lineage").status_code == 404
+
+
+def test_shape_never_shows_an_outsider_an_email():
+    core = build_lineage([ChainRun("w", OPP, "20260101-0900", rows=[
+        {"id": "x", "ai-default": "a", "override": "b", "status": "human-decided",
+         "decided_by": "someone@example.org", "decided_at": "2026-01-02"},
+    ])])
+    out = shape_for_viewer(core, member=False, accessible=set())
+    assert out["origins"]["x"]["by"] == "a reviewer"
+    assert out["origins"]["x"]["at"] == "2026-01-02"
