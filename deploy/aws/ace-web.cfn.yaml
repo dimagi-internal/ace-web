@@ -204,8 +204,13 @@ Resources:
             # created the principal (deploy with run_migrations: true).
             - Name: CANOPY_PROBE_ENABLED
               Value: "true"
+            # The browser calls canopy at its own address. It was the same-origin
+            # path /canopy while canopy lived on this host; canopy.dimagi.com
+            # answers ace-web's origin with CORS (no cookies — the Bearer token
+            # this page minted is all a call carries), because ace-web is a
+            # connected site whose origin is labs.connect.dimagi.com.
             - Name: CANOPY_PUBLIC_BASE_URL
-              Value: "/canopy"
+              Value: "https://canopy.dimagi.com"
             # Programmatic runs enqueue a session-targeted canopy Turn instead of
             # spawning `claude -p` in this container. Safe as of 2026-07-28: a
             # session-capable cloud runner exists and carries the full ACE
