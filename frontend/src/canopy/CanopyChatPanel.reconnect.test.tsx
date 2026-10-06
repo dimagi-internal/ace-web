@@ -36,6 +36,14 @@ vi.mock("./token", () => ({
   canopyPrincipal: () => "user",
 }));
 
+// The socket URL carries a one-time ticket, minted over REST (./ws).
+vi.mock("./client", () => ({
+  canopyRest: () => ({
+    json: vi.fn().mockResolvedValue({ ticket: "tk", expires_in: 30 }),
+    raw: vi.fn(),
+  }),
+}));
+
 vi.mock("./api", () => ({
   RUNNER_STATUS_ONLINE: "online",
   getCanopySession: vi.fn().mockResolvedValue({
