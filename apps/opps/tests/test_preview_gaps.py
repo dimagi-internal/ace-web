@@ -67,6 +67,9 @@ def test_auth_by_host():
     assert auth_for("https://labs.connect.dimagi.com/solicitations/9/") == "labs"
     # canopy lives under the labs host but a labs session is sent to sign-in.
     assert auth_for("https://labs.connect.dimagi.com/canopy/ddd/a/b") == "canopy"
+    # canopy's own host since 2026-10-05 — not "public", or a preview photographs sign-in.
+    assert auth_for("https://canopy.dimagi.com/ddd/a/b") == "canopy"
+    assert auth_for("https://canopy.dimagi.com/walkthrough/x?t=y") == "canopy"
     assert auth_for("https://www.commcarehq.org/a/d/") == "hq"
     assert auth_for("https://www.openchatstudio.com/a/t/") == "ocs"
     assert auth_for("https://docs.google.com/document/d/1") == "google"
