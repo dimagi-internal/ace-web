@@ -270,21 +270,21 @@ describe("CanopyChatPanel", () => {
     render(<CanopyChatPanel sessionId="sess-1" />);
 
     await waitFor(() => expect(sessionSocketMock).toHaveBeenCalled());
-    const { wsUrl } = sessionSocketMock.mock.calls[0][0] as { wsUrl: (p: string) => string };
+    const { wsUrl } = sessionSocketMock.mock.calls[0][0] as {
+      wsUrl: (p: string) => Promise<string>;
+    };
     getCanopyTokenMock.mockClear();
     getCanopyTokenMock.mockRejectedValueOnce(new Error("canopy down"));
 
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
     try {
-      // Whichever call this is (initial connect or a reconnect), its mint
-      // rejects — before the `.catch()` fix this was a fire-and-forget
-      // `void getCanopyToken(...)` with no handler, which is exactly an
-      // unhandled promise rejection once the promise actually settles.
-      wsUrl("/ws/canopy-sessions/sess-1/");
-      // Flush microtasks so the rejected promise's continuation (or lack of
-      // one) has a chance to surface as an unhandled rejection.
-      await Promise.resolve();
+      // The URL is a promise now (a one-time ticket per connection), so a
+      // failed mint REJECTS it — and the kit (canopy-ui >= 0.16) is what
+      // handles that, retrying on its reconnect ladder. This test calls
+      // `wsUrl` directly, standing in for the kit, so it must handle the
+      // rejection the way the kit does; nothing else may leave one floating.
+      await expect(wsUrl("/ws/canopy-sessions/sess-1/")).rejects.toThrow("canopy down");
       await Promise.resolve();
       await Promise.resolve();
     } finally {
