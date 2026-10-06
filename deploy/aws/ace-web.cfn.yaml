@@ -189,14 +189,14 @@ Resources:
             - Name: CANOPY_APP_NAME
               Value: "ace-web"
             - Name: CANOPY_BASE_URL
-              Value: "https://labs.connect.dimagi.com/canopy"
+              Value: "https://canopy.dimagi.com"
             # The canopy host grant (apps/canopy/grant.py): lets canopy's agent
             # call our MCP AS the visitor, read-only, on registered pages. OFF
             # while unset. Turning it on also needs the ALB to route
             # /.well-known/oauth-*/ace* here and canopy's `ace-web` site row to
             # name our issuer + MCP resource (both done 2026-09-27).
             - Name: CANOPY_CLIENT_ID
-              Value: "https://labs.connect.dimagi.com/canopy/oauth/client.json"
+              Value: "https://canopy.dimagi.com/oauth/client.json"
             # canopy's live probe (apps/canopy/probe.py): canopy fetches a real
             # ID-JAG for the dedicated probe principal from
             # /ace/api/canopy/oauth/probe and makes one MCP read with it, every

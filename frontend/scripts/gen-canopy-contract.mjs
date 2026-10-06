@@ -67,7 +67,7 @@ const CONSUMED = [
   ['get', '/canopy/api/harness/turns/{turn_id}/events'],
 ]
 
-const DEFAULT_URL = 'https://labs.connect.dimagi.com/canopy/api/openapi.json'
+const DEFAULT_URL = 'https://canopy.dimagi.com/api/openapi.json'
 const OUT = new URL('../src/api/canopy-generated.ts', import.meta.url).pathname
 
 async function loadSchema() {

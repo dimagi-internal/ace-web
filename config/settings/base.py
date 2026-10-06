@@ -321,7 +321,7 @@ CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 # issues an ID-JAG beside the visitor assertion; canopy redeems it at our token
 # endpoint for a DPoP-bound token. OFF until CANOPY_CLIENT_ID is set: it is
 # canopy's OAuth client id — the URL of its client metadata document, e.g.
-# https://labs.connect.dimagi.com/canopy/oauth/client.json — and the ONE client
+# https://canopy.dimagi.com/oauth/client.json — and the ONE client
 # allowed to redeem. The other three default from ACE_PUBLIC_BASE_URL.
 CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
 CANOPY_GRANT_ISSUER = env("CANOPY_GRANT_ISSUER", default="")
