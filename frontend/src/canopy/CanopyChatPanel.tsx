@@ -25,7 +25,7 @@ import {
 } from "./api";
 import { canopyPrincipal, getCanopyToken } from "./token";
 import { useCanopyStatus } from "./useCanopyStatus";
-import { buildCanopyWsUrl } from "./ws";
+import { fetchCanopyWsUrl } from "./ws";
 
 /** Render assistant/system message text through ace's existing shared
  *  markdown renderer (remark-gfm + rehype-highlight) — the same one every
@@ -212,13 +212,10 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
       const shouldForce =
         isReconnect && now - lastForcedAtRef.current >= FORCE_REFRESH_MIN_INTERVAL_MS;
       if (shouldForce) lastForcedAtRef.current = now;
-      void getCanopyToken(shouldForce).catch(() => {
-        /* non-fatal here: a failed mint just means this attempt's URL
-           carries a stale/no token; the kit's own reconnect ladder (and
-           the next tick's forced-or-not retry above) is what recovers,
-           not this call succeeding. */
-      });
-      return buildCanopyWsUrl(base, sessionId);
+      // A one-time ticket per connection, not the token on the URL (URLs land
+      // in access logs). A failed mint or ticket rejects; the kit (canopy-ui
+      // >= 0.16) retries a rejected URL on its reconnect ladder.
+      return fetchCanopyWsUrl(base, sessionId, shouldForce);
     },
     [base, sessionId],
   );
