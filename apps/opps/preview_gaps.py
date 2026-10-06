@@ -30,12 +30,16 @@ _FILE_KINDS = frozenset({"document", "deck", "sheet", "link"})
 
 def auth_for(url: str | None) -> str:
     """Which session opens ``url``: connect | labs | canopy | hq | ocs |
-    google | public. canopy is served under the labs host but signs in on
-    its own — a labs session is sent to Google sign-in there."""
+    google | public. canopy (its own host, or the old labs mount) signs in
+    on its own — a labs session is sent to Google sign-in there."""
     parsed = urlparse(url or "")
     host = (parsed.hostname or "").lower()
     if host == "connect.dimagi.com":
         return "connect"
+    # canopy's own host since 2026-10-05 (the labs mount 302s there); same rule as
+    # summary._canopy_path, so a package on the new host is never "public".
+    if host.startswith("canopy.") or host.startswith("canopy-"):
+        return "canopy"
     if host == "labs.connect.dimagi.com":
         return "canopy" if (parsed.path or "").startswith("/canopy/") else "labs"
     if host.endswith("commcarehq.org"):
