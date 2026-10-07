@@ -199,11 +199,9 @@ def _full_tree(*, state_yaml: str | None = None) -> dict:
         "ACE": {
             "turmeric": {
                 "opp.yaml": _OPP_YAML,
-                # open-questions.md is PER-OPP and durable across runs, so it
-                # lives here and not under runs/<id>/. The fixture used to put
-                # it in the run folder, which matched the (wrong) reader and so
-                # hid the bug that made every real opp render "Open questions —
-                # Not created".
+                # A LEGACY ledger, left here on purpose: the summary must never
+                # read it. A run's open asks are a filter of its own
+                # decisions.yaml (operator decision 2026-10-07).
                 "open-questions.md": _OPEN_QUESTIONS_MD,
                 "feedback": {
                     "20260727-sophie-feintuch-ledger": "# Feedback ledger\n",
@@ -224,11 +222,6 @@ def _full_tree(*, state_yaml: str | None = None) -> dict:
 
 def test_complete_run_returns_full_payload():
     drive = FakeDriveClient.from_tree(_full_tree())
-    # A "complete run" now includes complete ACL knowledge: since
-    # ace-web#740 every Drive link's tag is measured, so a fixture that
-    # declares nothing renders `unknown` — correctly. The unshared
-    # open-questions doc is the one this fixture cares about.
-    drive.set_link_shared(drive.file_id("ACE/turmeric/open-questions.md"), False)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
 
     p = build_summary_payload(
@@ -274,14 +267,10 @@ def test_complete_run_returns_full_payload():
     assert p["assistant"]["embed_key"] == "wDwe70vquTLm4M0carkTHGaQgrb0NYKP"
     assert p["assistant"]["ocs_url"] == "https://www.openchatstudio.com/a/connect-ace/chatbots/12027/"
 
-    # Open questions (still a Drive fetch — no typed handoff yet). Read from
-    # the OPP folder, which is where ACE actually keeps it — and rendered as
-    # CONTENT, because the doc itself is unshared.
-    assert p["open_questions"]["url"].startswith("https://fake/")
-    assert p["open_questions"]["access"] == "admin"
-    assert [q["title"] for q in p["open_questions"]["items"]] == [
-        "Rate confirmation", "Device reality",
-    ]
+    # Open asks — a filter of the run's decision rows, never the legacy
+    # ledger that sits in this fixture's opp folder.
+    assert "open_questions" not in p
+    assert p["open_asks"] is not None
 
     # Feedback ledgers — the "where did my comment go?" derived views, so a
     # returning reviewer sees the diff against their own last comments.
@@ -681,73 +670,6 @@ def test_training_renders_from_training_materials_fallback():
     assert p["training"]["deck"]["url"] == "https://docs.google.com/presentation/d/fake-deck/edit"
     titles = [d["title"] for d in p["training"]["docs"]]
     assert "Onboarding email" in titles
-
-
-# ─── Open questions: per-opp location (regression) ──────────────────
-
-
-def test_open_questions_read_from_opp_folder_not_run_folder():
-    """`open-questions.md` is per-opp and durable across runs.
-
-    The reader used to look only in the run folder, so every real opp
-    rendered "Open questions — Not created" while the doc sat one level
-    up. The old fixture put the file in the run folder too, which is why
-    the bug survived. Regression: opp-level only, no run-level copy.
-    """
-    drive = FakeDriveClient.from_tree({
-        "ACE": {
-            "turmeric": {
-                "opp.yaml": _OPP_YAML,
-                "open-questions.md": "# Open questions\n",
-                "runs": {"20260503-0835": {"run_state.yaml": _state_yaml()}},
-            },
-        },
-    })
-    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-    p = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835"
-    )
-    assert p["open_questions"] is not None
-    assert p["open_questions"]["url"].startswith("https://fake/")
-
-
-def test_open_questions_falls_back_to_run_folder_for_legacy_runs():
-    """An older run that wrote a run-local copy keeps rendering."""
-    drive = FakeDriveClient.from_tree({
-        "ACE": {
-            "turmeric": {
-                "opp.yaml": _OPP_YAML,
-                "runs": {
-                    "20260503-0835": {
-                        "run_state.yaml": _state_yaml(),
-                        "open-questions.md": "# Open questions\n",
-                    },
-                },
-            },
-        },
-    })
-    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-    p = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835"
-    )
-    assert p["open_questions"] is not None
-
-
-def test_open_questions_absent_everywhere_is_none():
-    drive = FakeDriveClient.from_tree({
-        "ACE": {
-            "turmeric": {
-                "opp.yaml": _OPP_YAML,
-                "runs": {"20260503-0835": {"run_state.yaml": _state_yaml()}},
-            },
-        },
-    })
-    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-    p = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835"
-    )
-    assert p["open_questions"] is None
-    assert p["feedback"] == []
 
 
 # ─── Dashboards: every shape Phase 7 actually writes ───────────────
@@ -1722,20 +1644,6 @@ def test_the_training_pack_is_measured_per_document():
     assert by_title["FAQ"] == "public"
 
 
-def test_open_questions_access_is_measured_not_hardcoded_admin():
-    """It used to be a flat `ACCESS_ADMIN` on the theory that nothing
-    shares this doc. On the audited run that happens to be true — and it
-    is still a habit rather than a fact about the file."""
-    drive = FakeDriveClient.from_tree(_full_tree())
-    oq = drive.file_id("ACE/turmeric/open-questions.md")
-    drive.set_link_shared(oq, True)
-    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-    p = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
-    )
-    assert p["open_questions"]["access"] == "public"
-
-
 def test_every_drive_link_is_measured_in_one_batch():
     """Latency guard. ace-web#738 made this endpoint batch its Drive reads;
     measuring N links with N sequential ACL round-trips would give that
@@ -1756,7 +1664,7 @@ def test_every_drive_link_is_measured_in_one_batch():
 # half and is unchanged by ace-web#740.
 
 
-# ─── Review surface: decisions + open questions ────────────────────
+# ─── Review surface: decisions ─────────────────────────────────────
 
 
 def _payload(tree=None):
@@ -1979,75 +1887,6 @@ def test_review_fields_pass_through_and_default_to_empty():
                 "check_at",
                 "correct_looks_like", "audience", "scope", "enforcement"):
         assert rows["legacy"][key] == ""
-
-
-def test_open_questions_parse_owner_and_where_it_gets_answered():
-    """An unresolved question with no owner is an unassigned one. The
-    convention ACE writes carries both; parsing keeps them separable."""
-    items = _payload()["open_questions"]["items"]
-    assert items[0] == {
-        "title": "Rate confirmation",
-        "detail": (
-            "the USD 2-5 per-visit band is ACE-inferred; no source documents "
-            "current vendor compensation"
-        ),
-        "owner": "responding LLO + partner",
-        "answered_in": "solicitation response rate proposal (Phase 8)",
-        # The legacy `Title — detail` convention carries no `blocking:`
-        # field. Null, not absent: the key is on every item so the page
-        # never has to check whether a row has the shape it expects.
-        "blocking": None,
-        "raised_by": None,
-        "needed_by": None,
-        "overdue": False,
-        # "responding LLO + partner" is not purely internal.
-        "for_reviewer": True,
-    }
-
-
-def test_open_questions_unparseable_bullet_still_renders():
-    """A question we can't parse is still a question the reviewer should
-    see — degrade to prose, never drop."""
-    tree = _full_tree()
-    tree["ACE"]["turmeric"]["open-questions.md"] = (
-        "# Open Questions\n\n- Just a bare sentence with no structure at all\n"
-    )
-    items = _payload(tree)["open_questions"]["items"]
-    assert items == [{
-        "title": "",
-        "detail": "Just a bare sentence with no structure at all",
-        "owner": None,
-        "answered_in": None,
-        "blocking": None,
-        "raised_by": None,
-        "needed_by": None,
-        "overdue": False,
-        # No owner is an unassigned question — shown to the reviewer.
-        "for_reviewer": True,
-    }]
-
-
-def test_open_questions_survive_an_unreadable_body():
-    """Losing the body must not lose the link — the section degrades to
-    what #705 shipped rather than vanishing."""
-    tree = _full_tree()
-    drive = FakeDriveClient.from_tree(tree)
-    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    real_get_content = drive.get_content
-    oq_id = drive.file_id("ACE/turmeric/open-questions.md")
-
-    def boom(file_id, mime_type):
-        if file_id == oq_id:
-            raise RuntimeError("drive is down")
-        return real_get_content(file_id, mime_type)
-
-    drive.get_content = boom  # type: ignore[method-assign]
-    p = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
-    )
-    assert p["open_questions"]["items"] == []
-    assert p["open_questions"]["url"].startswith("https://fake/")
 
 
 # ─── Reactions on the payload ──────────────────────────────────────
@@ -2315,212 +2154,6 @@ def test_read_connect_falls_back_to_opportunity_deep_link():
     assert out is not None
     assert out["opportunity"]["url"] == (
         "https://connect.dimagi.com/a/ai-demo-space/opportunity/bce9150c/"
-    )
-
-
-# ─── Open questions: the ## Open / ## Archive split (ace#1867) ──────
-
-
-#: A structural mirror of a real durable ledger — the two-section shape
-#: `skills/idea-to-pdd` writes, with the field-labelled row schema. Row
-#: text is trimmed; the SHAPE is what these tests are about.
-_TWO_SECTION_LEDGER = """\
-# Open Questions — turmeric
-
-Opportunity-level, durable across runs.
-
-## Open
-
-- **id:** rate-confirmation **question:** What does the partner pay vendors \
-today? **raised_by:** 20260503-0835 **owner:** partner \
-**answered_where:** solicitation responses **blocking:** Before Phase 8 \
-**latest:** The single largest unknown. No source addresses it; \
-`vendor_rate` is unset and M&E has not weighed in.
-
-- **id:** device-reality **question:** Does every FLW carry a capable \
-Android device? **raised_by:** 20260503-0835 **owner:** responding LLO \
-**answered_where:** — **blocking:** Go/no-go **latest:** Still unanswered.
-
-## Archive
-
-Questions this opportunity has already ANSWERED. Do not re-ask.
-
-- **id:** payment-anchor-record **question:** Which record anchors a \
-payment? **raised_by:** pre-ledger **owner:** partner \
-**resolved_at:** 2026-07-24T00:00:00Z **resolved_by:** the partner's M&E \
-lead **resolution_note:** The Village Monitoring Form.
-"""
-
-
-def _open_questions(body: str) -> list[dict]:
-    from apps.opps.summary import _open_section, _parse_open_questions
-
-    return _parse_open_questions(_open_section(body))
-
-
-def test_archived_questions_are_not_counted_as_open():
-    """The headline number IS `items.length`, so an archived row rendered
-    in the open list makes the page's own sentence false.
-
-    `spark-facilitator/20260828-0703`: 21 rows under `## Open`, 7 under
-    `## Archive`, headline "28 open questions the run couldn't settle" —
-    7 of which carried `resolved_at` and a `resolution_note`.
-    """
-    items = _open_questions(_TWO_SECTION_LEDGER)
-
-    assert len(items) == 2
-    assert [q["title"] for q in items] == [
-        "What does the partner pay vendors today?",
-        "Does every FLW carry a capable Android device?",
-    ]
-    blob = " ".join(f"{q['title']} {q['detail']}" for q in items)
-    assert "resolved_at" not in blob
-    assert "resolution_note" not in blob
-    assert "payment-anchor-record" not in blob
-
-
-def test_the_archive_instruction_never_reaches_the_reader():
-    """`## Archive`'s lead line is an instruction addressed to ACE.
-
-    It is not a bullet, so the wrapped-line branch glued it onto the LAST
-    open question and an external partner was shown ACE's own directive
-    as part of a question's text.
-    """
-    items = _open_questions(_TWO_SECTION_LEDGER)
-
-    assert all("Do not re-ask" not in q["detail"] for q in items)
-    assert all("already ANSWERED" not in q["detail"] for q in items)
-
-
-def test_field_labelled_rows_get_a_real_title_and_no_scaffolding():
-    """27 of 28 rows rendered `title: ""` and a run-on `id: … question: …`
-    blob, because the parser stripped `**` before it could tell a label
-    from prose (ace-web#743)."""
-    first, second = _open_questions(_TWO_SECTION_LEDGER)
-
-    assert first["title"] == "What does the partner pay vendors today?"
-    assert first["owner"] == "partner"
-    assert first["answered_in"] == "solicitation responses"
-    assert first["blocking"] == "Before Phase 8"
-    assert first["detail"].startswith("The single largest unknown.")
-
-    # None of the schema key names survive into rendered text.
-    for q in (first, second):
-        for field in ("title", "detail"):
-            for key in ("id:", "question:", "raised_by:", "answered_where:"):
-                assert key not in q[field], (field, key, q[field])
-
-    # `answered_where: —` means "no venue yet", not "the venue is —".
-    assert second["answered_in"] is None
-    assert second["blocking"] == "Go/no-go"
-
-
-def test_code_spans_and_drive_escapes_do_not_reach_the_page():
-    """15 of 28 rows leaked literal backticks and 9 leaked `M\\&E`-style
-    markdown escapes to the public page."""
-    from apps.opps.drive_export import unescape_markdown
-
-    items = _open_questions(unescape_markdown(_TWO_SECTION_LEDGER.replace(
-        "M&E", "M\\&E",
-    )))
-
-    rendered = " ".join(f"{q['title']} {q['detail']}" for q in items)
-    assert "`" not in rendered
-    assert "\\" not in rendered
-    assert "vendor_rate is unset and M&E has not weighed in." in rendered
-
-
-def test_a_ledger_with_no_open_heading_still_renders_every_row():
-    """Pre-two-section ledgers have no `## Open`. Every bullet in one is
-    open, so the whole body is kept — older runs must not go blank."""
-    items = _open_questions(_OPEN_QUESTIONS_MD)
-
-    assert [q["title"] for q in items] == ["Rate confirmation", "Device reality"]
-    assert items[0]["owner"] == "responding LLO + partner"
-
-
-# ─── Open questions, as an outside reviewer reads them ─────────────
-
-
-def test_field_labelled_rows_carry_who_raised_them():
-    first, _second = _open_questions(_TWO_SECTION_LEDGER)
-    assert first["raised_by"] == "20260503-0835"
-
-
-@pytest.mark.parametrize("blocking,ran,expected", [
-    # Phase number → stage name; overdue only once that phase has RUN.
-    ("Before Phase 3", {"commcare-setup"}, ("Before the app build stage", True)),
-    ("Before Phase 3", set(), ("Before the app build stage", False)),
-    # Ledger bookkeeping after the prefix is dropped (kept in `blocking`).
-    ("Before Phase 8. Sibling of continuation-meeting-reduced-payment",
-     {"solicitation-management"}, ("Before the solicitation stage", True)),
-    ("Before Phase 9 (go-live)", {"solicitation-management"},
-     ("Before the execution (go-live) stage", False)),
-    ("Before closeout", set(), ("Before the closeout stage", False)),
-    ("Before award (Phase 8 review)", {"solicitation-management"},
-     ("Before an implementing organisation is chosen", False)),
-    ("Post-pilot", set(), ("After the pilot", False)),
-    ("Non-blocking", set(), ("Not blocking — can be settled at any point", False)),
-    ("Non-blocking for the pilot", set(), ("Doesn't hold up the pilot", False)),
-    ("Non-blocking; before the program is shown to an outside reviewer", set(),
-     ("Not blocking — before the program is shown to an outside reviewer", False)),
-    # A phase named mid-sentence is named, never marked overdue.
-    ("Once Phase 4 has run", {"connect-setup"}, ("Once the Connect setup stage has run", False)),
-    # Unrecognised text passes through unchanged.
-    ("Before expansion", set(), ("Before expansion", False)),
-    ("Before Phase 42", set(), ("Before Phase 42", False)),
-    (None, set(), (None, False)),
-])
-def test_needed_by_is_a_stage_name_and_says_when_it_has_passed(blocking, ran, expected):
-    """spark-facilitator/20261001-2208 showed "Needed by: Before Phase 3"
-    to an outsider — a number they cannot decode, on a run that had
-    already built its apps, so the deadline had also gone by."""
-    from apps.opps.summary import _plain_needed_by
-
-    assert _plain_needed_by(blocking, frozenset(ran)) == expected
-
-
-@pytest.mark.parametrize("owner,internal", [
-    ("ACE", True),
-    ("Operator / ACE", True),
-    ("Connect team", True),
-    ("Dimagi", True),
-    ("Spark", False),
-    ("Spark / ACE", False),                # anyone outside makes it theirs
-    ("Spark / awarded LLO", False),
-    ("responding LLO + partner", False),
-    ("Spark M&E", False),
-    (None, False),                         # unassigned is shown, not hidden
-])
-def test_a_question_is_dimagis_only_when_every_owner_is_internal(owner, internal):
-    from apps.opps.summary import _owner_is_internal
-
-    assert _owner_is_internal(owner) is internal
-
-
-def test_open_questions_on_the_payload_carry_the_outsider_fields():
-    """End to end: a "Before Phase 3" question on a run whose app build
-    ran is overdue; a "Before Phase 9" one on a run that skipped execution
-    is not; an ACE-only owner is Dimagi's question."""
-    tree = _full_tree(state_yaml=_state_with_phase_meta({
-        "commcare-setup": {"status": "done"},
-        "execution-management": {"status": "skipped"},
-    }))
-    tree["ACE"]["turmeric"]["open-questions.md"] = (
-        "## Open\n\n"
-        "- **id:** a **question:** Which district? **raised_by:** 20260926-1413 "
-        "**owner:** Spark **blocking:** Before Phase 3 **latest:** m0f3 bind.\n"
-        "- **id:** b **question:** Who signs? **owner:** ACE "
-        "**blocking:** Before Phase 9 **latest:** Layer B.\n"
-    )
-    a, b = _payload(tree)["open_questions"]["items"]
-    assert (a["needed_by"], a["overdue"], a["for_reviewer"]) == (
-        "Before the app build stage", True, True,
-    )
-    assert a["blocking"] == "Before Phase 3"     # the original stays
-    assert a["raised_by"] == "20260926-1413"
-    assert (b["needed_by"], b["overdue"], b["for_reviewer"]) == (
-        "Before the execution (go-live) stage", False, False,
     )
 
 

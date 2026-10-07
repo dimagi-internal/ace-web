@@ -8,10 +8,11 @@ a fork point, a clone:
   ``<opp-slug>/runs/<same run-id>/``;
 * copies the run verbatim — every phase folder, including the Phase 6
   screenshots and videos a reviewer needs (a fork skips those);
-* brings the opp-level files (``opp.yaml``, ``pdd.md``, ``inputs/``,
-  ``open-questions.md`` …) the first time an opp is cloned into a workspace,
-  so the new opp is workable and its run summary keeps its open questions;
-  a later clone of another run of the same opp reuses them;
+* brings the opp-level files (``opp.yaml``, ``idea.md``, ``pdd.md``,
+  ``inputs/``) the first time an opp is cloned into a workspace, so the new
+  opp is workable; a later clone of another run of the same opp reuses them.
+  No legacy ledger rides along: the run's open asks are a filter of its own
+  ``decisions.yaml``, which is copied with the run;
 * creates the target ``OppWorkspace`` with the TARGET workspace's default
   tenancy — the new opp's assets belong in the new workspace's areas.
 
@@ -66,20 +67,17 @@ def _child(files: list[DriveFile], name: str, *, folder: bool) -> DriveFile | No
 
 
 # The opp-level files a clone carries: identity (opp.yaml), the idea and PDD,
-# the inputs the PDD was built from, and the open-questions ledger. Anything
-# else at the opp root is ACE's internal working state and stays in the source
-# workspace.
+# and the inputs the PDD was built from. Anything else at the opp root is
+# ACE's internal working state and stays in the source workspace.
 #
-# open-questions.md is carried because the public run summary renders its
-# CONTENT (`summary._read_open_questions` reads it from the opp root, never the
-# run): it is half of the review surface, "what we could not decide". Left
-# behind, every cloned run's page read "Open questions — Not created" while
-# the source opp had the doc. open-asks.yaml is its successor (ACE folds the
-# ledger into decision rows, 2026-10-04); its presence is what tells the page
-# the asks are decision rows, so a clone must carry it too.
-_OPP_LEVEL_FILES = frozenset({
-    "opp.yaml", "idea.md", "pdd.md", "inputs", "open-questions.md", "open-asks.yaml",
-})
+# NOT carried, deliberately: the legacy ``open-questions.md`` ledger and the
+# generated ``open-asks.yaml``. A run's open asks are a filter of its own
+# decisions.yaml rows (`summary._open_asks`), which travel with the run. A
+# carried ledger is how a never-migrated spark-facilitator ledger reached the
+# `spark` workspace's review page (operator decision 2026-10-07: "when we
+# created the new system we should not have carried forward any legacy
+# models"). `test_run_cloner` guards both names.
+_OPP_LEVEL_FILES = frozenset({"opp.yaml", "idea.md", "pdd.md", "inputs"})
 
 
 class _Copier:

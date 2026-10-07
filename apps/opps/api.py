@@ -1380,12 +1380,11 @@ def download_artifact_bytes(
             if artifact.drive_file_id == artifact_id:
                 return _fetch(artifact.drive_file_id, artifact.mime_type)
 
-    # Not every artifact belongs to a STEP. `decisions.yaml` and
-    # `open-questions.md` live at the run root, and a cold load_opp
-    # attributes them to no step — so a step-only scan 404s them while the
-    # step listing beside them lists them happily (that listing is served
-    # from a cached snapshot which still attributes them). Fall back to the
-    # run folder itself.
+    # Not every artifact belongs to a STEP. `decisions.yaml` lives at the
+    # run root, and a cold load_opp attributes it to no step — so a
+    # step-only scan 404s it while the step listing beside it lists it
+    # happily (that listing is served from a cached snapshot which still
+    # attributes it). Fall back to the run folder itself.
     #
     # Scoped deliberately: we resolve the id WITHIN this run's folder rather
     # than fetching whatever id we were handed. The scan is the
@@ -2388,7 +2387,7 @@ def _summary_cache_key(
     show up for 60 seconds reads as a lost comment.
     """
     return (
-        f"opp-summary:v2:{'member' if is_member else 'public'}"
+        f"opp-summary:v3:{'member' if is_member else 'public'}"
         f":{workspace}:{slug}:{run_id}"
     )
 

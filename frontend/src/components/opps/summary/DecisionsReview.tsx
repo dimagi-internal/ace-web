@@ -103,6 +103,15 @@ export function isConfirmationHandled(edit?: PublicDecisionEdit): boolean {
 }
 
 /**
+ * Has a person answered this ask? ACE's contract (`docs/decisions-contract.md`
+ * § Open asks): the row itself is `overridden` / `human-decided`, or a saved
+ * ruling binds to it — a confirmation, or a change.
+ */
+export function isAskAnswered(d: ReviewDecision, edit?: PublicDecisionEdit): boolean {
+  return d.status === "overridden" || d.status === "human-decided" || isConfirmationHandled(edit);
+}
+
+/**
  * The Overview headline's number: how many recommended confirmations are
  * still waiting. One predicate for both surfaces, so the headline and the
  * tab below it can never disagree (the ace-web#771 lesson).
@@ -120,7 +129,7 @@ function tally(
 ): { total: number; outstanding: number } {
   return {
     total: asked.length,
-    outstanding: asked.filter((d) => !isConfirmationHandled(edits[d.id])).length,
+    outstanding: asked.filter((d) => !isAskAnswered(d, edits[d.id])).length,
   };
 }
 

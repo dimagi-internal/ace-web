@@ -20,41 +20,10 @@ from apps.opps.drive_export import (
     read_prose,
     unescape_markdown,
 )
-from apps.opps.summary import _parse_open_questions
-
-# What Drive's text/plain export makes of a rendered gdoc: `-` becomes
-# `*`, the bold markers are gone. Captured from the live doc
-# 1Wxwz0ddS23FUeXIkmiJv6oB-Njb992HBf8ozZQ04lbU (spark-facilitator).
-PLAIN_EXPORT = (
-    "\ufeffOpen Questions — spark-facilitator / 20260813-2126\n"
-    "Seeded from the approved PDD's § Open Questions (Phase 1).\n"
-    "\n"
-    "* Device reality per CBF — whether every pilot CBF carries a capable "
-    "Android device is undocumented. Owner: responding LLO. Answered in: the "
-    "LLO's solicitation response (Phase 8).\n"
-    "* Rate confirmation — the USD 2–5 per-meeting band is ACE-inferred. "
-    "Owner: responding LLO + Spark. Answered in: solicitation response "
-    "(Phase 8).\n"
-)
-
-# The same doc exported as text/markdown: structure intact, punctuation
-# backslash-escaped.
-MARKDOWN_EXPORT_BODY = (
-    "# Open Questions — spark-facilitator / 20260813-2126\n"
-    "\n"
-    "Seeded from the approved PDD's § Open Questions (Phase 1).\n"
-    "\n"
-    "- **Device reality per CBF** — whether every pilot CBF carries a capable "
-    "Android device is undocumented. Owner: responding LLO. Answered in: the "
-    "LLO's solicitation response (Phase 8).  \n"
-    "- **Rate confirmation** — the USD 2–5 per-meeting band is ACE-inferred. "
-    "Owner: responding LLO \\+ Spark. Answered in: solicitation response "
-    "(Phase 8).  \n"
-)
 
 
 class TestProseExportMime:
-    @pytest.mark.parametrize("name", ["open-questions.md", "PDD.MD", "notes.markdown"])
+    @pytest.mark.parametrize("name", ["pdd.md", "PDD.MD", "notes.markdown"])
     def test_prose_named_google_docs_read_as_markdown(self, name):
         assert prose_export_mime(name, GOOGLE_DOC_MIME) == MARKDOWN_EXPORT
 
@@ -91,7 +60,7 @@ class TestReadProse:
                 return FileContent(content=r"- **A** — b \+ c", content_type=export_as)
 
         class F:
-            id, name, mime_type = "f1", "open-questions.md", GOOGLE_DOC_MIME
+            id, name, mime_type = "f1", "pdd.md", GOOGLE_DOC_MIME
 
         assert read_prose(FakeDrive(), F()) == "- **A** — b + c"
 
@@ -106,26 +75,3 @@ class TestReadProse:
             id, name, mime_type = "f1", "run_state.yaml", GOOGLE_DOC_MIME
 
         assert read_prose(FakeDrive(), F()) == "run_id: x"
-
-
-class TestOpenQuestionsParsesEitherExport:
-    """The reported symptom was "0 open questions on the live summary".
-    It does NOT reproduce — plain text happens to keep `* ` and the em
-    dash, which is all the parser needs, so it parses today by luck. This
-    locks BOTH exports to the same result so the markdown switch is a
-    hardening rather than a trade of one mangling for another.
-    """
-
-    def test_both_exports_yield_the_same_items(self):
-        plain = _parse_open_questions(PLAIN_EXPORT)
-        md = _parse_open_questions(unescape_markdown(MARKDOWN_EXPORT_BODY))
-        assert [i["title"] for i in plain] == [
-            "Device reality per CBF", "Rate confirmation",
-        ]
-        assert plain == md
-
-    def test_the_markdown_export_escaping_would_otherwise_leak(self):
-        """Without `unescape_markdown` the switch would ship `LLO \\+
-        Spark` to a partner — a worse defect than the one it fixes."""
-        leaked = _parse_open_questions(MARKDOWN_EXPORT_BODY)
-        assert leaked[1]["owner"] == r"responding LLO \+ Spark"

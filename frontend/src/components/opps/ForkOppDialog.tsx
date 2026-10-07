@@ -148,7 +148,7 @@ export function ForkOppDialog({
             <code className="font-mono">ACE/{sourceSlug}</code>, carrying
             forward only the upstream phases. The new run's plan starts
             at <code className="font-mono">{forkAtPhase}</code>; per-opp
-            state (opp.yaml, inputs, calibration, open questions, Connect
+            state (opp.yaml, inputs, calibration, Connect
             IDs) stays shared with the source.
           </DialogDescription>
         </DialogHeader>
