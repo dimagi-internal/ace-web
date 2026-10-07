@@ -11,12 +11,12 @@ category-C ``deferred`` row.
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from apps.opps.parsers import decision_extras, normalize_decision_status
 from apps.opps.summary import build_summary_payload
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 from apps.opps.tests.test_summary import (
-    _OPEN_QUESTIONS_MD,
     _OPP_YAML,
     _FakeWorkspace,
     _state_yaml,
@@ -94,28 +94,40 @@ decisions:
     inherited_from_run: "20260926-1800"
 """
 
-_OPEN_ASKS = """\
+_LEDGER = """\
+# Open Questions — spark-facilitator
+
+## Open
+
+- **Rate confirmation** — never migrated. Owner: Spark. Answered in: solicitation.
+"""
+
+_STALE_OPEN_ASKS = """\
 schema_version: 1
 opp: spark-facilitator
-run_id: 20261001-2208
-generated_at: 2026-10-04T12:00:00Z
+run_id: 20260926-1413
+generated_at: 2026-09-27T12:00:00Z
 asks:
-  - id: working-language
+  - id: some-older-runs-ask
     review_ask: recommended-confirmation
-  - id: rct-sample-overlap
-    review_ask: required-before
-    needed_by: award
 """
 
 
-def _tree(*, open_asks: str | None, ledger: bool = True) -> dict:
+def _overrides(*rows: dict) -> str:
+    return yaml.safe_dump({"schema_version": 1, "overrides": list(rows)})
+
+
+def _tree(*, legacy: bool = False, overrides: str | None = None,
+          decisions: str = _ASK_DECISIONS) -> dict:
     opp = {"opp.yaml": _OPP_YAML, "runs": {RUN: {
-        "run_state.yaml": _state_yaml(), "decisions.yaml": _ASK_DECISIONS,
+        "run_state.yaml": _state_yaml(), "decisions.yaml": decisions,
     }}}
-    if ledger:
-        opp["open-questions.md"] = _OPEN_QUESTIONS_MD
-    if open_asks is not None:
-        opp["open-asks.yaml"] = open_asks
+    if legacy:
+        # Both legacy files present and loud: neither may reach the payload.
+        opp["open-questions.md"] = _LEDGER
+        opp["open-asks.yaml"] = _STALE_OPEN_ASKS
+    if overrides is not None:
+        opp["inputs"] = {"decision-overrides.yaml": overrides}
     return {"ACE": {"spark-facilitator": opp}}
 
 
@@ -135,7 +147,7 @@ def _row(payload: dict, row_id: str) -> dict:
 
 
 def test_inline_required_before_folds_into_review_ask_plus_needed_by():
-    row = _row(_payload(open_asks=None), "rct-sample-overlap")
+    row = _row(_payload(), "rct-sample-overlap")
     assert row["review_ask"] == "required-before"
     assert row["needed_by"] == "award"
     assert row["answer_channel"] == "solicitation:q-rct-overlap"
@@ -159,19 +171,19 @@ def test_human_decided_and_deferred_statuses_survive():
     assert normalize_decision_status("human-decided") == "human-decided"
     assert normalize_decision_status("deferred") == "deferred"
     assert normalize_decision_status("open") == "ai-default"
-    payload = _payload(open_asks=None)
+    payload = _payload()
     deferred = _row(payload, "rwanda-two-cbf-attribution")
     assert deferred["status"] == "deferred"
     assert deferred["revisit_when"] == "Spark plans an expansion beyond Malawi."
 
 
 def test_carried_row_says_which_run_it_came_from():
-    row = _row(_payload(open_asks=None), "sol-devices-and-system-of-record-2208")
+    row = _row(_payload(), "sol-devices-and-system-of-record-2208")
     assert row["inherited_from_run"] == "20260926-1800"
 
 
 def test_counts_name_each_kind_of_ask():
-    counts = _payload(open_asks=None)["decisions"]["counts"]
+    counts = _payload()["decisions"]["counts"]
     assert counts["to_confirm"] == 1
     assert counts["to_answer"] == 1
     assert counts["deferred"] == 1
@@ -179,29 +191,115 @@ def test_counts_name_each_kind_of_ask():
     assert counts["overridden"] == 1
 
 
-# ─── open-asks.yaml vs the legacy ledger ────────────────────────────
+# ─── Open asks are a FILTER of the run's decision rows ─────────────
+#
+# Operator decision 2026-10-07 (Jonathan Jackson): "why isn't that just a
+# filter of decisions … when we created the new system we should not have
+# carried forward any legacy models". ACE contract: docs/decisions-contract.md
+# § Open asks — an open ask is a live row with an unanswered review_ask, or a
+# status: deferred row; "answered" = overridden / human-decided, or a saved
+# ruling in inputs/decision-overrides.yaml binds to it.
 
 
-def test_without_open_asks_the_legacy_ledger_is_still_read():
-    oq = _payload(open_asks=None)["open_questions"]
-    assert oq["source"] == "ledger"
-    assert oq["asks_run_id"] is None
-    assert [q["title"] for q in oq["items"]] == ["Rate confirmation", "Device reality"]
+def test_open_asks_are_derived_from_the_runs_decision_rows():
+    asks = _payload()["open_asks"]
+    assert asks["confirm"] == {"total": 1, "outstanding": 1}
+    assert asks["answer"]["total"] == 1
+    assert asks["answer"]["outstanding"] == 1
+    assert asks["answer"]["by_needed_by"] == {"award": {"total": 1, "outstanding": 1}}
+    assert asks["deferred"] == 1
+    assert asks["total"] == 2
+    assert asks["outstanding"] == 2
+    # Deferred is parked, never asked; the overridden row asks nothing.
+    assert asks["outstanding_ids"] == ["working-language", "rct-sample-overlap"]
 
 
-def test_open_asks_wins_and_the_ledger_is_not_repeated():
-    """The asks are decision rows now; the page must not ask twice."""
-    oq = _payload(open_asks=_OPEN_ASKS)["open_questions"]
-    assert oq["source"] == "decisions"
-    assert oq["items"] == []
-    assert oq["asks_run_id"] == RUN
+def test_a_saved_confirmation_answers_the_ask():
+    asks = _payload(overrides=_overrides({
+        "id": "working-language",
+        "override": "English source plus Chichewa (nya) and Tumbuka (tum)",
+        "ai_default": "English source plus Chichewa (nya) and Tumbuka (tum)",
+        "confirmed": True,
+        "decided_by_name": "Anne",
+    }))["open_asks"]
+    assert asks["confirm"] == {"total": 1, "outstanding": 0}
+    assert asks["outstanding_ids"] == ["rct-sample-overlap"]
 
 
-def test_open_asks_without_a_ledger_still_names_its_source():
-    oq = _payload(open_asks=_OPEN_ASKS, ledger=False)["open_questions"]
-    assert oq["source"] == "decisions"
+def test_a_saved_change_answers_a_required_before_ask():
+    asks = _payload(overrides=_overrides({
+        "id": "rct-sample-overlap",
+        "override": "No overlap: exclude every trial community",
+        "ai_default": "OPEN",
+        "decided_by_name": "Anne",
+    }))["open_asks"]
+    assert asks["answer"]["outstanding"] == 0
+    assert asks["answer"]["by_needed_by"]["award"] == {"total": 1, "outstanding": 0}
 
 
-def test_an_unreadable_open_asks_falls_back_to_the_ledger():
-    oq = _payload(open_asks="::: not yaml :::\n- [")["open_questions"]
-    assert oq["source"] == "ledger"
+def test_a_bare_revert_is_not_an_answer():
+    asks = _payload(overrides=_overrides({
+        "id": "working-language",
+        "override": "English source plus Chichewa (nya) and Tumbuka (tum)",
+        "ai_default": "English source plus Chichewa (nya) and Tumbuka (tum)",
+        "decided_by_name": "Anne",
+    }))["open_asks"]
+    assert asks["confirm"]["outstanding"] == 1
+
+
+@pytest.mark.parametrize("status", ["human-decided", "overridden"])
+def test_a_row_a_person_already_ruled_on_is_answered(status):
+    decisions = _ASK_DECISIONS.replace(
+        "    status: ai-default\n    evidence_basis: stated\n"
+        "    plain_question: Have the Chichewa",
+        f"    status: {status}\n    evidence_basis: stated\n"
+        "    plain_question: Have the Chichewa",
+    )
+    assert decisions != _ASK_DECISIONS
+    asks = _payload(decisions=decisions)["open_asks"]
+    assert asks["confirm"] == {"total": 1, "outstanding": 0}
+
+
+def test_a_superseded_row_never_asks():
+    decisions = _ASK_DECISIONS.replace(
+        "    review_ask: \"required-before: award\"\n",
+        "    review_ask: \"required-before: award\"\n    superseded_by: working-language\n",
+    )
+    asks = _payload(decisions=decisions)["open_asks"]
+    assert asks["answer"]["total"] == 0
+    assert asks["answer"]["by_needed_by"] == {}
+
+
+def test_a_run_without_a_decisions_log_has_no_open_asks():
+    tree = _tree(legacy=True)
+    del tree["ACE"]["spark-facilitator"]["runs"][RUN]["decisions.yaml"]
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    out = build_summary_payload(drive, workspace=ws, opp_slug="spark-facilitator", run_id=RUN)
+    assert out["open_asks"] is None
+
+
+def test_legacy_ledger_and_open_asks_yaml_are_never_read():
+    """The spark workspace case: a never-migrated ledger and a stale
+    open-asks.yaml sit at the opp root. Neither reaches the payload, and
+    neither file is even opened."""
+    drive = FakeDriveClient.from_tree(_tree(legacy=True))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    ledger_id = drive.file_id("ACE/spark-facilitator/open-questions.md")
+    asks_id = drive.file_id("ACE/spark-facilitator/open-asks.yaml")
+    opened: list[str] = []
+    real_get = drive.get_content
+
+    def spy(file_id, *a, **kw):
+        opened.append(file_id)
+        return real_get(file_id, *a, **kw)
+
+    drive.get_content = spy  # type: ignore[method-assign]
+    out = build_summary_payload(drive, workspace=ws, opp_slug="spark-facilitator", run_id=RUN)
+    assert out is not None
+    assert "open_questions" not in out
+    # The spy is live: the run's own decisions log WAS read through it.
+    assert drive.file_id(f"ACE/spark-facilitator/runs/{RUN}/decisions.yaml") in opened
+    assert ledger_id not in opened
+    assert asks_id not in opened
+    assert out["open_asks"]["outstanding_ids"] == ["working-language", "rct-sample-overlap"]

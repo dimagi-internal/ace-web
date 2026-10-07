@@ -45,7 +45,7 @@ const BASE: OppSummaryPayload = {
   cycle_grade: null,
   opp_eval: null,
   learnings: null,
-  open_questions: null,
+  open_asks: null,
   decisions: null,
   feedback: [],
   reactions: { total: 0, by_decision: {} },
@@ -368,11 +368,11 @@ describe("OppSummaryPage", () => {
 
   // ─── One number per population (ace-web#740) ───────────────────────
 
-  it("does not present the open-question count as a subset of the decisions", async () => {
-    // The Overview read "51 calls ACE made building this run, 23 it
-    // couldn't settle" — splicing decisions.total and
-    // open_questions.items.length, two different populations. Nothing in
-    // that run equalled 23 of 51.
+  it("counts one population: the asks are a subset of the decisions", async () => {
+    // The Overview once read "51 calls ACE made building this run, 23 it
+    // couldn't settle", splicing the decisions count with a separate
+    // ledger's. There is no ledger now (2026-10-07): nothing but the
+    // decisions log is counted.
     renderWith({
       ...BASE,
       decisions: {
@@ -380,24 +380,12 @@ describe("OppSummaryPage", () => {
         counts: { stated: 30, inferred: 17, conflicting: 4, overridden: 0 },
         rows: [],
       },
-      open_questions: {
-        url: null,
-        access: "unknown",
-        items: [
-          { title: "Rate", detail: "d", owner: null, answered_in: null, blocking: null },
-          { title: "Device", detail: "d", owner: null, answered_in: null, blocking: null },
-        ],
-      },
     });
     expect(
       await screen.findByText(/51 calls ACE made building this run\./),
     ).toBeTruthy();
-    expect(
-      screen.getByText(/Separately, 2 open questions the run couldn't settle/),
-    ).toBeTruthy();
-    expect(
-      screen.queryByText(/51 calls ACE made building this run, 2 it couldn't settle/),
-    ).toBeNull();
+    expect(screen.queryByText(/Separately,/)).toBeNull();
+    expect(screen.queryByText(/couldn't settle/)).toBeNull();
   });
 
   // ─── An unmeasurable link is not called public (ace-web#740) ───────
@@ -415,23 +403,6 @@ describe("OppSummaryPage", () => {
     expect(screen.getAllByText("access unverified").length).toBe(1);
     // Not the wrong tag in the other direction either.
     expect(screen.queryByText("admin only")).toBeNull();
-  });
-
-  it("tags the open-questions source doc too, which renders outside SummaryRow", async () => {
-    // That link is hand-rolled on the Decisions tab, so it does not
-    // inherit the row's tag logic. Leaving it untagged would read as
-    // "anyone can open this" — the ace-web#740 bug in a second place.
-    renderWith({
-      ...BASE,
-      open_questions: {
-        url: "https://docs/open-questions",
-        access: "unknown",
-        items: [{ title: "Rate", detail: "d", owner: null, answered_in: null, blocking: null }],
-      },
-    });
-    await openDecisionsTab();
-    expect(await screen.findByText("Source document")).toBeTruthy();
-    expect(screen.getAllByText("access unverified").length).toBe(1);
   });
 
   it("distinguishes 'not started yet' from 'Not created'", async () => {
@@ -583,27 +554,6 @@ describe("OppSummaryPage", () => {
     });
     expect(await screen.findByText("LLO weekly")).toBeTruthy();
     expect(screen.getAllByText("admin only").length).toBe(1);
-  });
-
-  it("renders open questions as content, not just a link to a doc nobody can open", async () => {
-    renderWith({
-      ...BASE,
-      open_questions: {
-        url: "https://docs/open-questions",
-        access: "admin",
-        items: [{
-          title: "Rate confirmation",
-          detail: "the USD 2-5 band is ACE-inferred",
-          owner: "responding LLO + Spark",
-          answered_in: "solicitation response (Phase 8)",
-          blocking: null,
-        }],
-      },
-    });
-    await openDecisionsTab();
-    expect(await screen.findByText("Rate confirmation")).toBeTruthy();
-    expect(screen.getByText("the USD 2-5 band is ACE-inferred")).toBeTruthy();
-    expect(screen.getByText("responding LLO + Spark")).toBeTruthy();
   });
 
   const TWO_PHASES: OppSummaryPayload = {
@@ -1193,68 +1143,6 @@ describe("OppSummaryPage", () => {
 
   // ─── The outsider pass (spark-facilitator/20261001-2208) ───────────
 
-  const OQ_ITEMS: NonNullable<OppSummaryPayload["open_questions"]>["items"] = [
-    {
-      title: "Which district for the pilot?",
-      detail: "m0f3 bind: hh_count_tt calculate=0",
-      owner: "Spark / ACE",
-      answered_in: null,
-      blocking: "Before Phase 3",
-      raised_by: "20260926-1413",
-      needed_by: "Before the app build stage",
-      overdue: true,
-      for_reviewer: true,
-    },
-    {
-      title: "Who renders the review page?",
-      detail: "Layer B / C wiring",
-      owner: "Operator / ACE",
-      answered_in: null,
-      blocking: "Non-blocking",
-      raised_by: null,
-      needed_by: "Not blocking — can be settled at any point",
-      overdue: false,
-      for_reviewer: false,
-    },
-  ];
-
-  it("groups an outsider's open questions and tucks ACE's notes away", async () => {
-    renderWith({
-      ...BASE,
-      open_questions: { url: null, access: "unknown", items: OQ_ITEMS },
-    });
-    await openDecisionsTab();
-    expect(await screen.findByText("Questions for you")).toBeTruthy();
-    const dimagi = screen.getByText("Questions Dimagi is resolving");
-    // The second group is collapsed by default.
-    expect(dimagi.closest("details")?.open).toBe(false);
-    // The question is the text; the working notes sit in a closed disclosure.
-    expect(screen.getByText("Which district for the pilot?")).toBeTruthy();
-    const notes = screen.getByText("m0f3 bind: hh_count_tt calculate=0");
-    expect(notes.closest("details")?.open).toBe(false);
-    expect(screen.getByText("Raised by: 20260926-1413")).toBeTruthy();
-    expect(screen.getByText("ACE's deadline: Before Phase 3")).toBeTruthy();
-    // Plain deadline, with the overdue call-out.
-    expect(screen.getByText("Before the app build stage")).toBeTruthy();
-    expect(screen.getByText(/that stage has already run, so this is now overdue/)).toBeTruthy();
-  });
-
-  it("keeps a member's open questions flat and raw", async () => {
-    renderWith({
-      ...BASE,
-      viewer: { is_member: true },
-      open_questions: { url: null, access: "unknown", items: OQ_ITEMS },
-    });
-    await openDecisionsTab();
-    expect(await screen.findByText("Which district for the pilot?")).toBeTruthy();
-    expect(screen.queryByText("Questions for you")).toBeNull();
-    expect(screen.queryByText("Working notes")).toBeNull();
-    expect(
-      screen.getByText("m0f3 bind: hh_count_tt calculate=0").closest("details"),
-    ).toBeNull();
-    expect(screen.getByText("Before Phase 3")).toBeTruthy();
-  });
-
   it("says a run that stopped by design is paused, and drops the run id for outsiders", async () => {
     renderWith({
       ...BASE,
@@ -1279,26 +1167,6 @@ describe("OppSummaryPage", () => {
     expect(await screen.findByText("run 20260813-2126")).toBeTruthy();
   });
 
-  it("shows an open question's title, and when it has to be answered by", async () => {
-    renderWith({
-      ...BASE,
-      open_questions: {
-        url: "https://drive/oq",
-        access: "admin",
-        items: [{
-          title: "What does Spark pay CBFs today?",
-          detail: "The single largest unknown on this opportunity.",
-          owner: "Spark",
-          answered_in: "solicitation responses",
-          blocking: "Before Phase 8",
-        }],
-      },
-    });
-    await openDecisionsTab();
-    expect(await screen.findByText("What does Spark pay CBFs today?")).toBeTruthy();
-    expect(screen.getByText("Needed by")).toBeTruthy();
-    expect(screen.getByText("Before Phase 8")).toBeTruthy();
-  });
 });
 
 
@@ -1502,24 +1370,6 @@ describe("review asks", () => {
     },
     rows: ROWS,
   } as NonNullable<OppSummaryPayload["decisions"]>;
-  const LEDGER = {
-    url: null,
-    access: "unknown" as const,
-    source: "ledger" as const,
-    asks_run_id: null,
-    items: [{
-      title: "Which district for the pilot?",
-      detail: "notes",
-      owner: "Spark",
-      answered_in: null,
-      blocking: null,
-      raised_by: null,
-      needed_by: null,
-      overdue: false,
-      for_reviewer: true,
-    }],
-  };
-
   it("groups the gated question under 'Answer before …' with who answers and where", async () => {
     renderWith({ ...BASE, decisions: DECISIONS });
     await openDecisionsTab();
@@ -1567,19 +1417,20 @@ describe("review asks", () => {
     expect(screen.getByText(/1 question to answer, and 1 recommended to confirm/)).toBeTruthy();
   });
 
-  it("keeps rendering the legacy ledger while a run still has one", async () => {
-    renderWith({ ...BASE, decisions: DECISIONS, open_questions: LEDGER });
-    await openDecisionsTab();
-    expect(await screen.findByText("Open questions")).toBeTruthy();
-    expect(screen.getByText("Which district for the pilot?")).toBeTruthy();
+  it("counts a row a person already ruled on as answered", async () => {
+    const ruled = {
+      ...DECISIONS,
+      rows: ROWS.map((d) =>
+        d.id === "working-language" ? { ...d, status: "human-decided" as const } : d,
+      ),
+    };
+    renderWith({ ...BASE, decisions: ruled });
+    expect(await screen.findByText(/1 question to answer\./)).toBeTruthy();
+    expect(screen.queryByText(/recommended to confirm before launch/)).toBeNull();
   });
 
-  it("points at the Decisions tab instead of repeating the asks once they are rows", async () => {
-    renderWith({
-      ...BASE,
-      decisions: DECISIONS,
-      open_questions: { ...LEDGER, source: "decisions", asks_run_id: "20261001-2208", items: [] },
-    });
+  it("asks only through decision rows — no separate open-questions list", async () => {
+    renderWith({ ...BASE, decisions: DECISIONS });
     expect(await screen.findByText("Questions for you")).toBeTruthy();
     expect(screen.getByText(/they are on the Decisions tab/)).toBeTruthy();
     expect(screen.queryByText(/Separately,/)).toBeNull();

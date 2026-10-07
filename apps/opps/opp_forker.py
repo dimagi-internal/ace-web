@@ -6,7 +6,7 @@ forking does NOT create a new opp. It mints a new run-id under the
 **same** opp folder and seeds it from a prior run's outputs.
 
 Per-opp resources stay untouched — ``opp.yaml``, ``inputs/``,
-``eval-calibration/``, ``open-questions.md``, ``connect-state.yaml``,
+``eval-calibration/``, ``connect-state.yaml``,
 ``current/``. They live above ``runs/`` and every run shares them.
 
 Per-run resources get a fresh home under ``runs/<new-run-id>/``. They

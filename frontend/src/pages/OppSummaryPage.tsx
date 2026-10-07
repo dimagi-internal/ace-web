@@ -21,13 +21,11 @@ import {
 import { ClaimsSection } from "@/components/opps/summary/ClaimsSection";
 import { DeepQaSection } from "@/components/opps/summary/DeepQaSection";
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
-import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { cn } from "@/lib/utils";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
 import { SummaryOrientation } from "@/components/opps/summary/SummaryOrientation";
 import { useDecisionLineage } from "@/components/opps/decisions/lineage/Lineage";
 import {
-  AccessUnknownTag,
   AdminOnlyTag,
   SummaryRow,
 } from "@/components/opps/summary/SummaryRow";
@@ -446,7 +444,7 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, claims, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
+    opp, claims, design, apps, build, deep_qa, connect, training, assistant, feedback, workbench,
     walkthroughs, dashboards, synthetic, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
     stage, decisions, viewer,
   } = payload;
@@ -493,13 +491,12 @@ export default function OppSummaryPage() {
   }
 
   // The tab strip only exists when there is something to review. A run
-  // with no decisions log and no open questions renders exactly as it did
-  // before: one page, no chrome for a tab that would be empty.
-  // Once ACE writes `open-asks.yaml` the asks ARE decision rows: the legacy
-  // ledger is not read, and nothing here repeats what the Decisions tab asks.
-  const asksAreDecisions = open_questions?.source === "decisions";
-  const openQuestionCount = asksAreDecisions ? 0 : (open_questions?.items.length ?? 0);
-  const hasReviewSurface = Boolean(decisions) || openQuestionCount > 0;
+  // with no decisions log renders exactly as it did before: one page, no
+  // chrome for a tab that would be empty. The asks ARE decision rows — a
+  // filter of the run's own decisions log, grouped on the Decisions tab —
+  // so there is no second "open questions" list anywhere on the page
+  // (operator decision 2026-10-07: no legacy ledger is read).
+  const hasReviewSurface = Boolean(decisions);
   const showOverview = !hasReviewSurface || tab === "overview";
   // What the reviewer is asked to DO: the recommended confirmations still
   // waiting. Counted from the rows + edits through the same predicate the
@@ -525,7 +522,7 @@ export default function OppSummaryPage() {
       kind: "decisions",
       label: "Decisions",
       icon: Scale,
-      count: decisions?.total ?? openQuestionCount,
+      count: decisions?.total,
     },
   ];
 
@@ -623,16 +620,13 @@ export default function OppSummaryPage() {
           {hasReviewSurface && (
             <SummarySection title="Review">
               <div className="flex flex-wrap items-baseline justify-between gap-3 py-1">
-                {/* Two populations, two sentences (ace-web#740). This
-                    used to read "51 calls ACE made building this run, 23
-                    it couldn't settle" — splicing `decisions.total` and
-                    `open_questions.items.length`, which measure
-                    different things. Nothing in that run equalled 23 of
-                    51: the decisions broke down 30 stated / 17 inferred
-                    / 4 conflicting / 0 changed. A subordinate clause
-                    reads as a subset, so each number now names its own
-                    population and only the confirmations still to make —
-                    a genuine subset of the decisions — stay attached. */}
+                {/* One population (ace-web#740, 2026-10-07). This once
+                    read "51 calls ACE made building this run, 23 it
+                    couldn't settle", splicing the decisions count with a
+                    separate ledger's. The ledger is gone: every ask is a
+                    decision row, so the asks below are a genuine subset
+                    of the calls, counted by the Decisions tab's own
+                    predicate. */}
                 <p className="max-w-md text-[0.975rem] leading-[1.7] text-muted-foreground">
                   {decisions ? (
                     <>
@@ -659,21 +653,10 @@ export default function OppSummaryPage() {
                                 } — is answered.`
                             : "React to any of them."}
                       </span>
-                      {openQuestionCount > 0 &&
-                        ` Separately, ${openQuestionCount} open ${
-                          openQuestionCount === 1 ? "question" : "questions"
-                        } the run couldn't settle, listed below them.`}
                     </>
-                  ) : (
-                    <>
-                      {`${openQuestionCount} open ${
-                        openQuestionCount === 1 ? "question" : "questions"
-                      } this run couldn't settle. `}
-                      <span className="text-foreground">React to any of them.</span>
-                    </>
-                  )}
+                  ) : null}
                 </p>
-                {asksAreDecisions && asks.outstanding > 0 && (
+                {asks.outstanding > 0 && (
                   <p className="w-full text-[0.975rem] leading-[1.7] text-muted-foreground">
                     <span className="font-medium text-foreground">Questions for you</span>
                     {" "}— they are on the Decisions tab, each with who answers it and where,
@@ -1045,49 +1028,6 @@ export default function OppSummaryPage() {
             </SummarySection>
           )}
 
-          {!asksAreDecisions && (
-          <SummarySection title="Open questions">
-            {open_questions && open_questions.items.length > 0 ? (
-              <>
-                <p className="mb-4 text-[0.975rem] leading-[1.7] text-muted-foreground">
-                  What this run could <span className="text-foreground">not</span> settle —
-                  each one already has an owner and a place it gets answered.
-                </p>
-                <OpenQuestionsList items={open_questions.items} plain={!viewer?.is_member} />
-                {open_questions.url && (
-                  <p className="mt-4 flex items-center justify-end gap-2 text-sm">
-                    <a
-                      href={open_questions.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium text-foreground underline-offset-4 hover:underline"
-                    >
-                      Source document
-                    </a>
-                    {/* This "Source document" link is rendered outside
-                        `SummaryRow`, so it does not inherit the row's
-                        tag logic and has to carry both cases itself.
-                        `unknown` must not render as silence — an
-                        untagged link reads as "anyone can open this",
-                        which is the ace-web#740 bug exactly. */}
-                    {showAccessTags && open_questions.access === "admin" && <AdminOnlyTag />}
-                    {showAccessTags && open_questions.access === "unknown" && (
-                      <AccessUnknownTag />
-                    )}
-                  </p>
-                )}
-              </>
-            ) : open_questions?.url ? (
-              <SummaryRow
-                label="Doc"
-                name="Outstanding design questions for this run"
-                links={[link("Open in Drive", open_questions.url, open_questions.access)]}
-              />
-            ) : (
-              <NotCreated label="Doc" />
-            )}
-          </SummarySection>
-          )}
           </>
         )}
 

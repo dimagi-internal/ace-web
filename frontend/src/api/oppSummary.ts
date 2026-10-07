@@ -420,48 +420,24 @@ export interface OppSummaryPayload {
     iteration_warranted: boolean;
     access: LinkAccess;
   } | null;
-  // "What we could not decide" — content, not just a link: the doc is an
-  // internal working artifact nobody shares, so a bare link is useless to
-  // the partner it is written for.
-  open_questions: {
-    url: string | null;
-    access: LinkAccess;
-    /**
-     * `decisions` once ACE writes `open-asks.yaml`: the asks are decision
-     * rows (Decisions tab, "Confirm before launch" / "Answer before …"),
-     * so `items` is empty. `ledger` (or absent, on an older payload) — the
-     * legacy `open-questions.md`, rendered as before.
-     */
-    source?: "ledger" | "decisions";
-    /** The run that generated `open-asks.yaml`; null for the ledger. */
-    asks_run_id?: string | null;
-    items: {
-      title: string;
-      detail: string;
-      owner: string | null;
-      answered_in: string | null;
-      /**
-       * When the question has to be answered by — the ledger's
-       * `blocking:` field. Read but previously discarded, which is the
-       * same class of loss as an untitled row: the reader could see a
-       * question and not that it gates Phase 8.
-       */
-      blocking: string | null;
-      // The outsider fields (2026-10). Optional because a payload cached
-      // before they shipped lacks them; the page falls back to the raw
-      // fields above.
-      /** Which run first raised it — ACE's audit trail. */
-      raised_by?: string | null;
-      /** `blocking` in plain words ("Before the app build stage"). */
-      needed_by?: string | null;
-      /** That stage has already run in this run, so the deadline passed. */
-      overdue?: boolean;
-      /**
-       * The reviewer's question (`true`), or one Dimagi is resolving —
-       * every owner is ACE / Operator / Connect team / Dimagi (`false`).
-       */
-      for_reviewer?: boolean;
-    }[];
+  /**
+   * What this run still asks a reviewer — a FILTER of its own decision rows
+   * (operator decision 2026-10-07: no separate ledger). The rows themselves
+   * render on the Decisions tab; the page counts from them through
+   * `askCounts`, the same predicate. Null when the run has no decisions log.
+   */
+  open_asks?: {
+    confirm: { total: number; outstanding: number };
+    answer: {
+      total: number;
+      outstanding: number;
+      /** Keyed by `needed_by` (award | go-live | closeout | extension). */
+      by_needed_by: Record<string, { total: number; outstanding: number }>;
+    };
+    deferred: number;
+    total: number;
+    outstanding: number;
+    outstanding_ids: string[];
   } | null;
   /**
    * Reactions this run has collected from partners, keyed by decision id.

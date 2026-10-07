@@ -36,15 +36,18 @@ empty — they get the same defensive ``dict.get`` chain that the rest
 of the loader uses, so nothing 500s. Each section is independently
 nullable.
 
-Two artifacts still require a Drive fetch — the orchestrator writes no
-typed pointer for either:
+One artifact still requires a Drive fetch — the orchestrator writes no
+typed pointer for it:
 
-- ``ACE/<opp>/open-questions.md``      (opp-level, durable across runs)
 - ``ACE/<opp>/runs/<run-id>/decisions.yaml``
 
-Both are internal WORKING artifacts that nobody shares, so this loader
-carries their CONTENT rather than a link. Together they are the review
-surface: what we decided and why, and what we could not decide.
+It is an internal WORKING artifact that nobody shares, so this loader
+carries its CONTENT rather than a link. It is the review surface: what we
+decided and why, AND what we still need a person to answer. The open asks
+are a FILTER of its rows (``_open_asks``), never a second document — the
+legacy opp-level ``open-questions.md`` ledger and the generated
+``open-asks.yaml`` are not read (operator decision 2026-10-07: "why isn't
+that just a filter of decisions").
 
 A THIRD reads from Drive by path, for a different reason — there is no
 pointer to write:
@@ -72,7 +75,6 @@ import yaml
 from django.conf import settings
 
 from apps.opps.drive_client import DriveClient
-from apps.opps.drive_export import read_prose
 from apps.opps.reactions import read_reactions
 
 log = logging.getLogger(__name__)
@@ -1447,356 +1449,6 @@ def _learnings_link(web_view_link: str | None, file_id: str | None) -> str | Non
     return None
 
 
-def _read_open_questions(
-    drive: DriveClient,
-    opp_folder_id: str,
-    run_folder_id: str | None = None,
-    access: LinkAccessReader | None = None,
-    ran_phases: frozenset[str] = frozenset(),
-) -> dict | None:
-    """Open Questions — the "what we could NOT decide" half of the review
-    surface. Content, not just a link.
-
-    Lives at the OPP level (``ACE/<opp>/open-questions.md``), not in the
-    run folder: ACE keeps it "per-opportunity and durable across runs —
-    refreshed each run, never restarted." Reading only the run folder made
-    every real opp render "Open questions — Not created" while the doc sat
-    one level up, which is the one section a reviewer most needs.
-
-    The doc itself is an internal working artifact — usually nothing
-    shares it — so a link alone is useless to the partner it is written
-    for. The body is parsed into items here and rendered on the page; the
-    link is still carried for whoever does have Drive access.
-
-    Its tag is MEASURED like every other Drive link (ace-web#740) rather
-    than asserted ``admin``. On the audited run the measurement agrees
-    with the old hard-coded value — the doc is anonymously 401 — but
-    "usually nothing shares it" is a habit, not a fact about this file,
-    and one ``/ace:share-run-access`` run that includes it would have
-    made the assertion wrong in the direction that hides a document from
-    someone who can read it.
-
-    The run folder is still checked as a fallback so any older run that
-    did write a run-local copy keeps rendering.
-
-    ``ran_phases`` — the phases this run has already run (``_phases_ran``)
-    — is what lets a "Before Phase 3" deadline say it is now overdue.
-
-    **The ledger is being folded into decision rows** (ACE spec
-    2026-10-04, open-questions into decisions). Once ACE writes the
-    generated opp-level ``open-asks.yaml``, the asks ARE decision rows —
-    rendered on the Decisions tab under "Confirm before launch" / "Answer
-    before …" — so this section stops repeating them: it returns
-    ``source: "decisions"`` with no items, and the page points at the
-    Decisions tab instead. Until then the legacy ledger is read as before
-    (``source: "ledger"``).
-    """
-    open_asks = _read_open_asks(drive, opp_folder_id)
-    if open_asks is not None:
-        return {
-            "url": None,
-            "access": ACCESS_UNKNOWN,
-            "items": [],
-            "source": "decisions",
-            "asks_run_id": open_asks.get("run_id"),
-        }
-    for folder_id in (opp_folder_id, run_folder_id):
-        if not folder_id:
-            continue
-        f = _find_in_folder(drive, folder_id, "open-questions.md")
-        if f is None:
-            continue
-        body = ""
-        try:
-            # Read as MARKDOWN, not the plain default. This doc is a Google
-            # Doc (everything ACE writes is), and Drive's plain-text export
-            # renders its `-` bullets as `*` and drops `**bold**` entirely —
-            # so the `- **Title** — detail` convention this parser is written
-            # against survives only by the accident that `* ` and the em dash
-            # happen to come through. See apps/opps/drive_export.
-            body = read_prose(drive, f)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("summary: read open-questions %s failed: %s", f.id, exc)
-        items = [
-            _annotate_open_question(q, ran_phases)
-            for q in _parse_open_questions(_open_section(body))
-        ]
-        if not (f.web_view_link or items):
-            continue
-        return {
-            "url": f.web_view_link or None,
-            "access": (
-                access.tag(file_id=f.id) if access is not None else ACCESS_UNKNOWN
-            ),
-            "items": items,
-            "source": "ledger",
-            "asks_run_id": None,
-        }
-    return None
-
-
-def _read_open_asks(drive: DriveClient, opp_folder_id: str) -> dict | None:
-    """``ACE/<opp>/open-asks.yaml`` — the generated list of a run's live
-    decision rows with an unanswered ``review_ask`` or a ``deferred`` status
-    (``{schema_version, opp, run_id, generated_at, asks: [rows]}``).
-
-    Its PRESENCE is what matters here: it means the opp is on the decision-
-    row model and the legacy ledger is retired. ``None`` when absent or
-    unreadable (an unreadable file must not hide the ledger fallback).
-    """
-    if not opp_folder_id:
-        return None
-    f = _find_in_folder(drive, opp_folder_id, "open-asks.yaml")
-    if f is None:
-        return None
-    try:
-        data = _read_yaml(drive, f.id, f.mime_type)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("summary: read open-asks %s failed: %s", f.id, exc)
-        return None
-    if not isinstance(data, dict) or not data:
-        return None
-    asks = data.get("asks")
-    return {
-        "run_id": str(data.get("run_id") or "").strip() or None,
-        "asks": [a for a in asks if isinstance(a, dict)] if isinstance(asks, list) else [],
-    }
-
-
-#: ATX heading at H1 or H2 — the only levels that close the ``## Open``
-#: section. A deeper heading inside it stays part of the section.
-_H1_OR_H2 = re.compile(r"^ {0,3}#{1,2}[ \t]+\S")
-_OPEN_HEADING = re.compile(r"^ {0,3}##[ \t]+Open[ \t]*$", re.IGNORECASE)
-
-
-def _open_section(body: str) -> str:
-    """The ``## Open`` section of the durable ledger — ``## Archive`` cut off.
-
-    ``open-questions.md`` has carried a two-section shape since
-    ``skills/idea-to-pdd`` was given one: a resolved question **moves**
-    from ``## Open`` to ``## Archive`` (carrying ``resolved_at`` /
-    ``resolved_by`` / ``resolution_note``) rather than being annotated in
-    place, and ``## Archive`` is closed history the plugin never reads
-    back. ACE enforces that structurally in ``extractOpenSection``
-    (``lib/open-questions-inline.ts``); this page did not enforce it at
-    all — it parsed every bullet in the file.
-
-    Measured on ``spark-facilitator/20260828-0703``: 21 bullets under
-    ``## Open``, 7 under ``## Archive``, and the page's headline read
-    **"28 open questions the run couldn't settle"**. Seven of the
-    twenty-eight carried a ``resolved_at`` and a ``resolution_note``, so
-    the sentence was false on its face — and the count is the number a
-    reader takes away.
-
-    Two more things rode in on the same mistake. ``## Archive``'s own
-    lead line, *"Questions this opportunity has already ANSWERED. Do not
-    re-ask."*, is an instruction addressed to ACE; it is not a bullet, so
-    the wrapped-line branch glued it onto the LAST open question, and an
-    external partner was shown ACE's internal directive as if it were
-    part of a question's text.
-
-    A ledger with no ``## Open`` heading is a pre-two-section document —
-    every bullet in it is open, so the whole body is returned unchanged
-    and older runs keep rendering as they did.
-    """
-    lines = (body or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    start = next(
-        (i for i, line in enumerate(lines) if _OPEN_HEADING.match(line)), None
-    )
-    if start is None:
-        return body or ""
-    end = len(lines)
-    for i in range(start + 1, len(lines)):
-        if _H1_OR_H2.match(lines[i]):
-            end = i
-            break
-    return "\n".join(lines[start + 1:end])
-
-
-def _strip_md_inline(text: str) -> str:
-    """Drop the inline markdown markers ACE writes into these docs.
-
-    Deliberately not a markdown renderer — the page renders plain text.
-    Backticks are stripped for the same reason ``**`` is: ACE writes
-    identifiers as code spans (``` `meeting_conducted` ```,
-    ``` `modules-0/forms-4.xml` ```), and leaving the delimiter in means
-    the reader sees the character rather than the emphasis it encodes.
-    15 of the 28 rows on ``spark-facilitator/20260828-0703`` shipped
-    literal backticks to the public page.
-    """
-    return text.replace("**", "").replace("__", "").replace("`", "").strip()
-
-
-def _split_labelled(text: str, label: str) -> tuple[str, str | None]:
-    """Split ``"body Owner: x"`` on ``"Owner:"`` → ``("body", "x")``.
-
-    Returns ``(text, None)`` when the label is absent, so an item written
-    without the convention still renders its prose instead of vanishing.
-    """
-    head, sep, tail = text.partition(label)
-    if not sep:
-        return text.strip(), None
-    return head.strip().rstrip(".").strip(), tail.strip()
-
-
-#: A bolded field label inside a field-labelled row: ``**question:**``.
-#: Captured so one pass over the row yields every ``(key, value)`` pair.
-_OQ_FIELD_RE = re.compile(r"\*\*\s*([A-Za-z][A-Za-z0-9 _-]{0,30}?)\s*:\s*\*\*")
-
-#: Values ACE writes to mean "nothing here" in a field-labelled row.
-_OQ_EMPTY_VALUES = {"", "-", "—", "–", "n/a", "na", "none", "tbd"}
-
-
-def _oq_value(
-    fields: dict, *names: str, strip_trailing_period: bool = True
-) -> str | None:
-    """First non-empty value among ``names``, normalised, else ``None``.
-
-    A row that writes ``**answered_where:** —`` is saying there is no
-    answer venue yet; rendering a lone em dash under an "Answered in"
-    heading is worse than rendering nothing.
-
-    ``strip_trailing_period`` tidies the short labelled clauses ("Spark.",
-    "Before Phase 8.") that read as fragments beside a heading. It is OFF
-    for the detail body, which is prose and keeps its full stop.
-    """
-    for name in names:
-        value = _strip_md_inline(str(fields.get(name) or ""))
-        if strip_trailing_period:
-            value = value.rstrip(".").strip()
-        if value.lower() not in _OQ_EMPTY_VALUES:
-            return value
-    return None
-
-
-def _parse_field_labelled_row(raw: str) -> dict | None:
-    """One ``**key:** value`` row → a typed item, or ``None`` if not that shape.
-
-    This is the shape the durable ledger has actually carried since ACE
-    gave it a stable per-row schema — one bullet, seven bolded labels::
-
-        - **id:** cbf-compensation-baseline **question:** What does Spark
-          pay CBFs today? **raised_by:** 20260817-1610 **owner:** Spark
-          **answered_where:** solicitation responses **blocking:** Before
-          Phase 8 **latest:** The single largest unknown on this …
-
-    The old ``- **Title** — detail`` reader could not see any of that. It
-    stripped the ``**`` markers FIRST, which erased the only thing
-    distinguishing a label from prose, then looked for an em dash to split
-    a title on. On ``spark-facilitator/20260828-0703`` that left **27 of
-    28 rows with an empty title**, each rendering as one run-on line
-    beginning ``id: … question: … raised_by: …`` — the machinery, shown
-    to an external reader instead of the question. The 28th got a title
-    only by splitting on an em dash inside the question text, which cut
-    the question in half.
-
-    So the labels are read BEFORE the markers are stripped. ``question``
-    becomes the title a reader scans; ``latest`` — the current state,
-    which each run replaces rather than appends to — becomes the detail.
-    """
-    labels = list(_OQ_FIELD_RE.finditer(raw))
-    if not labels:
-        return None
-
-    fields: dict[str, str] = {}
-    for n, match in enumerate(labels):
-        key = match.group(1).strip().lower().replace(" ", "_").replace("-", "_")
-        end = labels[n + 1].start() if n + 1 < len(labels) else len(raw)
-        fields[key] = raw[match.end():end].strip()
-
-    if "question" not in fields and "id" not in fields:
-        # Bold text that is not this schema — let the prose reader have it.
-        return None
-
-    title = _oq_value(fields, "question")
-    if not title:
-        # No question text: humanise the slug rather than render a gap.
-        slug = _oq_value(fields, "id")
-        title = _humanize(slug) if slug else ""
-
-    detail = _oq_value(
-        fields, "latest", "status", "note", strip_trailing_period=False
-    ) or ""
-    if not detail:
-        # Nothing carries the current state — fall back to any prose
-        # before the first label, so a row is never rendered empty.
-        detail = _strip_md_inline(raw[: labels[0].start()])
-
-    return {
-        "title": title,
-        "detail": detail,
-        "owner": _oq_value(fields, "owner"),
-        "answered_in": _oq_value(fields, "answered_where", "answered_in"),
-        "blocking": _oq_value(fields, "blocking"),
-        # Which run first raised it — ACE's audit trail, shown to an
-        # outside reader only inside the collapsed "Working notes".
-        "raised_by": _oq_value(fields, "raised_by"),
-    }
-
-
-def _parse_open_questions(body: str) -> list[dict]:
-    """Parse ``open-questions.md`` bullets into typed items.
-
-    Two row conventions are accepted, newest first:
-
-    1. **Field-labelled** — what ACE writes today; see
-       ``_parse_field_labelled_row``.
-    2. **Title — detail** — the original seed convention::
-
-        - **Rate confirmation** — the USD 2-5 band is ACE-inferred; no
-          source documents current CBF compensation. Owner: responding
-          LLO + Spark. Answered in: solicitation response (Phase 8).
-
-    Anything matching neither degrades to ``{title: "", detail: <line>}``
-    rather than being dropped — a question we can't parse is still a
-    question the reviewer should see.
-
-    ``body`` is expected to be the ``## Open`` section only; ``_open_section``
-    is what narrows it.
-    """
-    items: list[dict] = []
-    for raw in (body or "").splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if line.startswith(("- ", "* ")):
-            items.append({"_raw": line[2:].strip()})
-        elif items and not line.startswith("#"):
-            # Continuation of the previous bullet (wrapped line).
-            items[-1]["_raw"] = f"{items[-1]['_raw']} {line}"
-
-    out: list[dict] = []
-    for item in items:
-        parsed = _parse_field_labelled_row(item["_raw"])
-        if parsed is not None:
-            out.append(parsed)
-            continue
-        text = _strip_md_inline(item["_raw"])
-        title = ""
-        detail = text
-        # "Title — detail" (em dash is what the template writes; the
-        # hyphen form is accepted so a hand-edited doc still parses).
-        for dash in ("\u2014", " - "):
-            head, sep, tail = text.partition(dash)
-            if sep and len(head) <= 80 and tail.strip():
-                title, detail = head.strip(), tail.strip()
-                break
-        detail, answered = _split_labelled(detail, "Answered in:")
-        detail, owner = _split_labelled(detail, "Owner:")
-        if owner is None and answered is not None:
-            # "Owner:" came after "Answered in:" — recover it from the tail.
-            answered, owner = _split_labelled(answered, "Owner:")
-        out.append({
-            "title": title,
-            "detail": detail,
-            "owner": (owner or "").rstrip(".").strip() or None,
-            "answered_in": (answered or "").rstrip(".").strip() or None,
-            "blocking": None,
-            "raised_by": None,
-        })
-    return out
-
-
 def _read_design(state: dict, access: LinkAccessReader) -> dict | None:
     """Design docs a reviewer needs: the PDD, and the Work Order if present.
 
@@ -2658,6 +2310,96 @@ def _read_decision_edits(drive: DriveClient, opp_folder_id: str) -> dict:
         return {}
 
 
+#: A person ruled on the row itself (ACE ``lib/open-asks.ts`` ``isAnswered``).
+_ANSWERED_STATUSES = frozenset({"overridden", "human-decided"})
+
+
+def _ask_kind(row: dict) -> str | None:
+    """``confirm`` / ``answer`` / ``deferred`` for a live row that asks
+    something, else ``None``. Mirrors ACE's ``isOpenAsk``: an unanswered
+    ``review_ask`` (``recommended-confirmation`` or ``required-before``), or
+    ``status: deferred``. A deferred row never asks, whatever else it says."""
+    from apps.opps.parsers import RECOMMENDED_CONFIRMATION, REQUIRED_BEFORE
+
+    if str(row.get("superseded_by") or "").strip():
+        return None
+    if row.get("status") == "deferred":
+        return "deferred"
+    ask = str(row.get("review_ask") or "")
+    if ask == RECOMMENDED_CONFIRMATION:
+        return "confirm"
+    if ask == REQUIRED_BEFORE:
+        return "answer"
+    return None
+
+
+def _is_answered(row: dict, edit: dict | None) -> bool:
+    """A person ruled: the row is ``overridden`` / ``human-decided``, or a
+    saved ruling in ``inputs/decision-overrides.yaml`` binds to it — a
+    confirmation, or a change. A revert to the AI default with nothing to
+    say is not an answer (the page's ``isConfirmationHandled``)."""
+    if row.get("status") in _ANSWERED_STATUSES:
+        return True
+    if not isinstance(edit, dict):
+        return False
+    return bool(edit.get("confirmed")) or not edit.get("is_revert")
+
+
+def _open_asks(decisions: dict | None, edits: dict | None) -> dict | None:
+    """What this run still asks a reviewer — a FILTER of its decision rows.
+
+    There is no second store. An "open question" is a decision whose
+    default someone outside ACE must confirm (``review_ask:
+    recommended-confirmation``) or answer before a lifecycle gate
+    (``review_ask: required-before`` + ``needed_by``), or one this pilot
+    does not need answered (``status: deferred``) — ACE
+    ``docs/decisions-contract.md`` § Open asks. The rows themselves are
+    rendered on the Decisions tab ("Confirm before launch", "Answer before
+    …", "Not needed for this pilot"); this is the run-level tally of the
+    same predicate, so the Overview headline and any API reader (ACE's
+    run-surface audit) agree with the tab.
+
+    ``null`` when the run has no decisions log. Superseded rows are
+    history and never ask anything.
+    """
+    if not decisions:
+        return None
+    edits = edits or {}
+    confirm = {"total": 0, "outstanding": 0}
+    answer = {"total": 0, "outstanding": 0}
+    by_needed_by: dict[str, dict[str, int]] = {}
+    deferred = 0
+    outstanding_ids: list[str] = []
+    for row in decisions.get("rows") or []:
+        kind = _ask_kind(row)
+        if kind is None:
+            continue
+        if kind == "deferred":
+            deferred += 1
+            continue
+        answered = _is_answered(row, edits.get(row.get("id")))
+        bucket = confirm if kind == "confirm" else answer
+        bucket["total"] += 1
+        if kind == "answer":
+            stage = by_needed_by.setdefault(
+                str(row.get("needed_by") or ""), {"total": 0, "outstanding": 0},
+            )
+            stage["total"] += 1
+        if not answered:
+            bucket["outstanding"] += 1
+            if kind == "answer":
+                stage["outstanding"] += 1
+            outstanding_ids.append(str(row.get("id")))
+    return {
+        "confirm": confirm,
+        "answer": {**answer, "by_needed_by": by_needed_by},
+        "deferred": deferred,
+        "total": confirm["total"] + answer["total"],
+        "outstanding": confirm["outstanding"] + answer["outstanding"],
+        "outstanding_ids": outstanding_ids,
+    }
+
+
 # ─── Lifecycle stage ───────────────────────────────────────────────
 
 # Canonical phase order, with the short label the page shows and the
@@ -2679,19 +2421,6 @@ _PHASE_ORDER: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("closeout", "closeout", ("cycle_grade", "opp_eval", "learnings")),
 )
 
-#: Phase NUMBER (as ACE's open-questions ledger writes it: "Before Phase 3")
-#: → (phase name, stage label). Numbered in `_PHASE_ORDER` order, legacy
-#: ``design`` key skipped: 1 design … 8 solicitation, 9 execution, 10 closeout.
-_PHASE_BY_NUMBER: dict[int, tuple[str, str]] = {
-    n: (name, label)
-    for n, (name, label, _sections) in enumerate(
-        (p for p in _PHASE_ORDER if p[0] != "design"), start=1,
-    )
-}
-
-#: Where a bare stage label would leave an outsider guessing what it means.
-_STAGE_PHRASE = {"execution-management": "execution (go-live)"}
-
 
 def _stage_name_for_tag(phase_raw: str) -> str | None:
     """The capitalised stage label ("App build") for a decision row's phase
@@ -2705,85 +2434,6 @@ def _stage_name_for_tag(phase_raw: str) -> str | None:
         if tag_words <= _words(name):
             return label[:1].upper() + label[1:]
     return None
-
-
-_BEFORE_PHASE_RE = re.compile(r"^\s*before\s+phase\s+(\d{1,2})\b", re.IGNORECASE)
-_PHASE_MENTION_RE = re.compile(r"\bphase\s+(\d{1,2})\b", re.IGNORECASE)
-_NON_BLOCKING_RE = re.compile(r"^\s*non[- ]blocking\b[\s;:,.]*(.*)$", re.IGNORECASE | re.DOTALL)
-
-
-def _plain_needed_by(blocking: str | None, ran: frozenset[str]) -> tuple[str | None, bool]:
-    """ACE's ``blocking:`` deadline in words an outsider can read, and
-    whether it has already passed.
-
-    "Before Phase 3" names a stage by a number nobody outside ACE knows,
-    and on a run that has already built its apps it is also a deadline
-    that went by. A ``Before Phase N`` prefix becomes the stage name and
-    is OVERDUE when that phase has run in this run — anything after the
-    prefix ("Sibling of …", "(go-live)") is ledger bookkeeping and is
-    dropped here; the original text stays in ``blocking``. A few other
-    stock phrases are reworded; a ``Phase N`` mentioned mid-sentence is
-    named but never marked overdue (it is not the deadline itself).
-    Unrecognised text passes through unchanged.
-    """
-    if not blocking:
-        return None, False
-    text = blocking.strip()
-    low = text.lower()
-    m = _BEFORE_PHASE_RE.match(text)
-    if m and int(m.group(1)) in _PHASE_BY_NUMBER:
-        name, label = _PHASE_BY_NUMBER[int(m.group(1))]
-        return f"Before the {_STAGE_PHRASE.get(name, label)} stage", name in ran
-    if low.startswith("before closeout"):
-        return "Before the closeout stage", "closeout" in ran
-    if low.startswith("before award"):
-        return "Before an implementing organisation is chosen", False
-    if low.startswith(("post-pilot", "post pilot")):
-        return "After the pilot", False
-    nb = _NON_BLOCKING_RE.match(text)
-    if nb:
-        rest = nb.group(1).strip()
-        if not rest:
-            return "Not blocking — can be settled at any point", False
-        if rest.lower().startswith("for "):
-            return f"Doesn't hold up {rest[4:]}", False
-        return f"Not blocking — {rest}", False
-
-    def _name(match: re.Match) -> str:
-        entry = _PHASE_BY_NUMBER.get(int(match.group(1)))
-        if entry is None:
-            return match.group(0)
-        return f"the {_STAGE_PHRASE.get(entry[0], entry[1])} stage"
-
-    return _PHASE_MENTION_RE.sub(_name, text), False
-
-
-#: Owners who are Dimagi's side of the table. A question owned ONLY by
-#: these is one Dimagi is resolving; anyone else on the owner line
-#: (the partner, an awarded LLO, "Spark M&E") makes it a question for
-#: the reviewer. Matched per owner after splitting on / , & + "and".
-_INTERNAL_OWNERS = frozenset({"ace", "operator", "connect team", "dimagi"})
-_OWNER_SPLIT_RE = re.compile(r"\s*(?:/|,|&|\+|\band\b)\s*", re.IGNORECASE)
-
-
-def _owner_is_internal(owner: str | None) -> bool:
-    """True when every named owner is internal. No owner is NOT internal —
-    an unassigned question is shown to the reviewer, not hidden."""
-    parts = [p.strip().lower() for p in _OWNER_SPLIT_RE.split(owner or "") if p.strip()]
-    return bool(parts) and all(p in _INTERNAL_OWNERS for p in parts)
-
-
-def _annotate_open_question(item: dict, ran: frozenset[str]) -> dict:
-    """Add the outsider-facing fields to one parsed open question:
-    ``needed_by`` / ``overdue`` (see `_plain_needed_by`) and
-    ``for_reviewer`` (see `_owner_is_internal`)."""
-    needed_by, overdue = _plain_needed_by(item.get("blocking"), ran)
-    return {
-        **item,
-        "needed_by": needed_by,
-        "overdue": overdue,
-        "for_reviewer": not _owner_is_internal(item.get("owner")),
-    }
 
 
 # A phase in one of these states has not run yet — the sections it owns
@@ -2865,7 +2515,7 @@ def _verdict_caveat(status: str, verdict: str) -> str | None:
 
 def _phase_state(block: dict) -> str:
     """``"skipped"``, ``"pending"`` or ``"ran"`` for one phase block —
-    the three-way split `_read_stage` and `_phases_ran` share.
+    the three-way split `_read_stage` uses.
 
     A phase that wrote products has run, whatever its status says —
     older runs (and every test fixture) carry products with no status at
@@ -2878,17 +2528,6 @@ def _phase_state(block: dict) -> str:
     if status not in _NOT_STARTED_STATUSES or bool(block.get("products")):
         return "ran"
     return "pending"
-
-
-def _phases_ran(state: dict) -> frozenset[str]:
-    """Names of the phases this run has run (skipped and pending excluded)."""
-    phases = state.get("phases")
-    if not isinstance(phases, dict):
-        return frozenset()
-    return frozenset(
-        name for name, block in phases.items()
-        if isinstance(block, dict) and _phase_state(block) == "ran"
-    )
 
 
 def _paused_text(last_ran: tuple[str, str, dict] | None) -> str:
@@ -3087,6 +2726,8 @@ def build_summary_payload(
         if workspace_slug
         else None
     )
+    decisions = _read_decisions(drive, run_folder.id)
+    decision_edits = _read_decision_edits(drive, opp_folder.id)
 
     return {
         "opp": _read_opp(
@@ -3119,10 +2760,9 @@ def build_summary_payload(
         "cycle_grade": _read_cycle_grade(state),
         "opp_eval": _read_opp_eval(state),
         "learnings": _read_learnings(state, access),
-        "open_questions": _read_open_questions(
-            drive, opp_folder.id, run_folder.id, access=access,
-            ran_phases=_phases_ran(state),
-        ),
+        # What a reviewer is still asked — a FILTER of this run's own
+        # decision rows, with the saved rulings applied. Not a ledger.
+        "open_asks": _open_asks(decisions, decision_edits),
         "stage": _read_stage(state),
         # What the run itself says is still unproven and needs a human
         # (ace-web#744). Null on a run that carried nothing, so a clean run
@@ -3139,7 +2779,7 @@ def build_summary_payload(
         "feedback": _read_feedback(
             drive, opp_folder.id, viewer_is_member=viewer_is_member, access=access,
         ),
-        "decisions": _read_decisions(drive, run_folder.id),
+        "decisions": decisions,
         # Partner reactions collected on this page, keyed by decision id.
         # Written by apps.opps.reactions into the same feedback records
         # the ledgers above are rendered from, so a comment left here is
@@ -3153,7 +2793,7 @@ def build_summary_payload(
         # recorded; this is what humans have changed since, with who and
         # when and every prior value, so the page can render an edit as a
         # reversible change rather than a fait accompli.
-        "decision_edits": _read_decision_edits(drive, opp_folder.id),
+        "decision_edits": decision_edits,
         "workbench": workbench,
         "viewer": {"is_member": bool(viewer_is_member)},
     }

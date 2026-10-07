@@ -79,7 +79,6 @@ from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 # contract test.
 from apps.opps.tests.test_summary import (
     _DECISIONS_YAML,
-    _OPEN_QUESTIONS_MD,
     _OPP_YAML,
     _FakeWorkspace,
     _state_yaml,
@@ -458,7 +457,6 @@ def _maximal_tree() -> dict:
         "ACE": {
             OPP_SLUG: {
                 "opp.yaml": _OPP_YAML,
-                "open-questions.md": _OPEN_QUESTIONS_MD,
                 "inputs": {"decision-overrides.yaml": _SAVED_OVERRIDES},
                 "feedback": {
                     "20260727-sophie-feintuch.yaml": _PRIVATE_REVIEW_RECORD,
@@ -515,7 +513,6 @@ _MAXIMAL_LINK_SHARING = {
 #: Drive files the fixture creates as tree nodes, so their ids are only
 #: knowable after the tree is built. Path -> anyone-with-link?
 _MAXIMAL_LINK_SHARING_BY_PATH = {
-    f"ACE/{OPP_SLUG}/open-questions.md": False,
     f"ACE/{OPP_SLUG}/feedback/20260727-sophie-feintuch-ledger": False,
     f"ACE/{OPP_SLUG}/feedback/20260814-public-anne-kuhlmann-ledger": True,
 }
@@ -618,7 +615,11 @@ PUBLIC_PAYLOAD_KEYS = frozenset({
     "cycle_grade",
     "opp_eval",
     "learnings",
-    "open_questions",
+    # What the run still asks a reviewer — a FILTER of this run's own
+    # decision rows (operator decision 2026-10-07). The legacy
+    # `open_questions` key (read from the opp-level `open-questions.md`
+    # ledger, or `open-asks.yaml`) is gone: no ledger is read.
+    "open_asks",
     "stage",
     # What the run itself says is still unproven and needs a human, read
     # from `run_notes.carried_residuals_needing_a_human` (ace-web#744). The
@@ -771,23 +772,17 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     "learnings": frozenset({
         "summary_url", "new_pdd_url", "iteration_warranted", "access",
     }),
-    # The list key is `items`. NOT `questions`.
-    # `source` — "ledger" (the legacy open-questions.md) or "decisions" (ACE
-    # writes open-asks.yaml: the asks are decision rows, so `items` is empty
-    # and the page points at the Decisions tab). `asks_run_id` — the run that
-    # generated open-asks.yaml, null for the ledger. ACE spec 2026-10-04.
-    "open_questions": frozenset({"url", "access", "items", "source", "asks_run_id"}),
-    # `blocking` — when the question has to be answered by. The ledger
-    # always carried it; the reader discarded it, so a question gating
-    # Phase 8 looked the same as a post-pilot one (ace#1867).
-    "open_questions.items[]": frozenset({
-        "title", "detail", "owner", "answered_in", "blocking",
-        # The outsider pass (ace-web, 2026-10): who first raised it (ACE's
-        # audit trail, behind "Working notes"); `blocking` in plain words
-        # and whether that stage has already run; and whether it is the
-        # reviewer's question or one Dimagi is resolving.
-        "raised_by", "needed_by", "overdue", "for_reviewer",
+    # `null` when the run has no decisions log. `confirm` counts
+    # `review_ask: recommended-confirmation` rows, `answer` counts
+    # `review_ask: required-before` rows (with a per-`needed_by` split under
+    # `by_needed_by`, keyed by the gate); `deferred` is parked, never asked.
+    # `outstanding` = not yet answered by a person (status overridden /
+    # human-decided, or a saved ruling in decision-overrides.yaml).
+    "open_asks": frozenset({
+        "confirm", "answer", "deferred", "total", "outstanding", "outstanding_ids",
     }),
+    "open_asks.confirm": frozenset({"total", "outstanding"}),
+    "open_asks.answer": frozenset({"total", "outstanding", "by_needed_by"}),
     # `skipped[]` (a phase the run deliberately did not do — "not part of
     # this run", never "Not created") and `caveats[]` (a phase that ran
     # without a clean verdict, qualifying the sections it produced). Both
@@ -1236,7 +1231,6 @@ def test_a_non_member_payload_never_carries_an_admin_feedback_ledger(anon_payloa
         "assistant",
         "dashboards[]",
         "solicitation",
-        "open_questions",
         "workbench",
     }
 
@@ -1315,7 +1309,7 @@ def test_links_inside_the_opps_own_tenancy_carry_no_admin_tag():
     # A Drive file that is NOT anyone-with-link stays `admin` even on an
     # own-tenancy opp: `/ace:release` shares no Drive file, so a released
     # reviewer cannot open it (the tag clears once the doc is shared)…
-    assert p["open_questions"]["access"] == ACCESS_ADMIN
+    assert p["learnings"]["access"] == ACCESS_ADMIN
     # …and Drive tags never read `reviewer` — they are measured.
     drive_tags = {d["access"] for d in p["training"]["docs"]} | {
         d["access"] for d in p["design"]["docs"]

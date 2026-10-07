@@ -26,8 +26,10 @@ def _tree():
                 "opp.yaml": "slug: spark-facilitator\n",
                 "pdd.md": "# PDD\n",
                 "inputs": {"brief.md": "brief"},
-                # Carried: the run summary renders its content.
+                # LEGACY ask stores — never cloned. A run's open asks are a
+                # filter of its own decisions.yaml (operator 2026-10-07).
                 "open-questions.md": "- **Rate?** Owner: LLO.\n",
+                "open-asks.yaml": "schema_version: 1\nasks: []\n",
                 # ACE's internal working state at the opp root — never cloned.
                 "eval-calibration": {"known-issues.md": "internal"},
                 "inbox-triage_comms-log": "internal",
@@ -101,7 +103,7 @@ def test_copies_the_whole_run_and_the_opp_files(drive, source_ws, target_ws, own
                        opp_slug="spark-facilitator", run_id=RUN, owner=owner)
 
     assert _names(drive, "SPARK/spark-facilitator") == [
-        "inputs", "open-questions.md", "opp.yaml", "pdd.md", "runs",
+        "inputs", "opp.yaml", "pdd.md", "runs",
     ]
     assert _names(drive, "SPARK/spark-facilitator/inputs") == ["brief.md"]
     # Only the cloned run, under the same run id.
@@ -119,7 +121,7 @@ def test_copies_the_whole_run_and_the_opp_files(drive, source_ws, target_ws, own
     assert _names(drive, f"SPARK/spark-facilitator/runs/{RUN}/6-qa-and-training") == [
         "guide.md", "screenshots", "videos",
     ]
-    assert result.files_copied == 11
+    assert result.files_copied == 10
     # The source is untouched.
     assert _names(drive, "DT/spark-facilitator/runs") == ["20260920-0900", RUN]
 
@@ -149,13 +151,16 @@ def test_internal_opp_level_files_are_not_cloned(drive, source_ws, target_ws, ow
         assert internal not in names
 
 
-def test_the_open_questions_ledger_is_cloned(drive, source_ws, target_ws, owner):
-    # The public summary reads `open-questions.md` from the opp ROOT and renders
-    # its content. Left behind, a cloned run's page read "Open questions — Not
-    # created" while the source opp had the doc.
+def test_no_legacy_ask_store_is_cloned(drive, source_ws, target_ws, owner):
+    # How a never-migrated spark-facilitator ledger reached the `spark`
+    # workspace's review page. The new system carries no legacy model: the
+    # run's open asks are a filter of its decisions.yaml, copied with the run.
     clone_run(drive=drive, source=source_ws, target=target_ws,
               opp_slug="spark-facilitator", run_id=RUN, owner=owner)
-    assert "open-questions.md" in _names(drive, "SPARK/spark-facilitator")
+    names = _names(drive, "SPARK/spark-facilitator")
+    assert "open-questions.md" not in names
+    assert "open-asks.yaml" not in names
+    assert "decisions.yaml" in _names(drive, f"SPARK/spark-facilitator/runs/{RUN}")
 
 
 def test_second_run_of_same_opp_reuses_the_opp_folder(drive, source_ws, target_ws, owner):
@@ -165,7 +170,7 @@ def test_second_run_of_same_opp_reuses_the_opp_folder(drive, source_ws, target_w
               opp_slug="spark-facilitator", run_id="20260920-0900", owner=owner)
     assert _names(drive, "SPARK") == ["spark-facilitator"]
     assert _names(drive, "SPARK/spark-facilitator") == [
-        "inputs", "open-questions.md", "opp.yaml", "pdd.md", "runs",
+        "inputs", "opp.yaml", "pdd.md", "runs",
     ]
     assert _names(drive, "SPARK/spark-facilitator/runs") == ["20260920-0900", RUN]
 
