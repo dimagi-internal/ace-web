@@ -2291,7 +2291,7 @@ def test_public_summary_serves_the_workbench_link_to_anonymous_visitors(
     assert body["opp"]["slug"] == "turmeric"
     assert body["workbench"]["url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
     assert body["workbench"]["access"] == "admin"
-    assert body["viewer"] == {"is_member": False, "plain": True}
+    assert body["viewer"] == {"is_member": False, "plain": True, "can_write": False}
 
 
 @pytest.mark.django_db
@@ -2300,26 +2300,34 @@ def test_public_summary_marks_a_member_so_the_page_drops_the_tags(
 ):
     user = User.objects.create_user(email="summary-member@example.com")
     WorkspaceMembership.objects.create(
-        workspace=summary_workspace, user=user, role="editor",
+        workspace=summary_workspace, user=user, role="admin",
     )
     client.force_login(user)
     body = client.get(_SUMMARY_URL).json()
     assert body["workbench"]["url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
-    assert body["viewer"] == {"is_member": True, "plain": False}
+    # An admin holds summary.team_view: the team view, which drops the tags.
+    assert body["viewer"] == {"is_member": True, "plain": False, "can_write": True}
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("role,plain", [("owner", False), ("editor", False), ("viewer", True)])
-def test_public_summary_partner_view_follows_the_membership_role(
-    client, summary_workspace, role, plain,
+@pytest.mark.parametrize("role,plain,can_write", [
+    ("owner", False, True),
+    ("admin", False, True),
+    ("editor", True, True),
+    ("viewer", True, False),
+])
+def test_public_summary_view_follows_the_membership_capabilities(
+    client, summary_workspace, role, plain, can_write,
 ):
-    """Owners/editors (Dimagi's team) get the team view; a ``viewer`` —
-    how partner reviewers are invited — gets the partner (plain) view.
-    Both are members: ``is_member`` is access, ``plain`` is presentation."""
+    """``summary.team_view`` (admin, owner) gets the team view; an editor and
+    a viewer get the partner (plain) view. ``decisions.write`` (editor and
+    above) may write; a viewer is read-only. All four are members."""
     user = User.objects.create_user(email=f"summary-{role}@example.com")
     WorkspaceMembership.objects.create(workspace=summary_workspace, user=user, role=role)
     client.force_login(user)
-    assert client.get(_SUMMARY_URL).json()["viewer"] == {"is_member": True, "plain": plain}
+    assert client.get(_SUMMARY_URL).json()["viewer"] == {
+        "is_member": True, "plain": plain, "can_write": can_write,
+    }
 
 
 @pytest.mark.django_db
@@ -2328,14 +2336,18 @@ def test_public_summary_cache_keeps_partner_and_team_variants_apart(
 ):
     viewer = User.objects.create_user(email="summary-viewer2@example.com")
     editor = User.objects.create_user(email="summary-editor2@example.com")
+    admin = User.objects.create_user(email="summary-admin2@example.com")
     WorkspaceMembership.objects.create(workspace=summary_workspace, user=viewer, role="viewer")
     WorkspaceMembership.objects.create(workspace=summary_workspace, user=editor, role="editor")
-    client.force_login(viewer)
-    assert client.get(_SUMMARY_URL).json()["viewer"]["plain"] is True
-    client.force_login(editor)
-    assert client.get(_SUMMARY_URL).json()["viewer"]["plain"] is False
-    client.force_login(viewer)
-    assert client.get(_SUMMARY_URL).json()["viewer"]["plain"] is True
+    WorkspaceMembership.objects.create(workspace=summary_workspace, user=admin, role="admin")
+    expected = {
+        viewer: {"is_member": True, "plain": True, "can_write": False},
+        editor: {"is_member": True, "plain": True, "can_write": True},
+        admin: {"is_member": True, "plain": False, "can_write": True},
+    }
+    for user in (viewer, editor, admin, viewer, editor):
+        client.force_login(user)
+        assert client.get(_SUMMARY_URL).json()["viewer"] == expected[user]
 
 
 @pytest.mark.django_db
@@ -2467,29 +2479,53 @@ def test_reaction_shows_up_on_the_next_summary_read(client, reaction_workspace):
 
 
 @pytest.mark.django_db
-def test_a_viewer_role_member_still_writes_and_sees_it_on_the_partner_view(
+def test_an_editor_writes_and_sees_it_on_the_partner_view(
     client, reaction_workspace,
 ):
-    """The partner view is presentation only. A ``viewer`` (a partner
-    reviewer) may still comment, change and confirm, and their write shows
-    up on the partner-view summary they read (its own cache variant is
+    """The partner view is presentation only. An ``editor`` (how partner
+    reviewers are invited) may comment, change and confirm, and their write
+    shows up on the partner-view summary they read (its own cache variant is
     invalidated too)."""
+    ws = Workspace.objects.get(slug="summary-ws")
+    user = User.objects.create_user(email="editor@partner.org", display_name="Eda Editor")
+    WorkspaceMembership.objects.create(workspace=ws, user=user, role="editor")
+    client.force_login(user)
+    summary_url = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
+    first = client.get(summary_url).json()
+    assert first["viewer"] == {"is_member": True, "plain": True, "can_write": True}
+    assert first["reactions"]["total"] == 0
+
+    resp = _react(client)
+    assert resp.status_code == 201
+    assert resp.json()["reviewer"] == "Eda Editor"
+    assert client.get(summary_url).json()["reactions"]["total"] == 1
+
+    assert _edit(client).status_code == 200
+    assert _edit(client, value="30 days", confirm=True).json()["confirmed"] is True
+
+
+@pytest.mark.django_db
+def test_a_viewer_reads_the_summary_but_cannot_write_decisions(
+    client, reaction_workspace,
+):
+    """A ``viewer`` is read-only, as in canopy-web: confirm, change and
+    comment each answer 403 with the role copy, and nothing reaches Drive."""
     ws = Workspace.objects.get(slug="summary-ws")
     user = User.objects.create_user(email="viewer@partner.org", display_name="Vic Viewer")
     WorkspaceMembership.objects.create(workspace=ws, user=user, role="viewer")
     client.force_login(user)
     summary_url = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
-    first = client.get(summary_url).json()
-    assert first["viewer"] == {"is_member": True, "plain": True}
-    assert first["reactions"]["total"] == 0
-
-    resp = _react(client)
-    assert resp.status_code == 201
-    assert resp.json()["reviewer"] == "Vic Viewer"
-    assert client.get(summary_url).json()["reactions"]["total"] == 1
-
-    assert _edit(client).status_code == 200
-    assert _edit(client, value="30 days", confirm=True).json()["confirmed"] is True
+    assert client.get(summary_url).json()["viewer"] == {
+        "is_member": True, "plain": True, "can_write": False,
+    }
+    copy = "Your role in this workspace can view but not change decisions."
+    for resp in (_react(client), _edit(client), _edit(client, value="30 days", confirm=True)):
+        assert resp.status_code == 403
+        assert resp.json()["title"] == copy
+        assert resp.json()["detail"] == copy
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "feedback" not in [f.name for f in reaction_workspace.list_files(root)]
+    assert client.get(summary_url).json()["reactions"]["total"] == 0
 
 
 @pytest.mark.django_db

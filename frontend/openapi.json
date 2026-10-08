@@ -4723,6 +4723,48 @@
         ]
       }
     },
+    "/api/workspaces/{slug}/invites": {
+      "get": {
+        "operationId": "apps_workspaces_api_list_invites",
+        "summary": "List pending invites (admin and above)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspacePendingInviteOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "description": "Invites nobody has accepted, revoked or let expire. No tokens: an invite\nlink is shown once, to whoever created it.",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{slug}/members/{user_id}": {
       "delete": {
         "operationId": "apps_workspaces_api_remove_member",
@@ -4839,7 +4881,7 @@
     "/api/workspaces/{slug}/activity": {
       "get": {
         "operationId": "apps_workspaces_api_workspace_activity",
-        "summary": "Workspace audit log (owner only)",
+        "summary": "Workspace audit log (admin and above)",
         "parameters": [
           {
             "in": "path",
@@ -6322,7 +6364,7 @@
             }
           }
         },
-        "description": "Returns every Session in workspaces where the calling user is Owner or Editor. Used by `/ace:sweep ace-web`. Not paginated \u2014 the rows are summary-sized and a single request is the expected shape for the sweep skill.",
+        "description": "Returns every Session in workspaces where the calling user is Editor or above (content.write). Used by `/ace:sweep ace-web`. Not paginated \u2014 the rows are summary-sized and a single request is the expected shape for the sweep skill.",
         "tags": [
           "sessions"
         ],
@@ -6352,7 +6394,7 @@
             }
           }
         },
-        "description": "Delete every Session id in the body that the calling user has Owner or Editor access to. Sessions in workspaces the user can't write to are reported as 'forbidden' in `failed[]` rather than deleted. DELETE-with-body is awkward in some HTTP clients, so the atom is POST /sessions/sweep/delete.",
+        "description": "Delete every Session id in the body that the calling user has Editor-or-above access to. Sessions in workspaces the user can't write to are reported as 'forbidden' in `failed[]` rather than deleted. DELETE-with-body is awkward in some HTTP clients, so the atom is POST /sessions/sweep/delete.",
         "tags": [
           "sessions"
         ],
@@ -10137,6 +10179,7 @@
           "role": {
             "enum": [
               "owner",
+              "admin",
               "editor",
               "viewer"
             ],
@@ -10306,6 +10349,7 @@
           "role": {
             "enum": [
               "owner",
+              "admin",
               "editor",
               "viewer"
             ],
@@ -10351,6 +10395,7 @@
           "role": {
             "enum": [
               "owner",
+              "admin",
               "editor",
               "viewer"
             ],
@@ -10397,6 +10442,7 @@
           "role": {
             "enum": [
               "owner",
+              "admin",
               "editor",
               "viewer"
             ],
@@ -10409,6 +10455,49 @@
           "role"
         ],
         "title": "WorkspaceInviteIn",
+        "type": "object"
+      },
+      "WorkspacePendingInviteOut": {
+        "additionalProperties": false,
+        "description": "GET /api/workspaces/{slug}/invites \u2014 one invite nobody has acted on.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "invited_by_email": {
+            "title": "Invited By Email",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role",
+          "invited_by_email",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "WorkspacePendingInviteOut",
         "type": "object"
       },
       "InvitePreviewOut": {
@@ -10426,6 +10515,7 @@
           "role": {
             "enum": [
               "owner",
+              "admin",
               "editor",
               "viewer"
             ],
@@ -10468,6 +10558,7 @@
           "role": {
             "enum": [
               "owner",
+              "admin",
               "editor",
               "viewer"
             ],

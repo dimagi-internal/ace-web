@@ -1543,8 +1543,8 @@ def test_workbench_link_is_served_to_everyone_and_declares_its_access():
     public = build_summary_payload(drive, viewer_is_member=False, **kwargs)
     assert member["workbench"] == expected
     assert public["workbench"] == expected
-    assert member["viewer"] == {"is_member": True, "plain": False}
-    assert public["viewer"] == {"is_member": False, "plain": True}
+    assert member["viewer"] == {"is_member": True, "plain": False, "can_write": True}
+    assert public["viewer"] == {"is_member": False, "plain": True, "can_write": False}
 
 
 def test_every_gated_link_declares_admin_access():

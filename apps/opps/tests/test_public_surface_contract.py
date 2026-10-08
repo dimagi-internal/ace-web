@@ -821,7 +821,7 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     }),
     "reactions": frozenset({"total", "by_decision"}),
     "workbench": frozenset({"url", "access"}),
-    "viewer": frozenset({"is_member", "plain"}),
+    "viewer": frozenset({"is_member", "plain", "can_write"}),
 }
 
 

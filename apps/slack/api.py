@@ -26,13 +26,14 @@ from ninja import Path, Query, Router
 from pydantic import BaseModel
 
 from apps.api.auth import session_auth
-from apps.api.deps import resolve_workspace_for_member
+from apps.api.deps import resolve_workspace_for, resolve_workspace_for_member
 from apps.api.errors import (
     TYPE_CONFLICT,
     TYPE_NOT_FOUND,
     TYPE_VALIDATION,
     ProblemError,
 )
+from apps.workspaces import permissions as perms
 
 from .blocks import render_parent_card, render_phase_tile
 from .models import SlackInstallation, SlackRunThread
@@ -369,7 +370,7 @@ def push_phase(
     workspace_slug: Annotated[str, Path()],
     body: SlackPushPhaseIn,
 ) -> HttpResponse:
-    ws = resolve_workspace_for_member(request, workspace_slug)
+    ws = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     installation = _installation_for(ws)
     if installation is None:
         raise ProblemError(

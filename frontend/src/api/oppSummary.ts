@@ -500,13 +500,26 @@ export interface OppSummaryPayload {
   // link an external reviewer can't use is the same failure as letting
   // it 404 on them, just quieter.
   workbench: { url: string; access: LinkAccess } | null;
-  // `is_member` is ACCESS: a signed-in member of the workspace, any role,
-  // may confirm, change and comment. `plain` is PRESENTATION: draw the
-  // partner view (orientation, plain deep QA, no run ids, access tags).
-  // Owners/editors get the team view; a `viewer`-role member — how partner
-  // reviewers are invited — and a non-member get the partner view. Older
-  // payloads lack `plain`; read it through `isPlainViewer`.
-  viewer: { is_member: boolean; plain?: boolean };
+  // `is_member`: a signed-in member of the workspace, any role.
+  // `can_write` is ACCESS: may confirm, change and comment (`decisions.write`
+  // — editor and above); a `viewer` is a member who reads only. `plain` is
+  // PRESENTATION: draw the partner view (orientation, plain deep QA, no run
+  // ids, access tags) — everyone below admin, and every non-member. Older
+  // payloads lack `plain` / `can_write`; read them through `isPlainViewer` /
+  // `viewerCanWrite`.
+  viewer: { is_member: boolean; plain?: boolean; can_write?: boolean };
+}
+
+/**
+ * May this reader confirm, change and comment on decisions? Server decides
+ * (`viewer.can_write`); a payload without it predates read-only viewers, when
+ * every member could write.
+ */
+export function viewerCanWrite(
+  viewer: { is_member: boolean; can_write?: boolean } | null | undefined,
+): boolean {
+  if (!viewer) return false;
+  return viewer.can_write ?? viewer.is_member;
 }
 
 /**

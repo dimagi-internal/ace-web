@@ -48,11 +48,26 @@ class Workspace(models.Model):
 
 
 class WorkspaceMembership(models.Model):
+    # The four roles, the same ladder canopy-web runs (owner decision,
+    # 2026-10-07: "lets use the same acl as canopy, owner, admin, editor,
+    # viewer"). ADMIN sits between editor and owner: it runs the workspace —
+    # invites and manages members strictly below itself, reads the audit log,
+    # gets the team view of a run summary — but holds none of the owner's
+    # keys (workspace settings, Drive root, tenancy, clones). A VIEWER reads
+    # and writes nothing.
+    #
+    # What each role may DO lives in `apps/workspaces/permissions.py`
+    # (`MINIMUM_ROLE`); no code outside this app names a role
+    # (`tests/test_roles_named_only_in_workspaces.py`).
+    OWNER, ADMIN, EDITOR, VIEWER = "owner", "admin", "editor", "viewer"
     ROLE_CHOICES = [
-        ("owner", "Owner"),
-        ("editor", "Editor"),
-        ("viewer", "Viewer"),
+        (OWNER, "Owner"),
+        (ADMIN, "Admin"),
+        (EDITOR, "Editor"),
+        (VIEWER, "Viewer"),
     ]
+    #: The single place role ORDERING lives. Higher outranks lower.
+    ROLE_RANK = {VIEWER: 0, EDITOR: 1, ADMIN: 2, OWNER: 3}
 
     workspace = models.ForeignKey(
         Workspace, on_delete=models.CASCADE, related_name="memberships"
@@ -86,7 +101,8 @@ class WorkspaceInvite(models.Model):
     )
     email = models.CharField(max_length=200)
     role = models.CharField(
-        max_length=16, choices=WorkspaceMembership.ROLE_CHOICES, default="editor"
+        max_length=16, choices=WorkspaceMembership.ROLE_CHOICES,
+        default=WorkspaceMembership.EDITOR,
     )
     token = models.CharField(max_length=64, unique=True, default=generate_invite_token)
     invited_by = models.ForeignKey(

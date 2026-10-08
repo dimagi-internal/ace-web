@@ -9,7 +9,7 @@ from django.http import HttpRequest, HttpResponse
 from ninja import Path, Router
 
 from apps.api.auth import session_auth
-from apps.api.deps import resolve_workspace_for_member
+from apps.api.deps import resolve_workspace_for, resolve_workspace_for_member
 from apps.api.errors import (
     TYPE_CONFLICT,
     TYPE_FORBIDDEN,
@@ -19,6 +19,7 @@ from apps.api.errors import (
     ProblemError,
 )
 from apps.api.pagination import Page, paginate
+from apps.workspaces import permissions as perms
 
 from .schemas import SessionCreateIn, SessionListOut, SessionPatchIn
 
@@ -454,14 +455,14 @@ def may_run_resume_sweep(user, workspace) -> bool:
     """
     from django.conf import settings
 
-    from apps.workspaces.permissions import role_for
+    from apps.workspaces import permissions as perms
 
     if getattr(user, "is_staff", False):
         return True
     email = (getattr(user, "email", "") or "").strip().lower()
     if email and email in {e.strip().lower() for e in settings.ACE_RESUME_SWEEP_CALLERS}:
         return True
-    return role_for(user, workspace) == "owner"
+    return perms.can(user, workspace, perms.OWN)
 
 
 @router.post(
@@ -600,7 +601,7 @@ def resume_run(
 
     from apps.canopy import run_dispatch
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     session = _load_session_in_workspace(slug, workspace)
     if session is None:
         raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
@@ -698,7 +699,7 @@ def create_session(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     session = create_session_in_workspace(workspace, request.user, body)
     payload = SessionListOut.model_validate(session).model_dump(mode="json")
     return JsonResponse(payload, status=201)
@@ -772,7 +773,7 @@ def update_session(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     updates = body.model_dump(exclude_unset=True)
     if "status" in updates and updates["status"] not in {"active", "archived"}:
         raise ProblemError(400, "Invalid status value", type_=TYPE_VALIDATION)
@@ -806,7 +807,7 @@ def delete_session(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
 ) -> HttpResponse:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     deleted = delete_session_in_workspace(workspace, slug)
     if not deleted:
         raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)

@@ -26,10 +26,10 @@ log = logging.getLogger(__name__)
 router = Router(auth=session_auth, tags=["sessions"])
 
 
-# Roles that can list and delete sessions in their workspace via the sweep API.
-# Viewers are excluded so a Viewer membership doesn't expose other members'
-# session metadata or grant delete rights.
-_WRITE_ROLES = ("owner", "editor")
+# Listing and deleting sessions via the sweep API is ``content.write``
+# (editor and above, ``apps/workspaces/permissions.py``): a viewer
+# membership must not expose other members' session metadata or grant delete
+# rights.
 
 
 def _build_session_row(session, message_count: int, upload_count: int) -> SweepSessionRow:
@@ -50,13 +50,10 @@ def _build_session_row(session, message_count: int, upload_count: int) -> SweepS
 
 
 def _writable_workspace_slugs(user) -> list[str]:
-    """Return slugs of workspaces where `user` is Owner or Editor."""
-    from apps.workspaces.models import WorkspaceMembership
+    """Return slugs of workspaces where `user` holds ``content.write``."""
+    from apps.workspaces import permissions as perms
 
-    return list(
-        WorkspaceMembership.objects.filter(user=user, role__in=_WRITE_ROLES)
-        .values_list("workspace__slug", flat=True)
-    )
+    return sorted(perms.slugs_with(user, perms.CONTENT_WRITE))
 
 
 @router.get(
@@ -65,7 +62,7 @@ def _writable_workspace_slugs(user) -> list[str]:
     summary="List sessions across workspaces (sweep)",
     description=(
         "Returns every Session in workspaces where the calling user is "
-        "Owner or Editor. Used by `/ace:sweep ace-web`. Not paginated — "
+        "Editor or above (content.write). Used by `/ace:sweep ace-web`. Not paginated — "
         "the rows are summary-sized and a single request is the expected "
         "shape for the sweep skill."
     ),
@@ -111,7 +108,7 @@ def list_sweep_sessions(request: HttpRequest) -> SweepListOut:
     summary="Bulk-delete sessions (sweep)",
     description=(
         "Delete every Session id in the body that the calling user has "
-        "Owner or Editor access to. Sessions in workspaces the user can't "
+        "Editor-or-above access to. Sessions in workspaces the user can't "
         "write to are reported as 'forbidden' in `failed[]` rather than "
         "deleted. DELETE-with-body is awkward in some HTTP clients, so the "
         "atom is POST /sessions/sweep/delete."

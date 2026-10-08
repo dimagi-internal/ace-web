@@ -1591,6 +1591,27 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/workspaces/{slug}/invites": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List pending invites (admin and above)
+         * @description Invites nobody has accepted, revoked or let expire. No tokens: an invite
+         *     link is shown once, to whoever created it.
+         */
+        readonly get: operations["apps_workspaces_api_list_invites"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/workspaces/{slug}/members/{user_id}": {
         readonly parameters: {
             readonly query?: never;
@@ -1633,7 +1654,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Workspace audit log (owner only) */
+        /** Workspace audit log (admin and above) */
         readonly get: operations["apps_workspaces_api_workspace_activity"];
         readonly put?: never;
         readonly post?: never;
@@ -2420,7 +2441,7 @@ export interface paths {
         };
         /**
          * List sessions across workspaces (sweep)
-         * @description Returns every Session in workspaces where the calling user is Owner or Editor. Used by `/ace:sweep ace-web`. Not paginated — the rows are summary-sized and a single request is the expected shape for the sweep skill.
+         * @description Returns every Session in workspaces where the calling user is Editor or above (content.write). Used by `/ace:sweep ace-web`. Not paginated — the rows are summary-sized and a single request is the expected shape for the sweep skill.
          */
         readonly get: operations["apps_sessions_sweep_api_list_sweep_sessions"];
         readonly put?: never;
@@ -2442,7 +2463,7 @@ export interface paths {
         readonly put?: never;
         /**
          * Bulk-delete sessions (sweep)
-         * @description Delete every Session id in the body that the calling user has Owner or Editor access to. Sessions in workspaces the user can't write to are reported as 'forbidden' in `failed[]` rather than deleted. DELETE-with-body is awkward in some HTTP clients, so the atom is POST /sessions/sweep/delete.
+         * @description Delete every Session id in the body that the calling user has Editor-or-above access to. Sessions in workspaces the user can't write to are reported as 'forbidden' in `failed[]` rather than deleted. DELETE-with-body is awkward in some HTTP clients, so the atom is POST /sessions/sweep/delete.
          */
         readonly post: operations["apps_sessions_sweep_api_bulk_delete_sweep_sessions"];
         readonly delete?: never;
@@ -3945,7 +3966,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            readonly role: "owner" | "editor" | "viewer";
+            readonly role: "owner" | "admin" | "editor" | "viewer";
             /** Member Count */
             readonly member_count: number;
             /** Auto Join Domains */
@@ -4001,7 +4022,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            readonly role: "owner" | "editor" | "viewer";
+            readonly role: "owner" | "admin" | "editor" | "viewer";
             /**
              * Joined At
              * Format: date-time
@@ -4028,7 +4049,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            readonly role: "owner" | "editor" | "viewer";
+            readonly role: "owner" | "admin" | "editor" | "viewer";
             /** Accepted */
             readonly accepted: boolean;
             /** Accepted At */
@@ -4042,7 +4063,32 @@ export interface components {
              * Role
              * @enum {string}
              */
-            readonly role: "owner" | "editor" | "viewer";
+            readonly role: "owner" | "admin" | "editor" | "viewer";
+        };
+        /**
+         * WorkspacePendingInviteOut
+         * @description GET /api/workspaces/{slug}/invites — one invite nobody has acted on.
+         */
+        readonly WorkspacePendingInviteOut: {
+            /** Email */
+            readonly email: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            readonly role: "owner" | "admin" | "editor" | "viewer";
+            /** Invited By Email */
+            readonly invited_by_email: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            readonly expires_at: string;
         };
         /**
          * InvitePreviewOut
@@ -4057,7 +4103,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            readonly role: "owner" | "editor" | "viewer";
+            readonly role: "owner" | "admin" | "editor" | "viewer";
             /** Invited By Email */
             readonly invited_by_email: string;
             /** Email */
@@ -4079,7 +4125,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            readonly role: "owner" | "editor" | "viewer";
+            readonly role: "owner" | "admin" | "editor" | "viewer";
         };
         /**
          * CostBreakdownOut
@@ -7566,6 +7612,28 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["WorkspaceInviteOut"];
+                };
+            };
+        };
+    };
+    readonly apps_workspaces_api_list_invites: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": readonly components["schemas"]["WorkspacePendingInviteOut"][];
                 };
             };
         };
