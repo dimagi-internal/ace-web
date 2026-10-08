@@ -27,6 +27,7 @@ from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
+from canopy_sdk.ondemand import OnDemandError, OnDemandInstance
 from django.core.cache import cache as _cache
 
 from . import ssm
@@ -326,6 +327,7 @@ class EmulatorController:
         self._ec2: Any = None
         self._ssm: Any = None
         self._s3: Any = None
+        self._ondemand: OnDemandInstance | None = None
 
     # ── Lazy clients ─────────────────────────────────────────────
 
@@ -346,6 +348,25 @@ class EmulatorController:
         if self._s3 is None:
             self._s3 = boto3.client("s3", region_name=self.region)
         return self._s3
+
+    @property
+    def _od(self) -> OnDemandInstance:
+        """Shared on-demand instance helper (``canopy_sdk.ondemand``).
+
+        Built lazily from this controller's own (cached, injectable) boto3
+        clients so EC2 stop / status-wait behaviour lives in the SDK while
+        the Android-specific emulator logic stays here.
+        """
+        if self._ondemand is None:
+            self._ondemand = OnDemandInstance(
+                self.instance_id,
+                self.region,
+                "ace-mobile",
+                ready_file=_EMULATOR_READY_MARKER,
+                ec2=self.ec2,
+                ssm=self.ssm,
+            )
+        return self._ondemand
 
     # ── Lifecycle ───────────────────────────────────────────────
 
@@ -479,9 +500,9 @@ class EmulatorController:
 
     def stop(self) -> StoppedState:
         try:
-            self.ec2.stop_instances(InstanceIds=[self.instance_id])
-        except ClientError as e:
-            raise MobileError(f"ec2.stop_instances failed: {e}") from e
+            self._od.stop()
+        except OnDemandError as e:
+            raise MobileError(str(e)) from e
         return StoppedState(
             instance_id=self.instance_id,
             state="stopping",
@@ -1305,37 +1326,15 @@ fi
             raise MobileError(f"ec2.start_instances failed: {e}") from e
 
     def _wait_for_ec2_ok(self, timeout_sec: int) -> None:
-        """Poll ``describe_instance_status`` until ``Status == 'ok'``.
-
-        Means both the system reachability and instance reachability
-        checks have passed *and* SSM agent is running.
-        """
-        deadline = time.monotonic() + timeout_sec
-        while time.monotonic() < deadline:
-            try:
-                resp = self.ec2.describe_instance_status(
-                    InstanceIds=[self.instance_id],
-                    IncludeAllInstances=True,
-                )
-            except ClientError as e:
-                raise MobileError(
-                    f"ec2.describe_instance_status failed: {e}"
-                ) from e
-            statuses = resp.get("InstanceStatuses") or []
-            if statuses:
-                inst_state = (statuses[0].get("InstanceState") or {}).get("Name")
-                inst_status = (statuses[0].get("InstanceStatus") or {}).get("Status")
-                sys_status = (statuses[0].get("SystemStatus") or {}).get("Status")
-                if (
-                    inst_state == "running"
-                    and inst_status == "ok"
-                    and sys_status == "ok"
-                ):
-                    return
-            time.sleep(5.0)
-        raise EmulatorBootTimeout(
-            f"instance {self.instance_id} did not reach 'ok' in {timeout_sec}s"
-        )
+        """Wait until EC2 status checks pass (system + instance reachability,
+        which also means the SSM agent is up). Delegates to the shared
+        on-demand helper; a failed or timed-out wait is a boot timeout."""
+        try:
+            self._od._wait_ec2_ok(timeout_sec)  # noqa: SLF001
+        except OnDemandError as e:
+            raise EmulatorBootTimeout(
+                f"instance {self.instance_id} did not reach 'ok' in {timeout_sec}s: {e}"
+            ) from e
 
     def _wait_for_emulator(self) -> None:
         """Probe the in-VM AVD until cold-boot staging completes.

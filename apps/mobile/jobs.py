@@ -28,6 +28,11 @@ jobs don't accumulate indefinitely. The singleton lock is the sole
 arbiter of "is the runner busy"; this module just stores the job
 result for the polling endpoint to read.
 
+Storage is ``canopy_sdk.ondemand.JobStore``; this module keeps the original
+function names, the ``JobRecord`` wire shape (``owner`` always present) and the
+original ``mobile:job:`` key prefix so jobs in flight across a deploy stay
+readable.
+
 Thread safety: each request handler spawns a separate Python thread.
 The singleton lock prevents two recipe jobs from running concurrently
 on the same EC2 instance — so even though Python threads share state,
@@ -35,7 +40,6 @@ the controller calls are serialized at the AWS layer.
 """
 from __future__ import annotations
 
-import json
 import secrets
 import threading
 import time
@@ -45,6 +49,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import redis as _redis_sync
+from canopy_sdk.ondemand import Job, JobStore
 from django.conf import settings
 
 JOB_KEY_PREFIX = "mobile:job:"
@@ -124,24 +129,28 @@ def make_job_id() -> str:
     return secrets.token_hex(8)
 
 
-def _key(job_id: str) -> str:
-    return f"{JOB_KEY_PREFIX}{job_id}"
+def _store() -> JobStore:
+    # Built per call so tests that monkeypatch ``_get_redis`` are honoured.
+    # ``prefix=`` pins the pre-extraction key (the SDK default differs).
+    return JobStore(
+        _get_redis(), "mobile", ttl_s=JOB_TTL_SECONDS, prefix=JOB_KEY_PREFIX
+    )
+
+
+def _to_record(job: Job) -> JobRecord:
+    return JobRecord.from_dict({**job.to_dict(), "owner": job.owner or ""})
 
 
 def write(job: JobRecord) -> None:
     """Persist (or overwrite) a job record. Always refreshes the TTL so
     a long-running job's record can't expire mid-execution."""
-    r = _get_redis()
-    r.set(_key(job.job_id), json.dumps(job.to_dict()), ex=JOB_TTL_SECONDS)
+    _store()._write(Job.from_dict(job.to_dict()))  # noqa: SLF001
 
 
 def read(job_id: str) -> JobRecord | None:
     """Look up a job by id. Returns None if missing or expired."""
-    r = _get_redis()
-    raw = r.get(_key(job_id))
-    if not raw:
-        return None
-    return JobRecord.from_dict(json.loads(raw))
+    job = _store().get(job_id)
+    return _to_record(job) if job is not None else None
 
 
 def _iso_now() -> str:
@@ -167,14 +176,7 @@ def submit(
     Returns the initial JobRecord so the view can echo back the
     ``job_id`` to the client.
     """
-    job = JobRecord(
-        job_id=make_job_id(),
-        operation=operation,
-        status="running",
-        owner=owner,
-        started_at=_iso_now(),
-    )
-    write(job)
+    job = _to_record(_store().create(operation, owner=owner))
     # daemon=True so the thread doesn't keep the worker process alive
     # past container shutdown — the singleton lock TTL will eventually
     # free up downstream state if a container is killed mid-job.
@@ -183,29 +185,26 @@ def submit(
     return job
 
 
-def mark_completed(job_id: str, result: Any) -> None:
-    """Mark a job complete and store its result envelope. Idempotent.
-
-    If the job record has expired (operator polled after >1h), we
-    re-create it as a completed record with the same id so the final
-    poll can still see the result rather than a 404 — operator gets
-    closure even on a slow re-poll.
-    """
-    existing = read(job_id)
-    if existing is None:
-        existing = JobRecord(
-            job_id=job_id,
-            operation="run_recipe",
-            status="completed",
-            owner="(expired)",
-            started_at=_iso_now(),
+def _ensure_exists(job_id: str, status: str) -> None:
+    """Re-create an expired record (operator polled after >1h) so the
+    final poll sees the outcome instead of a 404. Mirrors the SDK's own
+    expired-record fallback but keeps this API's operation/owner markers."""
+    if read(job_id) is None:
+        write(
+            JobRecord(
+                job_id=job_id,
+                operation="run_recipe",
+                status=status,
+                owner="(expired)",
+                started_at=_iso_now(),
+            )
         )
-    existing.status = "completed"
-    existing.completed_at = _iso_now()
-    existing.result = result
-    existing.error = None
-    existing.error_code = None
-    write(existing)
+
+
+def mark_completed(job_id: str, result: Any) -> None:
+    """Mark a job complete and store its result envelope. Idempotent."""
+    _ensure_exists(job_id, "completed")
+    _store().complete(job_id, result)
 
 
 def mark_failed(
@@ -222,26 +221,13 @@ def mark_failed(
     block. Tracebacks help diagnose unexpected exceptions (the typed
     MobileError messages are already operator-actionable on their own).
     """
-    existing = read(job_id)
-    if existing is None:
-        existing = JobRecord(
-            job_id=job_id,
-            operation="run_recipe",
-            status="failed",
-            owner="(expired)",
-            started_at=_iso_now(),
-        )
-    existing.status = "failed"
-    existing.completed_at = _iso_now()
+    _ensure_exists(job_id, "failed")
     msg = error
     if include_traceback:
         tb = traceback.format_exc()
         if tb and tb != "NoneType: None\n":
             msg = f"{error}\n\n{tb}"
-    existing.error = msg
-    existing.error_code = error_code
-    existing.result = None
-    write(existing)
+    _store().fail(job_id, msg, error_code)
 
 
 def wait_for_completion(
