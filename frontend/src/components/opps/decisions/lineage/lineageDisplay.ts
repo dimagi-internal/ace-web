@@ -8,9 +8,14 @@ import type {
 /**
  * Words for decision lineage, in one place, for both readers:
  *
- * - a MEMBER reads run ids ("carried from dimagi-team / 20260925-1536 unchanged");
- * - an outside reader (`plain`) reads versions and dates ("carried over
- *   unchanged from the 25 Sep 2026 version") — no run plumbing.
+ * - a MEMBER reads run ids ("decided by ACE in run 20260925-1536 (25 Sep),
+ *   carried unchanged");
+ * - an outside reader (`plain`) reads versions and dates ("decided by ACE in
+ *   the 25 Sep 2026 version, carried over unchanged") — no run plumbing.
+ *
+ * Every origin says WHO decided and WHERE (run + date). A clone is the same
+ * run copied into another workspace, never "an earlier run": it is described
+ * only as "copied into this workspace on <date>".
  */
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -20,6 +25,13 @@ export function formatDay(iso: string | null | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
   if (!m) return "";
   return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}`;
+}
+
+/** "2026-09-25" → "25 Sep" — the short form badges use. */
+export function shortDay(iso: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  if (!m) return "";
+  return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] ?? m[2]}`;
 }
 
 /** The name a chain step reads under. */
@@ -43,8 +55,14 @@ export function stepLabel(step: LineageStep, head: LineageStep | undefined, plai
 export function viaPhrase(step: LineageStep, plain: boolean): string {
   const stage = step.stage;
   switch (step.via) {
-    case "cloned":
-      return plain ? "a copy of" : "cloned from";
+    case "cloned": {
+      // A clone is the same run, copied — not a run that came after it.
+      const on = step.copied_date ? ` on ${formatDay(step.copied_date)}` : "";
+      if (plain) return `copied${on} from`;
+      const into =
+        step.position === 0 || !step.workspace ? "this workspace" : step.workspace;
+      return `copied into ${into}${on} from`;
+    }
     case "forked":
       if (plain) return stage ? `redone from the ${stage} stage, building on` : "building on";
       return stage ? `forked at ${stage} from` : "forked from";
@@ -56,7 +74,11 @@ export function viaPhrase(step: LineageStep, plain: boolean): string {
   }
 }
 
-/** The filter buckets — "reaffirmed" reads as carried (the value came forward). */
+/**
+ * The filter buckets. "decided" reads as new (decided in this run — a clone
+ * and its source are one run); "reaffirmed" reads as carried (the value came
+ * forward). Every kind lands in exactly one bucket, so the counts add up.
+ */
 export type LineageFilter = "all" | "carried" | "new" | "changed" | "human";
 
 export interface EditLike {
@@ -78,6 +100,7 @@ export function filterBucket(origin: DecisionOrigin | undefined, edit?: EditLike
   if (humanEdit(edit)) return "human";
   if (!origin) return "new";
   if (origin.kind === "reaffirmed") return "carried";
+  if (origin.kind === "decided") return "new";
   return origin.kind;
 }
 
@@ -149,50 +172,94 @@ export function originBadge(
     };
   }
   if (!origin) return null;
-  const from = origin.from_position != null ? lineage.chain[origin.from_position] : undefined;
+  if (origin.kind === "human") {
+    const who = origin.by || "a person";
+    const when = formatDay(origin.at);
+    return {
+      label: `set by ${who}${when ? ` on ${when}` : ""}`,
+      tone: "sky",
+      title: "A person ruled on this — an override or a human decision",
+    };
+  }
   const head = lineage.chain[0];
-  const fromName = plain || !origin.from_run
-    ? (from?.date ? `the ${formatDay(from.date)} version` : "an earlier version")
-    : from && head && from.workspace && from.workspace !== head.workspace
-      ? `${from.workspace} / ${origin.from_run}`
-      : origin.from_run;
-  switch (origin.kind) {
-    case "human": {
-      const who = origin.by || "a person";
-      const when = formatDay(origin.at);
-      return {
-        label: `set by ${who}${when ? ` on ${when}` : ""}`,
-        tone: "sky",
-        title: "A person ruled on this — an override or a human decision",
-      };
+  const inPos =
+    origin.in_position ?? (origin.kind === "decided" ? origin.from_position : 0) ?? 0;
+  const inStep = lineage.chain[inPos];
+  const fromStep = origin.from_position != null ? lineage.chain[origin.from_position] : undefined;
+
+  /** "this run (4 Oct)" / "run 20260925-1536 (25 Sep)" — or, plain, a version. */
+  const ref = (step: LineageStep | undefined, runId: string | null | undefined): string => {
+    if (plain || !runId) {
+      if (step?.position === 0) return "this version";
+      return step?.date ? `the ${formatDay(step.date)} version` : "an earlier version";
     }
+    const day = shortDay(step?.date);
+    const name = step?.position === 0 ? "this run" : `run ${runId}`;
+    return day ? `${name} (${day})` : name;
+  };
+  /** The full name for a tooltip: workspace, run id and day. */
+  const full = (step: LineageStep | undefined, runId: string | null | undefined): string => {
+    if (plain || !runId) return ref(step, runId);
+    const ws = step?.workspace ? `${step.workspace} / ` : "";
+    const day = formatDay(step?.date);
+    return `${ws}${runId}${day ? ` (${day})` : ""}`;
+  };
+  const inRun = origin.in_run ?? (inPos === 0 ? head?.run_id : origin.from_run);
+  const copied = head?.via === "cloned" ? head : undefined;
+  const copyNote = copied
+    ? ` This run is a copy of it${copied.copied_date ? `, made on ${formatDay(copied.copied_date)}` : ""} — copying is not a decision.`
+    : "";
+
+  switch (origin.kind) {
     case "new":
       if (!hasAncestors(lineage)) return null;
       return {
-        label: plain ? "new in this version" : "new in this run",
+        label: `decided by ACE in ${ref(head, head?.run_id)}`,
         tone: "violet",
-        title: "No earlier run has this decision",
+        title: "No earlier run has this decision: ACE decided it here",
+      };
+    case "decided":
+      return {
+        label: `decided by ACE in ${ref(inStep, inRun)}`,
+        tone: "neutral",
+        title: `ACE decided this in ${full(inStep, inRun)}.${copyNote}`,
       };
     case "carried":
       return {
-        label: plain ? `carried over unchanged from ${fromName}` : `carried from ${fromName} unchanged`,
+        label: plain
+          ? `decided by ACE in ${ref(fromStep, origin.from_run)}, carried over unchanged`
+          : `decided by ACE in ${ref(fromStep, origin.from_run)}, carried unchanged`,
         tone: "neutral",
-        title: "Copied forward from an earlier run with the same value",
+        title: `ACE decided this in ${full(fromStep, origin.from_run)}; every run since kept the same answer`,
       };
     case "reaffirmed":
       return {
-        label: plain ? "re-affirmed in this version" : `re-affirmed (same as ${fromName})`,
+        label: plain
+          ? `re-checked in ${ref(inStep, inRun)}, unchanged`
+          : `re-decided in ${ref(inStep, inRun)}, same answer as ${ref(fromStep, origin.from_run)}`,
         tone: "emerald",
-        title: "This run decided it again and reached the same value",
+        title: `A re-run in ${full(inStep, inRun)} decided this again and reached the same answer as ${full(fromStep, origin.from_run)}`,
       };
-    case "changed":
+    case "changed": {
+      const was = origin.previous_value ? ` Was: ${origin.previous_value}` : "";
+      if (origin.on_copy) {
+        const day = (plain ? formatDay : shortDay)(copied?.copied_date);
+        return {
+          label: plain
+            ? "changed by ACE when this copy was made"
+            : `changed by ACE when copied into this workspace${day ? ` (${day})` : ""}`,
+          tone: "amber",
+          title: `Copying ${full(fromStep, origin.from_run)} into this workspace changed this answer.${was}`,
+        };
+      }
       return {
-        label: plain ? "changed in this version" : `carried from ${fromName}, changed here`,
+        label: plain
+          ? `changed by ACE in ${ref(inStep, inRun)}`
+          : `changed by ACE in ${ref(inStep, inRun)}, was different in ${ref(fromStep, origin.from_run)}`,
         tone: "amber",
-        title: origin.previous_value
-          ? `Was: ${origin.previous_value}`
-          : "An earlier run had a different value",
+        title: `ACE decided this differently in ${full(inStep, inRun)} than in ${full(fromStep, origin.from_run)}.${was}`,
       };
+    }
     default:
       return null;
   }

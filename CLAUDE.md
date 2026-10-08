@@ -639,15 +639,22 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   /api/opps/public/<ws>/<opp>/runs/<run>/lineage[?scope=opp]`): the chain this
   run was built from — `clone.from` (wins: a clone's copied `forked_from` names
   the SOURCE's parent), else `seeded_from` / `forked_from` + `forked_from_phase`,
-  else a `RunClone` row — and per live decision an origin (`new` / `carried` /
-  `changed` / `reaffirmed` / `human`) plus its value in each earlier run. Rows
+  else a `RunClone` row — and per live decision an origin (`new` / `decided` /
+  `carried` / `changed` / `reaffirmed` / `human`) plus its value in each earlier
+  run. **A clone hop is transparent, not a run** (owner, 2026-10-08): a clone's
+  row takes its SOURCE's origin (a fresh source → `decided` in that run, never
+  "carried"), the clone's Connect re-mints (`<id>-<source-ws>` superseded by a
+  same-value `<id>`) are not an event, `reaffirmed` means only a same-workspace
+  re-run re-emitting a value, and a clone + its source are ONE history entry
+  (`copied_to`). `scope=opp` reads the runs of every workspace the chain
+  crosses — a clone's history lives in its source workspace. Rows
   match by id, then an id the log marks as replaced by it (`superseded_by`
   chains: `…-payment-amount` → `…-2208` → `…-spark`), then the retired
   `<id>-<run>` shape; anything else is "no earlier match", never guessed.
   Shaped per viewer: outsiders get the strip and badges in plain words (no run
   ids, no history); members get ids, history and `scope=opp`, and links only
   into workspaces they belong to (a clone's source elsewhere is a label). Core
-  cached 120s (`opp-lineage:v1:…`). UI: `components/opps/decisions/lineage/`
+  cached 120s (`opp-lineage:v2:…`). UI: `components/opps/decisions/lineage/`
   — strip + filter on the Workbench run page (`LineageProvider` feeds the
   Phases decisions panels) and on the summary's Decisions tab.
   `load_run_compare` checks the loaded run id matches the requested one, because

@@ -2506,7 +2506,7 @@ LINEAGE_CACHE_SECONDS = 120
 
 
 def _lineage_cache_key(workspace: str, slug: str, run_id: str, scope: str) -> str:
-    return f"opp-lineage:v1:{scope}:{workspace}:{slug}:{run_id}"
+    return f"opp-lineage:v2:{scope}:{workspace}:{slug}:{run_id}"
 
 
 @public_summary_router.get(
@@ -2523,7 +2523,7 @@ def public_decision_lineage(
 ) -> HttpResponse:
     """The run's lineage chain (the run it was forked / seeded / cloned from,
     and so on back), and for every live decision row its origin — ``new`` /
-    ``carried`` / ``changed`` / ``reaffirmed`` / ``human`` — plus, for
+    ``decided`` / ``carried`` / ``changed`` / ``reaffirmed`` / ``human`` — plus, for
     members, its value in each earlier run (``apps/opps/decision_lineage``).
 
     Served on the public path because the public run summary renders it, the

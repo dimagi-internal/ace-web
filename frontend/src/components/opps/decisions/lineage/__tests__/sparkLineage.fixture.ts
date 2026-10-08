@@ -1,8 +1,9 @@
 /**
  * Real `GET …/lineage` payloads for spark/spark-facilitator/20261001-2208 (a
  * clone of dimagi-team's run, itself forked twice), built by the backend from
- * the real decisions.yaml files on 2026-10-04 and trimmed to six decisions.
- * Regenerate rather than hand-edit.
+ * the trimmed real decisions.yaml files in `apps/opps/tests/fixtures/lineage/`
+ * and trimmed to six decisions. Regenerate rather than hand-edit:
+ * `scripts/regen_lineage_fixtures.py`.
  */
 import type { DecisionLineage } from "@/api/lineage";
 
@@ -16,13 +17,14 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "at_phase": "",
       "stage": "",
       "date": "2026-10-01",
+      "copied_date": "",
       "readable": true,
       "workbench_url": "/ace/w/spark/opps/spark-facilitator/runs/20261001-2208",
       "summary_url": "/ace/opps/spark/spark-facilitator/runs/20261001-2208/summary",
       "workspace": "spark",
       "opp": "spark-facilitator",
       "run_id": "20261001-2208",
-      "decisions": 198
+      "decisions": 18
     },
     {
       "position": 1,
@@ -30,13 +32,14 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "at_phase": "commcare-setup",
       "stage": "app build",
       "date": "2026-10-01",
+      "copied_date": "",
       "readable": true,
       "workbench_url": null,
       "summary_url": null,
       "workspace": "dimagi-team",
       "opp": "spark-facilitator",
       "run_id": "20261001-2208",
-      "decisions": 170
+      "decisions": 14
     },
     {
       "position": 2,
@@ -44,13 +47,14 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "at_phase": "synthetic-data-and-workflows",
       "stage": "demo",
       "date": "2026-09-26",
+      "copied_date": "",
       "readable": true,
       "workbench_url": null,
       "summary_url": null,
       "workspace": "dimagi-team",
       "opp": "spark-facilitator",
       "run_id": "20260926-1800",
-      "decisions": 117
+      "decisions": 8
     },
     {
       "position": 3,
@@ -58,13 +62,14 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "at_phase": "",
       "stage": "",
       "date": "2026-09-25",
+      "copied_date": "",
       "readable": true,
       "workbench_url": null,
       "summary_url": null,
       "workspace": "dimagi-team",
       "opp": "spark-facilitator",
       "run_id": "20260925-1536",
-      "decisions": 117
+      "decisions": 8
     }
   ],
   "origins": {
@@ -73,16 +78,24 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "from_position": 3,
       "from_run": "20260925-1536",
       "from_date": "2026-09-25",
+      "in_position": 1,
+      "in_run": "20261001-2208",
+      "in_date": "2026-10-01",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
     },
     "learn-latitude-starting-quiz": {
-      "kind": "reaffirmed",
-      "from_position": 1,
-      "from_run": "20261001-2208",
-      "from_date": "2026-10-01",
-      "previous_value": "",
+      "kind": "changed",
+      "from_position": 2,
+      "from_run": "20260926-1800",
+      "from_date": "2026-09-26",
+      "in_position": 1,
+      "in_run": "20261001-2208",
+      "in_date": "2026-10-01",
+      "on_copy": false,
+      "previous_value": "6-item non-gating pre-test added",
       "by": "",
       "at": ""
     },
@@ -91,6 +104,10 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "from_position": null,
       "from_run": "",
       "from_date": "",
+      "in_position": null,
+      "in_run": null,
+      "in_date": "",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -100,6 +117,10 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "from_position": 1,
       "from_run": "20261001-2208",
       "from_date": "2026-10-01",
+      "in_position": 0,
+      "in_run": "20261001-2208",
+      "in_date": "2026-10-01",
+      "on_copy": true,
       "previous_value": "Reuse e7ca0792 (MWK)",
       "by": "",
       "at": ""
@@ -109,6 +130,10 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "from_position": 3,
       "from_run": "20260925-1536",
       "from_date": "2026-09-25",
+      "in_position": 1,
+      "in_run": "20261001-2208",
+      "in_date": "2026-10-01",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -118,6 +143,10 @@ export const MEMBER_LINEAGE: DecisionLineage = {
       "from_position": null,
       "from_run": "",
       "from_date": "",
+      "in_position": 0,
+      "in_run": "20261001-2208",
+      "in_date": "2026-10-01",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -125,9 +154,10 @@ export const MEMBER_LINEAGE: DecisionLineage = {
   },
   "counts": {
     "new": 1,
-    "carried": 76,
-    "changed": 2,
-    "reaffirmed": 38,
+    "decided": 0,
+    "carried": 1,
+    "changed": 4,
+    "reaffirmed": 1,
     "human": 1
   },
   "histories": {
@@ -187,26 +217,14 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "by": "",
         "at": "",
         "reason": "Matches Spark's own app. Translations are ACE-authored and needs-review; native review is a downstream obligation.",
+        "copied_to": [
+          {
+            "workspace": "spark",
+            "date": ""
+          }
+        ],
+        "current": true,
         "linked": false
-      },
-      {
-        "workspace": "spark",
-        "opp": "spark-facilitator",
-        "run_id": "20261001-2208",
-        "date": "2026-10-01",
-        "in_lineage": true,
-        "readable": true,
-        "found": true,
-        "row_id": "working-language",
-        "match": "id",
-        "value": "English source plus Chichewa (nya) and Tumbuka (tum)",
-        "plain_value": "",
-        "status": "ai-default",
-        "superseded": false,
-        "by": "",
-        "at": "",
-        "reason": "Matches Spark's own app. Translations are ACE-authored and needs-review; native review is a downstream obligation.",
-        "linked": true
       }
     ],
     "learn-latitude-starting-quiz": [
@@ -226,7 +244,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "ACE's assessment-gate standard wants a baseline distinct from the gate; it carries learn_module only, never connect.assessment, so it cannot unlock Deliver. Spo",
+        "reason": "ACE's assessment-gate standard wants a baseline distinct from the gate; it carries learn_module only, never connect.assessment, so it cannot unlock Deliver. Spot-check: Learn app \u203a Before you start \u203a Starting quiz.",
         "linked": false
       },
       {
@@ -245,7 +263,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "ACE's assessment-gate standard wants a baseline distinct from the gate; it carries learn_module only, never connect.assessment, so it cannot unlock Deliver. Spo",
+        "reason": "ACE's assessment-gate standard wants a baseline distinct from the gate; it carries learn_module only, never connect.assessment, so it cannot unlock Deliver. Spot-check: Learn app \u203a Before you start \u203a Starting quiz.",
         "linked": false
       },
       {
@@ -264,27 +282,15 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "ACE's assessment-gate standard requires a baseline bank distinct from the gate; it carries learn_module only, never connect.assessment (ace#1131). Spot-check: L",
+        "reason": "ACE's assessment-gate standard requires a baseline bank distinct from the gate; it carries learn_module only, never connect.assessment (ace#1131). Spot-check: Learn app \u203a Before you start \u203a Starting quiz.",
+        "copied_to": [
+          {
+            "workspace": "spark",
+            "date": ""
+          }
+        ],
+        "current": true,
         "linked": false
-      },
-      {
-        "workspace": "spark",
-        "opp": "spark-facilitator",
-        "run_id": "20261001-2208",
-        "date": "2026-10-01",
-        "in_lineage": true,
-        "readable": true,
-        "found": true,
-        "row_id": "learn-latitude-starting-quiz",
-        "match": "id",
-        "value": "6-item non-gating starting quiz",
-        "plain_value": "",
-        "status": "ai-default",
-        "superseded": false,
-        "by": "",
-        "at": "",
-        "reason": "ACE's assessment-gate standard requires a baseline bank distinct from the gate; it carries learn_module only, never connect.assessment (ace#1131). Spot-check: L",
-        "linked": true
       }
     ],
     "sol-devices-and-system-of-record-2208": [
@@ -304,7 +310,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Standing operator directive (2026-09-08) requires an all-in per-verified-unit rate with no separately-funded line and an explicit worker-vs-organisation split (",
+        "reason": "Standing operator directive (2026-09-08) requires an all-in per-verified-unit rate with no separately-funded line and an explicit worker-vs-organisation split (ace#2265). The PDD band (MWK 5,000-10,000 to the CBF + MWK 3,000 organisation floor, both PROPOSED; Phase 4 payment unit 7,500 + 3,000) is shown as an indicative all-in MWK 8,000-13,000. This deviates from work order \u00a72 / PDD \u00a712, which let the partner cost device provision separately; the listing instead asks how any device gap is carried inside the rate. The work order text should be reconciled at contract execution.",
         "linked": false
       },
       {
@@ -323,7 +329,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Standing operator directive (2026-09-08) requires an all-in per-verified-unit rate with no separately-funded line and an explicit worker-vs-organisation split (",
+        "reason": "Standing operator directive (2026-09-08) requires an all-in per-verified-unit rate with no separately-funded line and an explicit worker-vs-organisation split (ace#2265). The PDD band (MWK 5,000-10,000 to the CBF + MWK 3,000 organisation floor, both PROPOSED; Phase 4 payment unit 7,500 + 3,000) is shown as an indicative all-in MWK 8,000-13,000. This deviates from work order \u00a72 / PDD \u00a712, which let the partner cost device provision separately; the listing instead asks how any device gap is carried inside the rate. The work order text should be reconciled at contract execution.",
         "linked": false
       },
       {
@@ -342,7 +348,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Standing operator directives: devices, data and system of record are ASSUMED, never asked (2026-09-26), and the rate is ALL-IN with an explicit worker vs commod",
+        "reason": "Standing operator directives: devices, data and system of record are ASSUMED, never asked (2026-09-26), and the rate is ALL-IN with an explicit worker vs commodity split and no separately-funded line (2026-09-08, ace#2265). The PDD \u00a712 / work order \u00a72 device go/no-go and separately-costed device plan, and the instead-of/in-addition-to filing ask, are therefore omitted from the listing. Indicative all-in band shown as MWK 8,000-13,000 (CBF 5,000-10,000 + organisation 3,000, both PROPOSED). Work order \u00a72/\u00a76.1 text should be reconciled at contract execution.",
         "linked": false
       },
       {
@@ -361,7 +367,8 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Operator decision 2026-10-04 (Jonathan Jackson): we want to understand what each applicant will do about devices. The listing now asks how many CBFs already hav",
+        "reason": "Operator decision 2026-10-04 (Jonathan Jackson): we want to understand what each applicant will do about devices. The listing now asks how many CBFs already have a working smartphone and mobile data and, for the rest, a costed device plan stated separately from the per-meeting rate; Dimagi agrees that cost at contract execution. This overrides the 2026-09-26 'devices assumed, never asked' directive for this pilot only, because the PDD's own evidence (Spark's tablet-and-file-share programme) argues against assuming smartphones. The work order \u00a72/\u00a76.1 follows. Whether CBFs file instead of or in ",
+        "current": true,
         "linked": true
       }
     ],
@@ -382,7 +389,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Only domain+archetype match was a115e4f2, whose currency (USD) diverges from the PDD's MWK; the operator chose replacement. Spot-check: opp.yaml connect.program",
+        "reason": "Only domain+archetype match was a115e4f2, whose currency (USD) diverges from the PDD's MWK; the operator chose replacement. Spot-check: opp.yaml connect.program.id.",
         "linked": false
       },
       {
@@ -401,7 +408,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Only domain+archetype match was a115e4f2, whose currency (USD) diverges from the PDD's MWK; the operator chose replacement. Spot-check: opp.yaml connect.program",
+        "reason": "Only domain+archetype match was a115e4f2, whose currency (USD) diverges from the PDD's MWK; the operator chose replacement. Spot-check: opp.yaml connect.program.id.",
         "linked": false
       },
       {
@@ -420,7 +427,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Unfiltered scan of ace-pm-org: 2 programs; e7ca0792 matches delivery type ace + longitudinal design, MWK/MWI per PDD §14; the other is a throwaway PM→NM probe. ",
+        "reason": "Unfiltered scan of ace-pm-org: 2 programs; e7ca0792 matches delivery type ace + longitudinal design, MWK/MWI per PDD \u00a714; the other is a throwaway PM\u2192NM probe. Description refreshed to keep 'instead of or in addition to Spark's form' open (PDD \u00a715). Budget ceiling 32,760,000 kept: \u03a3 3,276,000 over 1 opp, headroom ample. Spot-check: Connect \u203a program e7ca0792 \u203a description.",
         "linked": false
       },
       {
@@ -439,7 +446,8 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Unfiltered scan of spark-pm-org-test: 0 programs. The clone cleared opp.yaml.connect so the copy gets its own program in Spark's PM org; the source program live",
+        "reason": "Unfiltered scan of spark-pm-org-test: 0 programs. The clone cleared opp.yaml.connect so the copy gets its own program in Spark's PM org; the source program lives in ace-pm-org, outside this tenancy. Created f537601b. Spot-check: opp.yaml connect.program.id.",
+        "current": true,
         "linked": true
       }
     ],
@@ -460,7 +468,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate. Spot-check: Connect › payment unit › amount.",
+        "reason": "Band midpoint, the figure PDD \u00a710.1 uses for per-CBF earnings; replaced by the awarded rate. Spot-check: Connect \u203a payment unit \u203a amount.",
         "linked": false
       },
       {
@@ -479,7 +487,7 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate. Spot-check: Connect › payment unit › amount.",
+        "reason": "Band midpoint, the figure PDD \u00a710.1 uses for per-CBF earnings; replaced by the awarded rate. Spot-check: Connect \u203a payment unit \u203a amount.",
         "linked": false
       },
       {
@@ -498,27 +506,15 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "superseded": false,
         "by": "",
         "at": "",
-        "reason": "Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate. Spot-check: Connect › payment unit › amount.",
+        "reason": "Band midpoint, the figure PDD \u00a710.1 uses for per-CBF earnings; replaced by the awarded rate. Spot-check: Connect \u203a payment unit \u203a amount.",
+        "copied_to": [
+          {
+            "workspace": "spark",
+            "date": ""
+          }
+        ],
+        "current": true,
         "linked": false
-      },
-      {
-        "workspace": "spark",
-        "opp": "spark-facilitator",
-        "run_id": "20261001-2208",
-        "date": "2026-10-01",
-        "in_lineage": true,
-        "readable": true,
-        "found": true,
-        "row_id": "connect-latitude-payment-amount-spark",
-        "match": "id",
-        "value": "7500",
-        "plain_value": "7,500 MWK",
-        "status": "ai-default",
-        "superseded": false,
-        "by": "",
-        "at": "",
-        "reason": "Band midpoint, the figure PDD §10.1 uses for per-CBF earnings; replaced by the awarded rate. Spot-check: Connect › payment unit › amount.",
-        "linked": true
       }
     ],
     "open-question-recording-path-whole-community-group-declines": [
@@ -565,13 +561,14 @@ export const MEMBER_LINEAGE: DecisionLineage = {
         "found": true,
         "row_id": "open-question-recording-path-whole-community-group-declines",
         "match": "id",
-        "value": "Not decided — built as described",
-        "plain_value": "No way to record it yet — the meeting goes unpaid",
+        "value": "Not decided \u2014 built as described",
+        "plain_value": "No way to record it yet \u2014 the meeting goes unpaid",
         "status": "ai-default",
         "superseded": false,
         "by": "",
         "at": "",
         "reason": "",
+        "current": true,
         "linked": true
       }
     ]
@@ -580,7 +577,6 @@ export const MEMBER_LINEAGE: DecisionLineage = {
     "is_member": true
   }
 };
-
 export const OUTSIDER_LINEAGE: DecisionLineage = {
   "schema_version": 1,
   "scope": "lineage",
@@ -591,6 +587,7 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "at_phase": "",
       "stage": "",
       "date": "2026-10-01",
+      "copied_date": "",
       "readable": true,
       "workbench_url": null,
       "summary_url": null,
@@ -605,6 +602,7 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "at_phase": "",
       "stage": "app build",
       "date": "2026-10-01",
+      "copied_date": "",
       "readable": true,
       "workbench_url": null,
       "summary_url": null,
@@ -619,6 +617,7 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "at_phase": "",
       "stage": "demo",
       "date": "2026-09-26",
+      "copied_date": "",
       "readable": true,
       "workbench_url": null,
       "summary_url": null,
@@ -633,6 +632,7 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "at_phase": "",
       "stage": "",
       "date": "2026-09-25",
+      "copied_date": "",
       "readable": true,
       "workbench_url": null,
       "summary_url": null,
@@ -648,15 +648,23 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "from_position": 3,
       "from_run": null,
       "from_date": "2026-09-25",
+      "in_position": 1,
+      "in_run": null,
+      "in_date": "2026-10-01",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
     },
     "learn-latitude-starting-quiz": {
-      "kind": "reaffirmed",
-      "from_position": 1,
+      "kind": "changed",
+      "from_position": 2,
       "from_run": null,
-      "from_date": "2026-10-01",
+      "from_date": "2026-09-26",
+      "in_position": 1,
+      "in_run": null,
+      "in_date": "2026-10-01",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -666,6 +674,10 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "from_position": null,
       "from_run": null,
       "from_date": "",
+      "in_position": null,
+      "in_run": null,
+      "in_date": "",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -675,6 +687,10 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "from_position": 1,
       "from_run": null,
       "from_date": "2026-10-01",
+      "in_position": 0,
+      "in_run": null,
+      "in_date": "2026-10-01",
+      "on_copy": true,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -684,6 +700,10 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "from_position": 3,
       "from_run": null,
       "from_date": "2026-09-25",
+      "in_position": 1,
+      "in_run": null,
+      "in_date": "2026-10-01",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -693,6 +713,10 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
       "from_position": null,
       "from_run": null,
       "from_date": "",
+      "in_position": 0,
+      "in_run": null,
+      "in_date": "2026-10-01",
+      "on_copy": false,
       "previous_value": "",
       "by": "",
       "at": ""
@@ -700,9 +724,10 @@ export const OUTSIDER_LINEAGE: DecisionLineage = {
   },
   "counts": {
     "new": 1,
-    "carried": 76,
-    "changed": 2,
-    "reaffirmed": 38,
+    "decided": 0,
+    "carried": 1,
+    "changed": 4,
+    "reaffirmed": 1,
     "human": 1
   },
   "histories": {},

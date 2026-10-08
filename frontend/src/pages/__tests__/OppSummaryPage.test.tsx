@@ -1522,9 +1522,11 @@ describe("decision lineage on the Decisions tab", () => {
     renderWith({ ...BASE, decisions: DECISIONS });
     await openDecisionsTab();
     expect(await screen.findByText("This version")).toBeTruthy();
-    expect(await screen.findByText("changed in this version")).toBeTruthy();
+    expect(await screen.findByText("changed by ACE when this copy was made")).toBeTruthy();
     // "Carried over unchanged" is the norm on a copied run, so it is not drawn.
-    expect(screen.queryByText("carried over unchanged from the 25 Sep 2026 version")).toBeNull();
+    expect(
+      screen.queryByText("decided by ACE in the 25 Sep 2026 version, carried over unchanged"),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Changed 1" }));
     expect(screen.queryByText("Which working languages?")).toBeNull();
     expect(screen.getByText("Reuse the program or create one?")).toBeTruthy();
@@ -1537,7 +1539,9 @@ describe("decision lineage on the Decisions tab", () => {
     // Carried over verbatim in every run: no "evolved" history to tell, and
     // no "carried … unchanged" badge on the summary either.
     await openRow("Which working languages?");
-    expect(screen.queryByText("carried from dimagi-team / 20260925-1536 unchanged")).toBeNull();
+    expect(
+      screen.queryByText("decided by ACE in run 20260925-1536 (25 Sep), carried unchanged"),
+    ).toBeNull();
     expect(screen.queryByText("How this decision evolved")).toBeNull();
     // Create → Reuse → Create: that one did evolve.
     await openRow("Reuse the program or create one?");

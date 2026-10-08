@@ -52,8 +52,8 @@ function renderPanel(filter: LineageFilter = "all") {
 describe("DecisionsPanel lineage", () => {
   it("badges each row with where it came from", () => {
     renderPanel();
-    expect(screen.getByText("carried from dimagi-team / 20260925-1536 unchanged")).toBeTruthy();
-    expect(screen.getByText("carried from dimagi-team / 20261001-2208, changed here")).toBeTruthy();
+    expect(screen.getByText("decided by ACE in run 20260925-1536 (25 Sep), carried unchanged")).toBeTruthy();
+    expect(screen.getByText("changed by ACE when copied into this workspace")).toBeTruthy();
   });
 
   it("shows the history in the row detail when the value evolved", () => {
@@ -78,6 +78,6 @@ describe("DecisionsPanel lineage", () => {
     render(<DecisionsPanel phase="design" decisions={ROWS} />);
     fireEvent.click(screen.getByText("Decisions").closest("button")!);
     expect(screen.getByText("Which working languages?")).toBeTruthy();
-    expect(screen.queryByText(/carried from/)).toBeNull();
+    expect(screen.queryByText(/carried unchanged/)).toBeNull();
   });
 });
