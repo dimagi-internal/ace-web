@@ -2376,27 +2376,67 @@ def invalidate_snapshot(
 public_summary_router = Router(auth=None, tags=["opps-public"])
 
 
+#: Workspace roles that get the TEAM view of the run summary. Every other
+#: member — the ``viewer`` role, which is how outside partner reviewers are
+#: invited — gets the PARTNER (plain) view, the one an anonymous reader gets.
+TEAM_VIEW_ROLES = frozenset({"owner", "editor"})
+
+
+def _summary_viewer(request: HttpRequest, workspace: str) -> tuple[bool, bool]:
+    """``(is_member, plain)`` for the run summary's reader.
+
+    Two separate questions, deliberately not one:
+
+    * ``is_member`` is ACCESS — a signed-in member of this workspace, of ANY
+      role, may confirm, change and comment on decisions
+      (``_member_reviewer``). Unchanged by role.
+    * ``plain`` is PRESENTATION — which version of the page to draw. Owners
+      and editors (Dimagi's team) get run ids, grader logs, lineage history;
+      a ``viewer`` (a partner reviewer) and a non-member get the partner
+      view: orientation block, plain deep QA, lineage in plain words.
+
+    Before this, ``is_member`` decided both, so the seven Spark partner
+    reviewers — invited as ``viewer`` — were shown the team's working and
+    never saw the "About this page" orientation written for them.
+    """
+    from apps.workspaces.models import WorkspaceMembership
+
+    if not getattr(request.user, "is_authenticated", False):
+        return False, True
+    role = (
+        WorkspaceMembership.objects.filter(workspace__slug=workspace, user=request.user)
+        .values_list("role", flat=True)
+        .first()
+    )
+    if role is None:
+        return False, True
+    return True, role not in TEAM_VIEW_ROLES
+
+
 def _summary_cache_key(
-    workspace: str, slug: str, run_id: str, *, is_member: bool
+    workspace: str, slug: str, run_id: str, *, is_member: bool, plain: bool | None = None,
 ) -> str:
     """Cache key for one variant of the public summary payload.
 
-    Member and public payloads are cached separately (they differ in
-    whether the page draws ``admin only`` tags). Shared by the read path
-    and by every write that must invalidate it — a reaction that doesn't
-    show up for 60 seconds reads as a lost comment.
+    Three variants, cached separately: ``team`` (owner/editor), ``partner``
+    (a ``viewer``-role member — partner view, but may write) and ``public``
+    (not a member). Shared by the read path and by every write that must
+    invalidate it — a reaction that doesn't show up for 60 seconds reads as
+    a lost comment.
     """
-    return (
-        f"opp-summary:v3:{'member' if is_member else 'public'}"
-        f":{workspace}:{slug}:{run_id}"
-    )
+    if plain is None:
+        plain = not is_member
+    variant = "public" if not is_member else ("partner" if plain else "team")
+    return f"opp-summary:v4:{variant}:{workspace}:{slug}:{run_id}"
 
 
 def _invalidate_summary_cache(workspace: str, slug: str, run_id: str) -> None:
     from django.core.cache import cache as _cache
 
-    for member in (True, False):
-        _cache.delete(_summary_cache_key(workspace, slug, run_id, is_member=member))
+    for member, plain in ((True, False), (True, True), (False, True)):
+        _cache.delete(
+            _summary_cache_key(workspace, slug, run_id, is_member=member, plain=plain)
+        )
 
 
 @public_summary_router.get(
@@ -2415,11 +2455,12 @@ def public_opp_summary(
     no leak-prevention 404 differentiation here, the URL is the secret.
 
     Every link is served to everyone, each one declaring its own
-    ``access`` (``public`` / ``admin``). The requester's workspace
-    membership is echoed back as ``viewer.is_member`` and decides only
-    whether the page draws the ``admin only`` tag next to a gated link.
-    The two variants are cached under their own keys so the 60s cache
-    can't serve one to the other.
+    ``access`` (``public`` / ``admin``). The requester is echoed back as
+    ``viewer.is_member`` (may write) and ``viewer.plain`` (gets the partner
+    view — see ``_summary_viewer``); ``plain`` decides whether the page
+    draws the ``admin only`` tag next to a gated link. The three variants
+    are cached under their own keys so the 60s cache can't serve one to
+    another.
 
     Cached 60 seconds in the Django cache to absorb refresh storms.
     """
@@ -2434,7 +2475,7 @@ def public_opp_summary(
     from apps.opps.drive_client import get_drive_client
     from apps.opps.summary import build_summary_payload
     from apps.service_accounts.exceptions import ServiceAccountNotFound
-    from apps.workspaces.models import Workspace, WorkspaceMembership
+    from apps.workspaces.models import Workspace
 
     forward = forwarded_summary_target(workspace, slug, run_id)
     if forward is not None:
@@ -2456,13 +2497,8 @@ def public_opp_summary(
         resp["Cache-Control"] = "no-store"
         return resp
 
-    is_member = bool(
-        getattr(request.user, "is_authenticated", False)
-        and WorkspaceMembership.objects.filter(
-            workspace__slug=workspace, user=request.user
-        ).exists()
-    )
-    cache_key = _summary_cache_key(workspace, slug, run_id, is_member=is_member)
+    is_member, plain = _summary_viewer(request, workspace)
+    cache_key = _summary_cache_key(workspace, slug, run_id, is_member=is_member, plain=plain)
     cached = _cache.get(cache_key)
     if cached is not None:
         return JsonResponse(cached)
@@ -2485,6 +2521,7 @@ def public_opp_summary(
     payload = build_summary_payload(
         client, workspace=ws, opp_slug=slug, run_id=run_id,
         viewer_is_member=is_member,
+        viewer_plain=plain,
         tenancy=_opp_tenancy(ws, slug),
     )
     if payload is None:
@@ -2532,6 +2569,8 @@ def public_decision_lineage(
     gets run ids, the per-decision history, ``scope=opp`` (every run of the
     opp, not just the chain), and links — but only into workspaces they are a
     member of. A clone's source run in another workspace is a label otherwise.
+    "Member" there means an owner or editor: a ``viewer``-role member is a
+    partner reviewer and gets the plain shape (``_summary_viewer``).
     """
     from django.core.cache import cache as _cache
 
@@ -2552,8 +2591,11 @@ def public_decision_lineage(
             WorkspaceMembership.objects.filter(user=request.user)
             .values_list("workspace__slug", flat=True)
         )
-    is_member = workspace in accessible
-    if scope not in ("lineage", "opp") or not is_member:
+    is_member, plain = _summary_viewer(request, workspace)
+    # Run ids, per-decision history and ``scope=opp`` are the TEAM view; a
+    # ``viewer``-role member is a partner reviewer and reads it in plain
+    # words, like an outsider.
+    if scope not in ("lineage", "opp") or plain:
         scope = "lineage"
 
     try:
@@ -2592,7 +2634,10 @@ def public_decision_lineage(
 
     script_name = (getattr(dj_settings, "FORCE_SCRIPT_NAME", "") or "").rstrip("/")
     return JsonResponse(
-        shape_for_viewer(core, member=is_member, accessible=accessible, script_name=script_name)
+        shape_for_viewer(
+            core, member=is_member, plain=plain, accessible=accessible,
+            script_name=script_name,
+        )
     )
 
 

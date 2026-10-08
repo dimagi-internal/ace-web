@@ -289,6 +289,7 @@ export function DecisionsReview({
   reactions,
   edits,
   viewerIsMember,
+  plain = !viewerIsMember,
   onReact,
   onEdit,
   lineage = null,
@@ -301,6 +302,12 @@ export function DecisionsReview({
   edits: Record<string, PublicDecisionEdit>;
   /** A signed-in member of this workspace — the only viewer who may write. */
   viewerIsMember: boolean;
+  /**
+   * Draw the partner view (lineage in plain words, no ordinals). Separate
+   * from `viewerIsMember`: a `viewer`-role member is a partner reviewer who
+   * may still write. Defaults to "not a member".
+   */
+  plain?: boolean;
   onReact: (decisionId: string, body: ReactionSubmit) => Promise<void>;
   onEdit: (decisionId: string, body: DecisionEditSubmit) => Promise<void>;
   /** Where each decision came from across runs (`useDecisionLineage`). */
@@ -416,7 +423,7 @@ export function DecisionsReview({
           <OriginBadge
             lineage={lineage}
             id={d.id}
-            plain={!viewerIsMember}
+            plain={plain}
             edit={edits[d.id]}
             hideCarried
           />
@@ -466,7 +473,7 @@ export function DecisionsReview({
         <div className="border-l border-border pl-4">
           <LineageStrip
             lineage={lineage}
-            plain={!viewerIsMember}
+            plain={plain}
             linkTo="summary"
             className="mt-4"
             onScopeChange={onLineageScopeChange}
@@ -578,7 +585,7 @@ export function DecisionsReview({
           <PhaseSection
             key={g.key}
             group={g}
-            showOrdinal={viewerIsMember}
+            showOrdinal={!plain}
             open={!!openPhases[g.key]}
             onToggle={() =>
               setOpenPhases((prev) => ({ ...prev, [g.key]: !prev[g.key] }))

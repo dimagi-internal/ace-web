@@ -500,9 +500,23 @@ export interface OppSummaryPayload {
   // link an external reviewer can't use is the same failure as letting
   // it 404 on them, just quieter.
   workbench: { url: string; access: LinkAccess } | null;
-  // Decides only whether the page DRAWS the access tags — a member
-  // already knows which links are internal, so the tag is noise there.
-  viewer: { is_member: boolean };
+  // `is_member` is ACCESS: a signed-in member of the workspace, any role,
+  // may confirm, change and comment. `plain` is PRESENTATION: draw the
+  // partner view (orientation, plain deep QA, no run ids, access tags).
+  // Owners/editors get the team view; a `viewer`-role member — how partner
+  // reviewers are invited — and a non-member get the partner view. Older
+  // payloads lack `plain`; read it through `isPlainViewer`.
+  viewer: { is_member: boolean; plain?: boolean };
+}
+
+/**
+ * Whether to draw the PARTNER view of the summary for this reader. Server
+ * decides (`viewer.plain`, from the membership role); a payload without it
+ * predates the role split and falls back to "not a member".
+ */
+export function isPlainViewer(viewer: { is_member: boolean; plain?: boolean } | null | undefined): boolean {
+  if (!viewer) return true;
+  return viewer.plain ?? !viewer.is_member;
 }
 
 export async function getPublicOppSummary(

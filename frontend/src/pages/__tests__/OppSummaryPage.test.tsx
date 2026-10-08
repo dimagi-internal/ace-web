@@ -1073,6 +1073,37 @@ describe("OppSummaryPage", () => {
     expect(react).not.toHaveBeenCalled();
   });
 
+  // A `viewer`-role member is a partner reviewer: drawn the partner view
+  // (server sends `plain: true`) but still a member who may write.
+  const PARTNER = { viewer: { is_member: true, plain: true } };
+
+  it("gives a viewer-role member the partner view, with write access intact", async () => {
+    renderWith({
+      ...CONFLICTED,
+      ...PARTNER,
+      workbench: {
+        url: "/w/dimagi-team/opps/spark-facilitator/runs/20260813-2126",
+        access: "admin",
+      },
+    });
+    // Partner chrome: the orientation block, admin-only tags, no run id.
+    expect(await screen.findByRole("region", { name: "About this page" })).toBeTruthy();
+    expect(screen.getAllByText("admin only").length).toBeGreaterThan(0);
+    expect(screen.queryByText("run 20260813-2126")).toBeNull();
+    // Access unchanged: no sign-in prompt, and the answer is editable.
+    await openDecisionsTab();
+    expect(screen.queryByText(/Sign in to confirm, change or comment/)).toBeNull();
+    await openRow("A contested call");
+    expect(await screen.findByRole("radio", { name: /the other one/i })).toBeTruthy();
+    expect(screen.queryByText("Sign in to comment")).toBeNull();
+  });
+
+  it("gives an owner/editor (plain: false) the team view", async () => {
+    renderWith({ ...BASE, viewer: { is_member: true, plain: false } });
+    expect(await screen.findByText("run 20260813-2126")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "About this page" })).toBeNull();
+  });
+
   const EDIT = {
     decision_id: "loud-one",
     override: "the other one",
@@ -1543,6 +1574,17 @@ describe("deep QA", () => {
     is_stale: true,
   };
 
+  it("shows a viewer-role member (partner view) no grader detail", async () => {
+    renderWith({
+      ...BASE,
+      viewer: { is_member: true, plain: true },
+      deep_qa: { stages: [APPS_PASSED] },
+    });
+    await screen.findByText("Deep QA");
+    expect(screen.queryByText("Full grader detail")).toBeNull();
+    expect(screen.getByText("What the check noticed in the app:")).toBeInTheDocument();
+  });
+
   it("shows an outside reader the plain outcome and only the app findings", async () => {
     renderWith({ ...BASE, deep_qa: { stages: [APPS_PASSED] } });
     await screen.findByText("Deep QA");
@@ -1764,6 +1806,17 @@ describe("decision lineage on the Decisions tab", () => {
     fireEvent.click(await screen.findByText("History: the runs this one was built from"));
     expect(await screen.findByText("History: every run of this opportunity")).toBeTruthy();
     expect(spy).toHaveBeenLastCalledWith("dimagi-team", "spark-facilitator", "20260813-2126", "opp");
+  });
+
+  it("draws a viewer-role member's lineage in plain words, with no widening", async () => {
+    vi.spyOn(lineageApi, "getDecisionLineage").mockResolvedValue({
+      ...OUTSIDER_LINEAGE,
+      viewer: { is_member: true, plain: true },
+    });
+    renderWith({ ...BASE, viewer: { is_member: true, plain: true }, decisions: DECISIONS });
+    await openDecisionsTab();
+    expect(await screen.findByText("This version")).toBeTruthy();
+    expect(screen.queryByText("History: the runs this one was built from")).toBeNull();
   });
 
   it("renders the tab as before when lineage cannot be read", async () => {

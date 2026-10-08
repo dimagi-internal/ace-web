@@ -1377,11 +1377,12 @@ export interface paths {
          *     no leak-prevention 404 differentiation here, the URL is the secret.
          *
          *     Every link is served to everyone, each one declaring its own
-         *     ``access`` (``public`` / ``admin``). The requester's workspace
-         *     membership is echoed back as ``viewer.is_member`` and decides only
-         *     whether the page draws the ``admin only`` tag next to a gated link.
-         *     The two variants are cached under their own keys so the 60s cache
-         *     can't serve one to the other.
+         *     ``access`` (``public`` / ``admin``). The requester is echoed back as
+         *     ``viewer.is_member`` (may write) and ``viewer.plain`` (gets the partner
+         *     view — see ``_summary_viewer``); ``plain`` decides whether the page
+         *     draws the ``admin only`` tag next to a gated link. The three variants
+         *     are cached under their own keys so the 60s cache can't serve one to
+         *     another.
          *
          *     Cached 60 seconds in the Django cache to absorb refresh storms.
          */
@@ -1414,6 +1415,8 @@ export interface paths {
          *     gets run ids, the per-decision history, ``scope=opp`` (every run of the
          *     opp, not just the chain), and links — but only into workspaces they are a
          *     member of. A clone's source run in another workspace is a label otherwise.
+         *     "Member" there means an owner or editor: a ``viewer``-role member is a
+         *     partner reviewer and gets the plain shape (``_summary_viewer``).
          */
         readonly get: operations["apps_opps_api_public_decision_lineage"];
         readonly put?: never;

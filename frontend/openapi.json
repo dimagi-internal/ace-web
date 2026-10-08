@@ -4264,7 +4264,7 @@
             }
           }
         },
-        "description": "Stakeholder-facing per-run summary. AllowAny because share links\nare meant to circulate. Workspace + slug + run_id all in the URL \u2014\nno leak-prevention 404 differentiation here, the URL is the secret.\n\nEvery link is served to everyone, each one declaring its own\n``access`` (``public`` / ``admin``). The requester's workspace\nmembership is echoed back as ``viewer.is_member`` and decides only\nwhether the page draws the ``admin only`` tag next to a gated link.\nThe two variants are cached under their own keys so the 60s cache\ncan't serve one to the other.\n\nCached 60 seconds in the Django cache to absorb refresh storms.",
+        "description": "Stakeholder-facing per-run summary. AllowAny because share links\nare meant to circulate. Workspace + slug + run_id all in the URL \u2014\nno leak-prevention 404 differentiation here, the URL is the secret.\n\nEvery link is served to everyone, each one declaring its own\n``access`` (``public`` / ``admin``). The requester is echoed back as\n``viewer.is_member`` (may write) and ``viewer.plain`` (gets the partner\nview \u2014 see ``_summary_viewer``); ``plain`` decides whether the page\ndraws the ``admin only`` tag next to a gated link. The three variants\nare cached under their own keys so the 60s cache can't serve one to\nanother.\n\nCached 60 seconds in the Django cache to absorb refresh storms.",
         "tags": [
           "opps-public"
         ]
@@ -4327,7 +4327,7 @@
             }
           }
         },
-        "description": "The run's lineage chain (the run it was forked / seeded / cloned from,\nand so on back), and for every live decision row its origin \u2014 ``new`` /\n``carried`` / ``changed`` / ``reaffirmed`` / ``human`` \u2014 plus, for\nmembers, its value in each earlier run (``apps/opps/decision_lineage``).\n\nServed on the public path because the public run summary renders it, the\nway it renders the summary: anyone with the link reads the strip and the\nbadges in plain words; a signed-in member of this workspace additionally\ngets run ids, the per-decision history, ``scope=opp`` (every run of the\nopp, not just the chain), and links \u2014 but only into workspaces they are a\nmember of. A clone's source run in another workspace is a label otherwise.",
+        "description": "The run's lineage chain (the run it was forked / seeded / cloned from,\nand so on back), and for every live decision row its origin \u2014 ``new`` /\n``decided`` / ``carried`` / ``changed`` / ``reaffirmed`` / ``human`` \u2014 plus, for\nmembers, its value in each earlier run (``apps/opps/decision_lineage``).\n\nServed on the public path because the public run summary renders it, the\nway it renders the summary: anyone with the link reads the strip and the\nbadges in plain words; a signed-in member of this workspace additionally\ngets run ids, the per-decision history, ``scope=opp`` (every run of the\nopp, not just the chain), and links \u2014 but only into workspaces they are a\nmember of. A clone's source run in another workspace is a label otherwise.\n\"Member\" there means an owner or editor: a ``viewer``-role member is a\npartner reviewer and gets the plain shape (``_summary_viewer``).",
         "tags": [
           "opps-public"
         ]
