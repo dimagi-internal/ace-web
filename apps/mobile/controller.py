@@ -42,8 +42,9 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 # How long to wait for the EC2 instance + SSM agent to come ready
-# after a cold ``StartInstances`` call.
-_BOOT_HARD_TIMEOUT_SEC = 180
+# after a cold ``StartInstances`` call. A cold start measured ~232 s to
+# status ok on the m8i.xlarge (2026-10-08), so the old 180 s failed it.
+_BOOT_HARD_TIMEOUT_SEC = 420
 # How long to wait for the in-VM Android emulator cold-boot to
 # complete. ``ace-emulator-launch`` writes ``/run/ace-mobile/ready``
 # once the AVD is booted + CommCare is installed — that's the signal
