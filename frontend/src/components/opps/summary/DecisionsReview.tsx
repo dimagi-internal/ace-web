@@ -12,6 +12,7 @@ import {
   NEEDED_BY_ORDER,
   asksAnswer,
   asksConfirmation,
+  decisionDisplay,
   isDeferred,
   neededByPhrase,
 } from "@/components/opps/decisions/decisionDisplay";
@@ -99,6 +100,18 @@ export function phaseGroupLabel(d: ReviewDecision, plain: boolean): string {
 /** A row ACE recommends the reviewer confirm before launch. Live rows only. */
 export function isRecommendedConfirmation(d: ReviewDecision): boolean {
   return asksConfirmation(d);
+}
+
+/**
+ * A row ACE stated as a sentence ("About 12 facilitators, one for each of
+ * about 12 communities.") rather than as a question with an answer beside
+ * it. Within a phase these go after the questions, under "Also decided",
+ * so the column of questions reads as questions (ace-web#876 item 7).
+ */
+export function isStatement(d: ReviewDecision, edit?: PublicDecisionEdit): boolean {
+  if (d.superseded_by) return false;
+  const effective = edit?.override || d.override || d.ai_default;
+  return decisionDisplay(d, effective).valueInHeadline;
 }
 
 /** A row ACE wrote for itself, not the partner. Absent audience = partner. */
@@ -574,19 +587,37 @@ export function DecisionsReview({
               ).length
             }
           >
-            {g.rows.map((d) => (
-              <li key={d.id}>
-                {d.superseded_by ? (
-                  <ReplacedRow
-                    decision={d}
-                    open={!!openRows[d.id]}
-                    onToggle={() => toggleRow(d.id)}
-                  />
-                ) : (
-                  item(d)
-                )}
-              </li>
-            ))}
+            {(() => {
+              const row = (d: ReviewDecision) => (
+                <li key={d.id}>
+                  {d.superseded_by ? (
+                    <ReplacedRow
+                      decision={d}
+                      open={!!openRows[d.id]}
+                      onToggle={() => toggleRow(d.id)}
+                    />
+                  ) : (
+                    item(d)
+                  )}
+                </li>
+              );
+              const statements = g.rows.filter((d) => isStatement(d, edits[d.id]));
+              const questions = g.rows.filter((d) => !isStatement(d, edits[d.id]));
+              return (
+                <>
+                  {questions.map(row)}
+                  {statements.length > 0 && (
+                    <li
+                      className="bg-muted/20 px-4 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                      aria-hidden={questions.length === 0}
+                    >
+                      Also decided
+                    </li>
+                  )}
+                  {statements.map(row)}
+                </>
+              );
+            })()}
           </PhaseSection>
         ))}
       </div>
