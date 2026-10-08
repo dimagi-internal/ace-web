@@ -19,9 +19,10 @@ const BACKEND = `http://127.0.0.1:${BACKEND_PORT}`
 const BACKEND_WS = `ws://127.0.0.1:${BACKEND_PORT}`
 
 // canopy-web's local dev server, for the hosted-chat cutover. Serves at the
-// root (no FORCE_SCRIPT_NAME), so the /canopy prefix — which mirrors the
-// labs ALB tenant path (https://labs.connect.dimagi.com/canopy/) — is
-// stripped before forwarding, same idea as the /ace rewrite above.
+// root (no FORCE_SCRIPT_NAME), so the /canopy prefix — which mirrors canopy's
+// old labs ALB tenant path (labs.connect.dimagi.com/canopy/; canopy has been at
+// the root of https://canopy.dimagi.com/ since 2026-10-05) — is stripped
+// before forwarding, same idea as the /ace rewrite above.
 const CANOPY_BACKEND_PORT = process.env.CANOPY_BACKEND_PORT ?? "8000"
 const CANOPY_BACKEND = `http://127.0.0.1:${CANOPY_BACKEND_PORT}`
 
