@@ -77,7 +77,7 @@ hq_domain: connect-ace-prod
 connect_pm_org: <slug>                # program-manager org (ACE is admin)
 connect_holding_org: <slug>           # org that holds the opportunity
 ocs_team: <slug>
-labs_allowed_domains: ["@dimagi.com", "@dimagi-ai.com"]
+# labs_allowed_domains was removed 2026-10-08: Labs keeps its own Dimagi-only default.
 ```
 
 - **Every opp has one** (`OppWorkspace.tenancy`).
@@ -379,7 +379,7 @@ invite is the very last.
        space holds only this tenancy's apps).
      - Connect: `connect_add_org_member` (viewer).
      - OCS: **no account** — the bot's public link goes in the invite email.
-     - Labs: `labs_allowed_domains` already covers access.
+     - Labs: not widened (field removed 2026-10-08; Labs stays Dimagi-only).
    - Then the ace-web workspace invite (A), with an email that carries the
      "Log in with CommCare HQ first" steps.
 5. **Record.**

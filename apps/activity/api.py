@@ -113,7 +113,7 @@ def get_workspace_activity(
 ) -> dict:
     """Aggregate one row per opp's most recent run, with source hints.
 
-    Module-level so contract tests / Slack handlers can monkeypatch."""
+    Module-level so contract tests can monkeypatch."""
     import datetime as dt
 
     from apps.activity.workspace_activity import list_workspace_activity

@@ -3,7 +3,7 @@
 Session + Message are NOT chat-only: they're the record of every assistant
 turn ACE drives, whether from a human typing (retired — see canopy-web) or a
 programmatic run (``apps.opps.api::seeded_run``, the ``drive_turn`` mgmt
-command, Slack-triggered runs). turn_driver.py is the shared execution path
+command). turn_driver.py is the shared execution path
 for both. See the PR that retired the interactive chat UI (apps/sessions/
 consumers.py, drafts.py, presence.py, routing.py, and the Draft/ShareToken
 models) for why this app is not a "legacy chat app" in the narrow sense.

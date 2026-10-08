@@ -1,8 +1,7 @@
 """Workspace Activity aggregator — 'what's running across the workspace right now?'
 
 A single unified list of recently-touched runs, one row per opp's most
-recent run. Used by both ace-web's Activity page and Slack's
-`/ace activity` command.
+recent run. Used by ace-web's Activity page.
 
 Design principle: observable facts only. We don't claim what's "alive" —
 just report what we observed in Drive + what ace-web Sessions exist.
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 # in the feed (faded); older completed runs are dropped.
 _RECENT_WINDOW = dt.timedelta(hours=24)
 
-# Default + max row counts. Slack caps tighter (handled at render time).
+# Default + max row counts.
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 100
 
@@ -69,7 +68,7 @@ def detect_source(
     could be a laptop, a stranded session, an automation account.
 
     Workspace-scoped query so we don't leak across tenants if multiple
-    Slack workspaces ever share opp slugs.
+    workspaces ever share opp slugs.
     """
     session = (
         Session.objects
