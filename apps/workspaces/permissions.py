@@ -24,14 +24,17 @@ than canopy's on purpose — it is derived from what ace-web gates, not copied:
 capability            minimum    what it protects
 ====================  =========  =============================================
 ``read``              viewer     read the workspace: opps, runs, the Workbench,
-                                 the run summary as a member
+                                 the run summary as a member — including a
+                                 PRIVATE review's feedback ledger (membership,
+                                 not team view; owner decision 2026-10-08)
 ``content.write``     editor     create / change / delete workspace content:
                                  opps, runs, forks, gate decisions, seeded runs,
                                  sessions, uploads, videos, Slack pushes
 ``decisions.write``   editor     confirm, change or comment on a decision (run
                                  summary + the Workbench's decision overrides)
 ``summary.team_view`` admin      the TEAM view of a run summary (run ids,
-                                 grader logs, lineage history); everyone below
+                                 grader logs, lineage history, claim audit
+                                 evidence); everyone below
                                  gets the partner view an outsider gets
 ``logs.read``         admin      the workspace audit log
 ``members.manage``    admin      invite, change and remove members — strictly
@@ -52,7 +55,9 @@ from apps.workspaces.models import WorkspaceMembership as _M
 # --- viewer: reading --------------------------------------------------------------
 
 #: Read anything the workspace holds: opps, runs, the Workbench, the run
-#: summary (as a member).
+#: summary (as a member) — and on it, a PRIVATE review's feedback ledger,
+#: which a non-member never gets (owner decision 2026-10-08: "reviewers can
+#: see the feedback"). The summary asks this as plain membership.
 READ = "read"
 
 # --- editor: making things --------------------------------------------------------
@@ -69,8 +74,9 @@ DECISIONS_WRITE = "decisions.write"
 # --- admin: running the workspace -------------------------------------------------
 
 #: The TEAM view of a run summary: run ids, grader logs, per-decision lineage
-#: history. Everyone below — editors and viewers alike, and non-members — gets
-#: the PARTNER view (orientation block, plain deep QA, lineage in plain words).
+#: history, claim audit ``evidence``. Everyone below — editors and viewers
+#: alike, and non-members — gets the PARTNER view (orientation block, plain
+#: deep QA, lineage in plain words).
 #: Presentation, not access: an editor in the partner view may still write.
 SUMMARY_TEAM_VIEW = "summary.team_view"
 

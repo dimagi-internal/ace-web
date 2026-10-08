@@ -2073,6 +2073,22 @@ def test_member_sees_every_ledger_including_the_private_ones():
     assert set(by_title.values()) == {"admin"}
 
 
+def test_a_partner_view_member_still_sees_the_private_ledger():
+    """The ledger gate is MEMBERSHIP, not the team view (owner decision
+    2026-10-08: "reviewers can see the feedback"). An editor or viewer gets
+    the partner (plain) view — no claim evidence, no run ids — but still
+    sees every review ledger, private ones included."""
+    drive = FakeDriveClient.from_tree(_tree_with_ledgers())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+        viewer_is_member=True, viewer_plain=True,
+    )
+    titles = {d["title"] for d in p["feedback"]}
+    assert "2026-07-27 · Sophie Feintuch" in titles
+    assert p["viewer"]["plain"] is True
+
+
 def test_a_public_review_whose_doc_is_shared_is_tagged_public():
     """The other half of the split: the tag follows the FILE."""
     drive = FakeDriveClient.from_tree(_tree_with_ledgers())
