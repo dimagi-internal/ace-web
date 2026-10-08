@@ -74,13 +74,14 @@ describe("auth.ts against a real openapi-fetch response shape", () => {
 
   it("getCurrentUser maps the parsed body", async () => {
     getMock.mockResolvedValueOnce(
-      ok({ id: 7, email: "ace@dimagi-ai.com", display_name: "ACE" }),
+      ok({ id: 7, email: "ace@dimagi-ai.com", display_name: "ACE", is_staff: true }),
     );
     const { getCurrentUser } = await import("./auth");
     await expect(getCurrentUser()).resolves.toEqual({
       user_id: 7,
       email: "ace@dimagi-ai.com",
       display_name: "ACE",
+      is_staff: true,
     });
   });
 
