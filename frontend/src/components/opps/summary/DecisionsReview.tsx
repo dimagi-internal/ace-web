@@ -38,6 +38,19 @@ export type { DecisionEditSubmit };
  * The run's decisions log on the summary — read by anyone, confirmed,
  * changed and discussed by signed-in workspace members.
  *
+ * ## The asks first; everything else is reference (2026-10-07)
+ *
+ * Jonathan on spark-facilitator/20261004-1706: *"This UI is overwhelming
+ * and also not very clear."* So, on top of the grouping below:
+ *
+ * - "Everything else ACE decided" starts COLLAPSED, phase by phase, and
+ *   says it needs nothing from the reader. Open, it put ~90 rows between
+ *   the reader and the end of their job.
+ * - The evidence tally, the version lineage and its filter sit in a
+ *   collapsed "About these decisions" rather than above the first ask.
+ * - Rows don't repeat their group's label as a chip, and "carried over
+ *   unchanged" is hidden (it sat on ~114 of 120 rows of a copied run).
+ *
  * ## One row design, grouped by what the reviewer must DO (2026-10-03)
  *
  * - **Confirm before launch** — pinned on top, open: the rows ACE marks
@@ -357,20 +370,19 @@ export function DecisionsReview({
     return [...byPhase.values()].sort((a, b) => a.ordinal - b.ordinal);
   }, [visible, viewerIsMember]);
 
-  // Phases start OPEN: a collapsed row says what was decided in full, so
-  // the open list is the scannable summary; a phase is collapsed by choice.
-  const [closedPhases, setClosedPhases] = useState<Record<string, boolean>>({});
+  // Phases start COLLAPSED (2026-10-07): they are reference, not asks.
+  const [openPhases, setOpenPhases] = useState<Record<string, boolean>>({});
   const [pinnedOpen, setPinnedOpen] = useState(true);
   const [closedAsks, setClosedAsks] = useState<Record<string, boolean>>({});
   const [deferredOpen, setDeferredOpen] = useState(false);
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
-  const allOpen = groups.every((g) => !closedPhases[g.key]);
+  const allOpen = groups.length > 0 && groups.every((g) => !!openPhases[g.key]);
   const toggleRow = (id: string) =>
     setOpenRows((prev) => ({ ...prev, [id]: !prev[id] }));
 
   function toggleAll() {
-    setClosedPhases(
-      allOpen ? Object.fromEntries(groups.map((g) => [g.key, true])) : {},
+    setOpenPhases(
+      allOpen ? {} : Object.fromEntries(groups.map((g) => [g.key, true])),
     );
   }
 
@@ -386,7 +398,13 @@ export function DecisionsReview({
       onEdit={onEdit}
       tags={
         <>
-          <OriginBadge lineage={lineage} id={d.id} plain={!viewerIsMember} edit={edits[d.id]} />
+          <OriginBadge
+            lineage={lineage}
+            id={d.id}
+            plain={!viewerIsMember}
+            edit={edits[d.id]}
+            hideCarried
+          />
           {isInternal(d) && <InternalTag />}
         </>
       }
@@ -426,33 +444,40 @@ export function DecisionsReview({
         </div>
       )}
 
-      <LineageStrip
-        lineage={lineage}
-        plain={!viewerIsMember}
-        linkTo="summary"
-        className="mt-4"
-        onScopeChange={onLineageScopeChange}
-      />
-      <LineageFilterBar
-        lineage={lineage}
-        ids={liveIds}
-        edits={edits}
-        filter={lineageFilter}
-        onChange={setLineageFilter}
-        className="mt-3"
-      />
+      <details className="mt-4 text-sm">
+        <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+          About these decisions
+        </summary>
+        <div className="border-l border-border pl-4">
+          <LineageStrip
+            lineage={lineage}
+            plain={!viewerIsMember}
+            linkTo="summary"
+            className="mt-4"
+            onScopeChange={onLineageScopeChange}
+          />
+          <LineageFilterBar
+            lineage={lineage}
+            ids={liveIds}
+            edits={edits}
+            filter={lineageFilter}
+            onChange={setLineageFilter}
+            className="mt-3"
+          />
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-        <Count n={counts.stated} label="stated in a source" />
-        <Count n={counts.inferred} label="inferred beyond it" />
-        {/* Shown so the numbers add up to the total — neutral, not a call
-            to action: that ACE's sources disagreed is ACE's uncertainty. */}
-        {counts.conflicting > 0 && (
-          <Count n={counts.conflicting} label="where sources disagreed" />
-        )}
-        <Count n={counts.overridden + changed} label="changed by a human" tone="sky" />
-        {confirmedCount > 0 && <Count n={confirmedCount} label="confirmed" tone="emerald" />}
-      </div>
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+            <Count n={counts.stated} label="stated in a source" />
+            <Count n={counts.inferred} label="inferred beyond it" />
+            {/* Shown so the numbers add up to the total — neutral, not a call
+                to action: that ACE's sources disagreed is ACE's uncertainty. */}
+            {counts.conflicting > 0 && (
+              <Count n={counts.conflicting} label="where sources disagreed" />
+            )}
+            <Count n={counts.overridden + changed} label="changed by a human" tone="sky" />
+            {confirmedCount > 0 && <Count n={confirmedCount} label="confirmed" tone="emerald" />}
+          </div>
+        </div>
+      </details>
 
       {toConfirm.length > 0 && (
         <DecisionSection
@@ -501,9 +526,15 @@ export function DecisionsReview({
       })}
 
       <div className="mt-9 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-[11px] font-medium uppercase tracking-[0.16em] text-foreground">
-          Choices ACE made
-        </h3>
+        <div>
+          <h3 className="text-[11px] font-medium uppercase tracking-[0.16em] text-foreground">
+            Everything else ACE decided
+          </h3>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            For reference. Nothing here needs you, but you can open any row to confirm, change
+            or comment on it.
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           {internalCount > 0 && (
             <ToggleChip pressed={showInternal} onClick={() => setShowInternal((v) => !v)}>
@@ -533,9 +564,9 @@ export function DecisionsReview({
             key={g.key}
             group={g}
             showOrdinal={viewerIsMember}
-            open={!closedPhases[g.key]}
+            open={!!openPhases[g.key]}
             onToggle={() =>
-              setClosedPhases((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
+              setOpenPhases((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
             }
             changed={
               g.rows.filter(

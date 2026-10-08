@@ -108,6 +108,8 @@ export function DecisionItem({
       optionsLabel={canWrite ? "Confirm or change" : "Options"}
       statusChip={false}
       showAskIds={canWrite}
+      askMarkers={false}
+      compactDetail
       badges={
         <>
           {tags}
@@ -161,10 +163,12 @@ export function DecisionItem({
                   className="rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                   aria-label={`Confirm: ${decisionDisplay(decision, answer).value || answer}`}
                 >
-                  {busy ? "Saving…" : "Confirm"}
+                  {busy ? "Saving…" : "Confirm this answer"}
                 </button>
               )}
-              <span className="text-muted-foreground">or change it — pick another option:</span>
+              <span className="text-muted-foreground">
+                or pick a different one below — it saves as soon as you click:
+              </span>
             </div>
             <DecisionAnswerEditor
               decision={decision}

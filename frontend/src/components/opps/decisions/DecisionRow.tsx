@@ -68,6 +68,8 @@ export function DecisionRow({
   statusChip = true,
   muted = false,
   showAskIds = true,
+  askMarkers = true,
+  compactDetail = false,
   children,
 }: {
   decision: Decision;
@@ -96,6 +98,14 @@ export function DecisionRow({
    * an outside reader, to whom they mean nothing.
    */
   showAskIds?: boolean;
+  /**
+   * Draw the "Confirm before launch" / "Answer before …" / "Not needed yet"
+   * markers. Off where the row already sits under a group of that name, so
+   * the label is not repeated on every row.
+   */
+  askMarkers?: boolean;
+  /** Fold the provenance blocks of the detail behind one disclosure. */
+  compactDetail?: boolean;
   children?: React.ReactNode;
 }) {
   // "Overridden" = the effective answer differs from the AI default,
@@ -207,9 +217,9 @@ export function DecisionRow({
               {check.join(" — ")}
             </span>
           )}
-          {(asks || answers || deferred || badges || decision.evidence_basis === "conflicting" || (statusChip && chip)) && (
+          {((askMarkers && (asks || answers || deferred)) || badges || decision.evidence_basis === "conflicting" || (statusChip && chip)) && (
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {answers && (
+              {askMarkers && answers && (
                 <span
                   className="shrink-0 rounded border border-rose-500/40 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rose-400"
                   title="There is no working answer yet; it is needed by this point"
@@ -217,7 +227,7 @@ export function DecisionRow({
                   Answer {neededByShort(decision.needed_by)}
                 </span>
               )}
-              {deferred && (
+              {askMarkers && deferred && (
                 <span
                   className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
                   title="Not needed for this pilot"
@@ -225,7 +235,7 @@ export function DecisionRow({
                   Not needed yet
                 </span>
               )}
-              {asks && (
+              {askMarkers && asks && (
                 <span
                   className="shrink-0 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400"
                   title="ACE recommends a person confirm this before launch"
@@ -265,6 +275,7 @@ export function DecisionRow({
               effectiveReason={effectiveReason}
               optionsLabel={optionsLabel}
               optionsSlot={optionsSlot}
+              compact={compactDetail}
             />
           </div>
           {children}

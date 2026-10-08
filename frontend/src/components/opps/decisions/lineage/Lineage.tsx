@@ -262,15 +262,25 @@ export function OriginBadge({
   id,
   plain,
   edit,
+  hideCarried = false,
 }: {
   lineage: DecisionLineage | null;
   id: string;
   plain: boolean;
   edit?: EditLike;
+  /**
+   * Drop the "carried over unchanged" badge. On a copied run it sits on
+   * nearly every row, so it says nothing and buries the rows that ARE new
+   * or changed. The summary sets this; the Workbench keeps the full trail.
+   */
+  hideCarried?: boolean;
 }) {
   if (!lineage) return null;
   const badge = originBadge(lineage.origins[id], lineage, plain, edit);
   if (!badge) return null;
+  if (hideCarried && lineage.origins[id]?.kind === "carried" && badge.tone === "neutral") {
+    return null;
+  }
   return (
     <span
       className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px]", TONES[badge.tone])}
