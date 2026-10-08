@@ -1272,20 +1272,17 @@ def test_workbench_url_is_relative_and_therefore_must_carry_the_mount(settings):
 
 
 #: An opp with its OWN tenancy whose Connect org is the fixture's, whose
-#: HQ space is NOT the one the fixture's apps live in, and whose Labs is
-#: opened to a partner domain.
+#: HQ space is NOT the one the fixture's apps live in.
 _OWN_TENANCY = {
     "hq_domain": "turmeric-space",
     "connect_pm_org": "turmeric-pm",
     "connect_holding_org": "ai-demo-space",
-    "labs_allowed_domains": ["@partner.org"],
 }
 #: The shared tenants `dimagi-team`'s opps were built in (migration 0006).
 _SHARED_TENANCY = {
     "hq_domain": "connect-ace-prod",
     "connect_holding_org": "ace-nm-org",
     "ocs_team": "connect-ace",
-    "labs_allowed_domains": ["@dimagi.com", "@dimagi-ai.com"],
 }
 
 
@@ -1293,14 +1290,14 @@ def test_links_inside_the_opps_own_tenancy_carry_no_admin_tag():
     """Jonathan: "admin only was meant to mean you needed to be dimagi
     because the things weren't properly isolated. That is no longer true
     and you should expect access." `/ace:release` invites reviewers into
-    the opp's own HQ space, Connect org and ace-web workspace; Labs opens
-    to `labs_allowed_domains`. Inside the own tenancy ⇒ `reviewer` (no
-    tag); a URL OUTSIDE it (the apps still in `connect-ace-prod`) and the
-    OCS team console stay `admin`."""
+    the opp's own HQ space, Connect org and ace-web workspace. Inside the
+    own tenancy ⇒ `reviewer` (no tag); a URL OUTSIDE it (the apps still in
+    `connect-ace-prod`), the OCS team console and Labs (Dimagi-only since
+    the per-opp Labs domains were removed, 2026-10-08) stay `admin`."""
     p = _build(viewer_is_member=False, tenancy=_OWN_TENANCY)
     assert p["connect"]["opportunity"]["access"] == ACCESS_REVIEWER
-    assert {d["access"] for d in p["dashboards"]} == {ACCESS_REVIEWER}
-    assert p["solicitation"]["access"] == ACCESS_REVIEWER
+    assert {d["access"] for d in p["dashboards"]} == {ACCESS_ADMIN}
+    assert p["solicitation"]["access"] == ACCESS_ADMIN
     assert p["workbench"]["access"] == ACCESS_REVIEWER
     # Outside the opp's own HQ space: a reviewer is never invited there.
     assert {a["access"] for a in p["apps"]} == {ACCESS_ADMIN}

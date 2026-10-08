@@ -18,7 +18,6 @@ SHARED = {
     "hq_domain": "connect-ace-prod",
     "connect_holding_org": "ace-nm-org",
     "ocs_team": "connect-ace",
-    "labs_allowed_domains": ["@dimagi.com", "@dimagi-ai.com"],
 }
 
 
@@ -97,15 +96,13 @@ def test_non_member_gets_404(outsider, opp):
 def test_owner_patches_and_change_is_audited(owner, opp):
     resp = _client(owner).patch(
         URL,
-        {"connect_pm_org": "spark-pm", "ocs_team": None,
-         "labs_allowed_domains": ["SparkMicrogrants.org"]},
+        {"connect_pm_org": "spark-pm", "ocs_team": None},
         content_type="application/json",
     )
     assert resp.status_code == 200, resp.content
     expected = {
         "hq_domain": "connect-ace-spark",
         "connect_pm_org": "spark-pm",
-        "labs_allowed_domains": ["@sparkmicrogrants.org"],
     }
     assert resp.json()["tenancy"] == expected
     opp.refresh_from_db()
@@ -128,7 +125,7 @@ def test_viewer_cannot_patch(viewer, opp):
 @pytest.mark.parametrize("body", [
     {"hq_domain": "has space"},
     {"hq_domain": "https://www.commcarehq.org/a/x/"},
-    {"labs_allowed_domains": ["nodot"]},
+    {"labs_allowed_domains": ["@partner.org"]},  # removed 2026-10-08: now an unknown field
     {"unknown_field": "x"},
 ])
 def test_patch_rejects_invalid_values(owner, opp, body):
@@ -210,9 +207,12 @@ def test_backfill_fills_only_empty_fields(owner):
     edited.refresh_from_db()
     team.refresh_from_db()
     other.refresh_from_db()
-    assert blank.tenancy == SHARED
-    assert edited.tenancy == {**SHARED, "ocs_team": "mine"}
-    assert team.default_tenancy == SHARED
+    # 0006 predates the removal of labs_allowed_domains, so it still seeds it;
+    # 0008 strips it again (test below).
+    seeded = {**SHARED, "labs_allowed_domains": ["@dimagi.com", "@dimagi-ai.com"]}
+    assert blank.tenancy == seeded
+    assert edited.tenancy == {**seeded, "ocs_team": "mine"}
+    assert team.default_tenancy == seeded
     assert other.default_tenancy == {}
     assert "connect_pm_org" not in blank.tenancy
 
@@ -235,3 +235,27 @@ def test_pm_org_backfill_fills_only_empty(owner):
     assert blank.tenancy == {"hq_domain": "x", "connect_pm_org": "ace-pm-org"}
     assert edited.tenancy == {"connect_pm_org": "ai-demo-space"}
     assert team.default_tenancy == {"connect_pm_org": "ace-pm-org"}
+
+
+def test_drop_labs_allowed_domains_strips_only_that_key(owner):
+    team = Workspace.objects.create(
+        slug="dimagi-team", display_name="Dimagi", drive_root_folder_id="root-dt",
+        created_by=owner, default_tenancy={**SHARED, "labs_allowed_domains": ["@dimagi.com"]},
+    )
+    opp = OppWorkspace.objects.create(
+        workspace=team, slug="a", display_name="A", created_by=owner,
+        tenancy={**SHARED, "labs_allowed_domains": ["@partner.org"]},
+    )
+    untouched = OppWorkspace.objects.create(
+        workspace=team, slug="b", display_name="B", created_by=owner, tenancy={"ocs_team": "x"},
+    )
+
+    migration = importlib.import_module("apps.opps.migrations.0008_drop_labs_allowed_domains")
+    migration.strip(django_apps, None)
+
+    opp.refresh_from_db()
+    team.refresh_from_db()
+    untouched.refresh_from_db()
+    assert opp.tenancy == SHARED
+    assert team.default_tenancy == SHARED
+    assert untouched.tenancy == {"ocs_team": "x"}

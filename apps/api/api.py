@@ -149,7 +149,6 @@ from apps.presence.api import router as presence_router  # noqa: E402
 from apps.service_accounts.api import router as tokens_router  # noqa: E402
 from apps.sessions.api import router as sessions_router  # noqa: E402
 from apps.sessions.sweep_api import router as sessions_sweep_router  # noqa: E402
-from apps.slack.api import router as slack_router  # noqa: E402
 from apps.system.api import router as system_router  # noqa: E402
 from apps.videos.api import router as videos_router  # noqa: E402
 from apps.workspaces.api import invites_router  # noqa: E402, I001
@@ -162,7 +161,6 @@ api.add_router("/w/{workspace_slug}/opps", opp_clone_router)
 api.add_router("/w/{workspace_slug}/sessions", sessions_router)
 api.add_router("/w/{workspace_slug}/activity", activity_router)
 api.add_router("/w/{workspace_slug}/videos", videos_router)
-api.add_router("/w/{workspace_slug}/slack", slack_router)
 api.add_router("/w/{workspace_slug}/canopy", canopy_workspace_router)
 
 # Top-level resources

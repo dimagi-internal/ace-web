@@ -71,31 +71,10 @@ _mcp_mount = canopy_grant.mcp_app(_mcp_app)
 
 @contextlib.asynccontextmanager
 async def _composed_lifespan(app):
-    """Compose the MCP server lifespan with the Slack worker.
-
-    1. MCP lifespan — runs the Streamable-HTTP session manager; required for
-       Streamable-HTTP session management. Yields when the MCP server is ready.
-    2. Slack worker — runs in the background until app shutdown.
-
-    Set DJANGO_SLACK_DISABLE_WORKER=1 to suppress the worker (e.g. in ASGI
-    smoke tests or management commands that mount the app without Redis).
-    """
-    import asyncio
-
-    from apps.slack.dispatcher import run_worker_forever
-
-    slack_task: asyncio.Task | None = None
-    if os.environ.get("DJANGO_SLACK_DISABLE_WORKER") != "1":
-        slack_task = asyncio.create_task(run_worker_forever())
-
+    """Run the MCP server lifespan — the Streamable-HTTP session manager.
+    Yields when the MCP server is ready."""
     async with _mcp_app.lifespan(app):
-        try:
-            yield
-        finally:
-            if slack_task is not None:
-                slack_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await slack_task
+        yield
 
 
 application = Router(

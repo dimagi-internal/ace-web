@@ -41,7 +41,7 @@ class OppWorkspace(models.Model):
         ),
     )
     # Where this opp's assets live in each system ACE writes to — HQ project
-    # space, Connect orgs, OCS team, Labs allowed domains. Copied from the
+    # space, Connect orgs, OCS team. Copied from the
     # workspace's default at creation. Shape: apps.opps.tenancy.Tenancy.
     tenancy = models.JSONField(default=dict, blank=True)
     workspace = models.ForeignKey(
