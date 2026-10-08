@@ -2563,7 +2563,7 @@ LINEAGE_CACHE_SECONDS = 120
 
 
 def _lineage_cache_key(workspace: str, slug: str, run_id: str, scope: str) -> str:
-    return f"opp-lineage:v2:{scope}:{workspace}:{slug}:{run_id}"
+    return f"opp-lineage:v3:{scope}:{workspace}:{slug}:{run_id}"
 
 
 @public_summary_router.get(
