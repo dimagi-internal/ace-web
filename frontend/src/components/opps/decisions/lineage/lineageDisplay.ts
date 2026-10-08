@@ -95,6 +95,34 @@ export function hasAncestors(lineage: DecisionLineage | null | undefined): boole
   return !!lineage && lineage.chain.length > 1;
 }
 
+/**
+ * Did a decision's value stay the same from `prev` to `entry`? The one
+ * comparison behind the history's "(unchanged)" marker, so the marker and
+ * the decision to show the history at all can never disagree. A missing
+ * value on either side is not "the same".
+ */
+export function sameValue(
+  prev: DecisionHistoryEntry | undefined,
+  entry: DecisionHistoryEntry,
+): boolean {
+  return (
+    prev?.value != null &&
+    entry.value != null &&
+    prev.value.trim().toLowerCase() === entry.value.trim().toLowerCase()
+  );
+}
+
+/**
+ * Did the value ever change across the runs a decision was found in? A
+ * cloned run carries every decision over verbatim — "How this decision
+ * evolved" over two identical entries reads as a change that never
+ * happened, so the history is drawn only when this is true.
+ */
+export function valueEverChanged(entries: readonly DecisionHistoryEntry[]): boolean {
+  const found = entries.filter((e) => e.found);
+  return found.some((e, i) => i > 0 && !sameValue(found[i - 1], e));
+}
+
 export interface Badge {
   label: string;
   tone: "neutral" | "sky" | "amber" | "emerald" | "violet";

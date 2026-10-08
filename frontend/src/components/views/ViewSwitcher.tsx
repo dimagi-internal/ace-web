@@ -35,8 +35,9 @@ export interface ViewTab<K extends string = ViewKind> {
   label: string;
   /** Falls back to the built-in icon for the known Workbench views. */
   icon?: React.ComponentType<{ className?: string }>;
-  /** Small trailing number, e.g. the row count behind a tab. */
-  count?: number;
+  /** Small trailing number or note, e.g. the row count behind a tab, or
+   *  "25 to confirm" — what is waiting on the reader. */
+  count?: number | string;
   /** When true, render disabled with the tooltip; click does nothing. */
   disabled?: boolean;
   disabledReason?: string;

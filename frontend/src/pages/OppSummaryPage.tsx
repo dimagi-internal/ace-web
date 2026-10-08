@@ -16,6 +16,7 @@ import type { ReactionSubmit } from "@/components/opps/summary/DecisionReactions
 import {
   DecisionsReview,
   askCounts,
+  decisionsTabBadge,
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionsReview";
 import { ClaimsSection } from "@/components/opps/summary/ClaimsSection";
@@ -522,7 +523,9 @@ export default function OppSummaryPage() {
       kind: "decisions",
       label: "Decisions",
       icon: Scale,
-      count: decisions?.total,
+      // What is waiting on the reader, not the size of the log: "120"
+      // read as 120 questions when 25 were asks (owner, 2026-10-07).
+      count: decisionsTabBadge(asks),
     },
   ];
 

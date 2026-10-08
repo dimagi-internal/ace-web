@@ -1485,7 +1485,11 @@ describe("decision lineage on the Decisions tab", () => {
     renderWith({ ...BASE, viewer: { is_member: true }, decisions: DECISIONS });
     await openDecisionsTab();
     expect(await screen.findByText("carried from dimagi-team / 20260925-1536 unchanged")).toBeTruthy();
+    // Carried over verbatim in every run: no "evolved" history to tell.
     await openRow("Which working languages?");
+    expect(screen.queryByText("How this decision evolved")).toBeNull();
+    // Create → Reuse → Create: that one did evolve.
+    await openRow("Reuse the program or create one?");
     expect(screen.getByText("How this decision evolved")).toBeTruthy();
   });
 
@@ -1506,5 +1510,72 @@ describe("decision lineage on the Decisions tab", () => {
     await openDecisionsTab();
     expect(await screen.findByText("Which working languages?")).toBeTruthy();
     expect(screen.queryByRole("group", { name: /Filter decisions/ })).toBeNull();
+  });
+});
+
+/**
+ * The Decisions tab leads with what needs the reader. "120 decisions" read
+ * to an outside reviewer as 120 questions when 25 were asks, 6 were
+ * deferred and the rest were calls ACE already made (spark/20261004-1706).
+ */
+describe("decisions headline leads with the asks", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const row = (over: Record<string, unknown>) =>
+    ({ ...DECISION, ...over }) as api.ReviewDecision;
+  const ROWS = [
+    row({ id: "c1", question: "Confirm one?", review_ask: "recommended-confirmation" }),
+    row({ id: "c2", question: "Confirm two?", review_ask: "recommended-confirmation" }),
+    row({ id: "d1", question: "Later maybe?", status: "deferred", revisit_when: "scale-up" }),
+    row({ id: "a1", question: "ACE call one?" }),
+    row({ id: "a2", question: "ACE call two?" }),
+    row({ id: "a3", question: "ACE call three?" }),
+    // History never counts: not an ask, not a call.
+    row({
+      id: "old",
+      question: "Replaced?",
+      review_ask: "recommended-confirmation",
+      superseded_by: "c1",
+    }),
+  ];
+  const PAYLOAD: OppSummaryPayload = {
+    ...BASE,
+    decisions: {
+      total: 6,
+      counts: { stated: 6, inferred: 0, conflicting: 0, overridden: 0 },
+      rows: ROWS,
+    } as NonNullable<OppSummaryPayload["decisions"]>,
+  };
+
+  it("headlines asks, then deferred, then ACE's own calls — the total is secondary", async () => {
+    renderWith(PAYLOAD);
+    await openDecisionsTab();
+    const headline = await screen.findByTestId("decisions-headline");
+    expect(headline.textContent).toBe("2 to confirm · 1 deferred · 3 decided by ACE (for review)");
+    expect(screen.getByText(/6 load-bearing calls in all/)).toBeTruthy();
+  });
+
+  it("puts the ask count on the tab, not the size of the log", async () => {
+    renderWith(PAYLOAD);
+    expect(await screen.findByText("2 to confirm")).toBeTruthy();
+    expect(screen.queryByText("6")).toBeNull();
+  });
+
+  it("drops the tab badge once every ask is answered", async () => {
+    renderWith({
+      ...PAYLOAD,
+      decisions: {
+        ...PAYLOAD.decisions!,
+        rows: ROWS.map((d) =>
+          d.id === "c1" || d.id === "c2" ? { ...d, status: "human-decided" } : d,
+        ),
+      },
+    });
+    await openDecisionsTab();
+    const headline = await screen.findByTestId("decisions-headline");
+    expect(headline.textContent).toMatch(/^2 to confirm, all answered · /);
+    expect(screen.queryByText(/^\d+ to confirm$/)).toBeNull();
   });
 });

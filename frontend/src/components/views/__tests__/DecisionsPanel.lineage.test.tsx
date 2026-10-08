@@ -56,10 +56,16 @@ describe("DecisionsPanel lineage", () => {
     expect(screen.getByText("carried from dimagi-team / 20261001-2208, changed here")).toBeTruthy();
   });
 
-  it("shows the history in the row detail", () => {
+  it("shows the history in the row detail when the value evolved", () => {
+    renderPanel();
+    fireEvent.click(screen.getByText("Reuse the program?"));
+    expect(screen.getByText("How this decision evolved")).toBeTruthy();
+  });
+
+  it("shows no history for a decision carried over unchanged", () => {
     renderPanel();
     fireEvent.click(screen.getByText("Which working languages?"));
-    expect(screen.getByText("How this decision evolved")).toBeTruthy();
+    expect(screen.queryByText("How this decision evolved")).toBeNull();
   });
 
   it("follows the run page's filter", () => {
