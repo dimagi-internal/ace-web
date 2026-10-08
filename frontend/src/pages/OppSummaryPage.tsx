@@ -167,11 +167,19 @@ const DDD_TERMINAL_STATUS_LABELS: Record<string, string> = {
  */
 function WalkthroughCaveats({
   ddd,
+  isMember,
 }: {
   ddd: OppSummaryPayload["walkthroughs"][number]["ddd"];
+  /**
+   * The review-loop status is ACE's internal process, and a partner has
+   * no use for "the review loop stopped before it converged" — members
+   * only. The pre-fix caveat is about the RECORDING, so everyone gets it;
+   * an outside reader just gets it without the score it qualifies.
+   */
+  isMember: boolean;
 }) {
   if (!ddd) return null;
-  const status = ddd.terminal_status;
+  const status = isMember ? ddd.terminal_status : null;
   const statusText = status
     ? (DDD_TERMINAL_STATUS_LABELS[status] ?? `review loop status: ${status}`)
     : null;
@@ -190,8 +198,9 @@ function WalkthroughCaveats({
       )}
       {ddd.measures_pre_fix_artifact && (
         <span className="text-foreground">
-          This score and recording measure a version that has since been
-          fixed — they do not show the current build.
+          {isMember
+            ? "This score and recording measure a version that has since been fixed — they do not show the current build."
+            : "This recording shows an earlier version that has since been fixed — it does not show the current build."}
         </span>
       )}
     </span>
@@ -466,7 +475,7 @@ export default function OppSummaryPage() {
   // build rather than a healthy run waiting on a partner.
   const pending = new Set(stage?.pending_sections ?? []);
   const notStartedText = stage?.label
-    ? `Not started — this run is at the ${stage.label} stage`
+    ? `Not started — this program is at the ${stage.label} stage`
     : "Not started yet";
   // A phase the run deliberately SKIPPED is neither: nothing is coming,
   // and nothing went missing. Its sections read the run's reason instead
@@ -583,6 +592,7 @@ export default function OppSummaryPage() {
             answerTotal={asks.answer.total}
             hasDecisions={hasReviewSurface}
             onOpenDecisions={() => setTab("decisions")}
+            programDescription={opp.description}
           />
 
           {/* "What changed because you asked" — first, because
@@ -635,7 +645,7 @@ export default function OppSummaryPage() {
                     <>
                       {`${decisions.total} ${
                         decisions.total === 1 ? "call" : "calls"
-                      } ACE made building this run. `}
+                      } ACE made building this program. `}
                       <span className="text-foreground">
                         {asks.outstanding > 0
                           ? [
@@ -764,7 +774,7 @@ export default function OppSummaryPage() {
               safety-adjacent procedure. */}
           {deep_qa && (
             <SummarySection title="Deep QA">
-              <DeepQaSection deepQa={deep_qa} />
+              <DeepQaSection deepQa={deep_qa} isMember={!!viewer?.is_member} />
             </SummarySection>
           )}
 
@@ -819,7 +829,7 @@ export default function OppSummaryPage() {
                           {" · "}
                           {w.withheld_reason ?? "Not shown — did not pass quality review"}
                         </span>
-                        <WalkthroughCaveats ddd={w.ddd} />
+                        <WalkthroughCaveats ddd={w.ddd} isMember={!!viewer?.is_member} />
                       </>
                     }
                     links={[]}
@@ -831,12 +841,15 @@ export default function OppSummaryPage() {
                     name={
                       <>
                         {w.persona}
-                        {w.eval_score != null && (
+                        {/* The eval score is ACE's internal concept-judge
+                            grade — members only (a partner reading "eval
+                            3/5" learns nothing about the demo). */}
+                        {viewer?.is_member && w.eval_score != null && (
                           <span className="text-muted-foreground">
                             {" · "}eval {formatEvalScore(w.eval_score)}
                           </span>
                         )}
-                        <WalkthroughCaveats ddd={w.ddd} />
+                        <WalkthroughCaveats ddd={w.ddd} isMember={!!viewer?.is_member} />
                       </>
                     }
                     links={[link("Open deck", w.url, w.access)]}

@@ -218,6 +218,7 @@ describe("OppSummaryPage", () => {
     // showed as 2 of 10: roughly half as good as it actually was.
     renderWith({
       ...BASE,
+      viewer: { is_member: true },
       walkthroughs: [{
         persona: "Community progression",
         url: "https://labs/ddd/x",
@@ -239,6 +240,7 @@ describe("OppSummaryPage", () => {
     // render measures a PRE-FIX artifact.
     renderWith({
       ...BASE,
+      viewer: { is_member: true },
       walkthroughs: [{
         persona: "Community progression",
         url: "https://labs/ddd/x",
@@ -282,6 +284,7 @@ describe("OppSummaryPage", () => {
   it("renders converged_clean as its own outcome", async () => {
     renderWith({
       ...BASE,
+      viewer: { is_member: true },
       walkthroughs: [walkthroughWithStatus("converged_clean")],
     });
     expect(await screen.findByText(/finished clean/)).toBeTruthy();
@@ -291,6 +294,7 @@ describe("OppSummaryPage", () => {
   it("renders converged_with_open_questions as a different outcome", async () => {
     renderWith({
       ...BASE,
+      viewer: { is_member: true },
       walkthroughs: [walkthroughWithStatus("converged_with_open_questions")],
     });
     expect(await screen.findByText(/with open questions/)).toBeTruthy();
@@ -300,6 +304,7 @@ describe("OppSummaryPage", () => {
   it("surfaces an unrecognised terminal status verbatim rather than dropping it", async () => {
     renderWith({
       ...BASE,
+      viewer: { is_member: true },
       walkthroughs: [walkthroughWithStatus("stalled_on_a_gate")],
     });
     expect(
@@ -312,6 +317,7 @@ describe("OppSummaryPage", () => {
     // render exactly as it did, with no invented "converged".
     renderWith({
       ...BASE,
+      viewer: { is_member: true },
       walkthroughs: [{
         persona: "Community progression",
         url: "https://labs/ddd/x",
@@ -325,6 +331,34 @@ describe("OppSummaryPage", () => {
     expect(await screen.findByText(/eval 4\/5/)).toBeTruthy();
     expect(screen.queryByText(/review loop/)).toBeNull();
     expect(screen.queryByText(/since been fixed/)).toBeNull();
+  });
+
+  it("shows an outside reader the demo without ACE's eval score or loop status", async () => {
+    // "eval 3/5 — the review loop stopped before it converged" is ACE's
+    // internal grading of its own demo; a partner learns nothing from it.
+    // The pre-fix caveat stays: it is about what the RECORDING shows.
+    renderWith({
+      ...BASE,
+      walkthroughs: [{
+        persona: "Community progression",
+        url: "https://labs/ddd/x",
+        eval_score: 3,
+        availability: "available",
+        withheld_reason: null,
+        access: "admin",
+        ddd: {
+          terminal_status: "stopped_not_converged",
+          iterations_completed: 0,
+          measures_pre_fix_artifact: true,
+          note: null,
+        },
+      }],
+    });
+    expect(await screen.findByText("Community progression")).toBeTruthy();
+    expect(screen.queryByText(/eval 3\/5/)).toBeNull();
+    expect(screen.queryByText(/review loop/)).toBeNull();
+    expect(screen.getByText(/This recording shows an earlier version/)).toBeTruthy();
+    expect(screen.queryByText(/This score and recording/)).toBeNull();
   });
 
   // ─── What the assistant claims to know (ace-web#740) ───────────────
@@ -387,7 +421,7 @@ describe("OppSummaryPage", () => {
       },
     });
     expect(
-      await screen.findByText(/51 calls ACE made building this run\./),
+      await screen.findByText(/51 calls ACE made building this program\./),
     ).toBeTruthy();
     expect(screen.queryByText(/Separately,/)).toBeNull();
     expect(screen.queryByText(/couldn't settle/)).toBeNull();
@@ -421,7 +455,7 @@ describe("OppSummaryPage", () => {
       },
     });
     const notStarted = await screen.findAllByText(
-      "Not started — this run is at the solicitation stage",
+      "Not started — this program is at the solicitation stage",
     );
     // LLO + Live rows.
     expect(notStarted.length).toBe(2);
@@ -496,6 +530,10 @@ describe("OppSummaryPage", () => {
   it("tells an outside reader who drafted this, what we need and how to respond", async () => {
     renderWith({
       ...BASE,
+      opp: {
+        ...BASE.opp,
+        description: "About 12 facilitators record each community meeting on a phone.",
+      },
       decisions: {
         total: 1,
         counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
@@ -508,9 +546,18 @@ describe("OppSummaryPage", () => {
     expect(text).toContain("Dimagi staff review it");
     expect(text).toContain("confirm the 1 decision marked “Confirm before launch”");
     expect(text).toContain("reply to the email that sent you this link");
-    expect(text).toContain("Dimagi’s team reads every reply");
+    // A comment notifies no one (ace-web#875), so the page must not say
+    // anyone "reads every reply"; it says where a reply goes instead.
+    expect(text).not.toContain("reads every reply");
+    expect(text).toContain("nobody is notified when you post it");
+    expect(text).toContain("what Dimagi builds the next version from");
+    // ACE's abbreviations are offered as abbreviations, not as the
+    // reader's vocabulary, and say what this program calls its worker.
+    expect(text).toContain("Abbreviations you may see");
+    expect(text).not.toContain("Terms used here");
     expect(text).toContain("LLO");
     expect(text).toContain("FLW");
+    expect(text).toContain("in this program, the facilitator");
     expect(text).not.toContain("CommCare Connect");
     // The orientation's own link goes to the Decisions tab.
     fireEvent.click(screen.getByText("Go to the decisions"));
@@ -684,6 +731,53 @@ describe("OppSummaryPage", () => {
     });
     await openDecisionsTab();
     expect(await screen.findByText("Workers cover the first seven steps only.")).toBeTruthy();
+  });
+
+  it("groups decisions under the plain stage names for a member too", async () => {
+    // A signed-in partner is a workspace member, and the summary page is
+    // theirs: "Idea to Design" / "OCS Setup" are Workbench names.
+    const rows = [
+      { ...DECISION, id: "a", phase_label: "Idea to Design", stage_label: "Design" },
+      {
+        ...DECISION, id: "b", question: "Bot question", phase: "ocs-setup",
+        phase_raw: "5-ocs", phase_ordinal: 5, phase_label: "OCS Setup",
+        stage_label: "Assistant setup",
+      },
+    ];
+    for (const viewer of [{ is_member: true }, { is_member: false }]) {
+      const { unmount } = renderWith({
+        ...BASE,
+        viewer,
+        decisions: {
+          total: 2,
+          counts: { stated: 2, inferred: 0, conflicting: 0, overridden: 0 },
+          rows,
+        },
+      });
+      await openDecisionsTab();
+      expect(screen.getAllByText("Design").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Assistant setup").length).toBeGreaterThan(0);
+      expect(screen.queryByText("Idea to Design")).toBeNull();
+      expect(screen.queryByText("OCS Setup")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("tells a member what a change does in their terms, not ACE's", async () => {
+    renderWith({
+      ...BASE,
+      viewer: { is_member: true },
+      decisions: {
+        total: 1,
+        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
+        rows: [DECISION],
+      },
+    });
+    await openDecisionsTab();
+    expect(
+      screen.getByText(/what you change here is what Dimagi builds the next version from/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/next run/)).toBeNull();
   });
 
   // ── Confirm before launch (ACE `review_ask`, 2026-10) ────────────
@@ -1043,8 +1137,12 @@ describe("OppSummaryPage", () => {
     await openDecisionsTab();
     await openRow("A contested call");
     fireEvent.click(await screen.findByText(/Not ready to decide\? Ask what you.d need to know/));
-    // Before anything is sent, the row says a comment is not an edit.
-    expect(screen.getAllByText(/A comment doesn.t change the answer/).length).toBeGreaterThan(0);
+    // Before anything is sent, the row says what a comment is: saved for
+    // Dimagi's team, not an edit, and not sent to anyone.
+    expect(screen.getByText("Questions or concerns about this answer")).toBeTruthy();
+    expect(screen.getAllByText(/It doesn.t change the answer/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/It isn.t sent to anyone right away/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/the ACE team and other reviewers/)).toBeNull();
     fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
       target: { value: "The later date is right." },
     });
@@ -1296,9 +1394,14 @@ describe("deep QA", () => {
     expect(screen.queryByText(/deep-tested/i)).toBeNull();
   });
 
+  // ─── Members: the grader's full working, collapsed ─────────────────
+
+  const MEMBER_VIEW = { viewer: { is_member: true } };
+
   it("leads with the gate, and says the score does not settle it", async () => {
     renderWith({
       ...BASE,
+      ...MEMBER_VIEW,
       deep_qa: { stages: [OCS_STAGE, APPS_NOT_RUN] },
     });
     await screen.findByText("Deep QA");
@@ -1316,19 +1419,31 @@ describe("deep QA", () => {
     expect(screen.getByText("opp-50")).toBeInTheDocument();
   });
 
+  it("keeps a member's full detail collapsed behind the plain outcome", async () => {
+    renderWith({
+      ...BASE,
+      ...MEMBER_VIEW,
+      deep_qa: { stages: [OCS_STAGE, APPS_NOT_RUN] },
+    });
+    await screen.findByText("Deep QA");
+    const outcomes = screen.getAllByTestId("deep-qa-outcome").map((n) => n.textContent);
+    expect(outcomes[0]).toMatch(/^Not passed yet — it needs another round of fixes — 58 of 68 checks/);
+    const details = screen.getByText("Full grader detail").closest("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+  });
+
   it("says plainly when only one stage was run", async () => {
     renderWith({
       ...BASE,
       deep_qa: { stages: [OCS_STAGE, APPS_NOT_RUN] },
     });
     await screen.findByText("Deep QA");
-    expect(screen.getByText(/Not deep-tested on this run/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/absence of a finding is not a clean result/i),
-    ).toBeInTheDocument();
+    const outcomes = screen.getAllByTestId("deep-qa-outcome").map((n) => n.textContent);
+    expect(outcomes[1]).toBe("Not checked yet.");
   });
 
-  it("warns when the verdict describes something other than what is deployed", async () => {
+  it("warns a member when the verdict describes something other than what is deployed", async () => {
     const stale = {
       ...OCS_STAGE,
       is_stale: true,
@@ -1343,12 +1458,14 @@ describe("deep QA", () => {
     };
     renderWith({
       ...BASE,
+      ...MEMBER_VIEW,
       deep_qa: { stages: [stale, APPS_NOT_RUN] },
     });
     await screen.findByText("Deep QA");
     expect(
       screen.getByText(/does not describe what is running today/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Checked on an earlier version/)).toBeInTheDocument();
   });
 
   it("claims nothing about freshness when the server could not compare", async () => {
@@ -1356,6 +1473,7 @@ describe("deep QA", () => {
     // leaves the judgement to the reader rather than asserting `fresh`.
     renderWith({
       ...BASE,
+      ...MEMBER_VIEW,
       deep_qa: {
         stages: [{ ...OCS_STAGE, freshness: [], is_stale: null }, APPS_NOT_RUN],
       },
@@ -1364,8 +1482,97 @@ describe("deep QA", () => {
     expect(screen.getByText(/^Run on /)).toBeInTheDocument();
     expect(screen.queryByText(/still what is deployed/i)).toBeNull();
     expect(screen.queryByText(/does not describe what is running today/i)).toBeNull();
+    expect(screen.queryByText(/Checked on an earlier version/)).toBeNull();
+  });
+
+  // ─── An outside reader: the outcome, and what it found in the app ──
+
+  /** Shaped on the apps stage of spark-facilitator/20261004-1706. */
+  const APPS_PASSED = {
+    ...APPS_NOT_RUN,
+    ran: true,
+    ran_at: "2026-10-05T17:22:00Z",
+    gate: "approve",
+    verdict: "pass",
+    score: 8.63,
+    threshold: 7.0,
+    counts: { total: 7, pass: 7, warn: 0, fail: 0 },
+    dimensions: [{ name: "time_budget", score: 5.71, weight: 0.1 }],
+    findings: [
+      {
+        severity: "INFO",
+        message:
+          '[PLATFORM] empty cited_files not gradeable: provider "anthropic" uses parse_output_for_anthropic (ace#2027).',
+      },
+      {
+        severity: "WARN",
+        message: "[HARNESS] Strict freshness rule: Deliver v23 was released after the v16 walks.",
+      },
+      {
+        severity: "WARN",
+        message: "[INSTRUMENT] NOT REACHED journey-learn-pass: retake after a failed assessment.",
+      },
+      {
+        severity: "INFO",
+        message: "Installed lib predates ace PR #2665 and would have applied it unconditionally.",
+      },
+      {
+        severity: "WARN",
+        message:
+          "[PRODUCT] Duplicate CBF phone: clear notice, but the block is an empty text box refused with CommCare's generic message (v16 and v23).",
+      },
+      {
+        severity: "INFO",
+        message:
+          "[PRODUCT] Step values carry a leading space from HQ's ID-mapping compile (ace#2692); cosmetic.",
+      },
+      {
+        severity: "WARN",
+        message:
+          "[PRODUCT] Time-budget heuristic: 39 inputs against a 600 s budget, so read as a heuristic flag, not a defect.",
+      },
+    ],
+    freshness: [
+      {
+        basis: "deliver build",
+        verdict_value: "2c493f08cba14fd5a1f5749f043d26f2",
+        current_value: "c737c5a5ae814dafb3953aff1ad3c421",
+        is_current: false,
+      },
+    ],
+    is_stale: true,
+  };
+
+  it("shows an outside reader the plain outcome and only the app findings", async () => {
+    renderWith({ ...BASE, deep_qa: { stages: [APPS_PASSED] } });
+    await screen.findByText("Deep QA");
+    const outcome = screen.getByTestId("deep-qa-outcome").textContent ?? "";
+    expect(outcome).toMatch(/^Passed — 7 of 7 checks, scored 8\.6\/10, /);
+
+    expect(screen.getByText("What the check noticed in the app:")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Duplicate CBF phone: clear notice, but the block is an empty text box refused with CommCare's generic message.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Step values carry a leading space from HQ's ID-mapping compile; cosmetic."),
+    ).toBeInTheDocument();
+    // Stale, said plainly — no hashes.
+    expect(screen.getByText(/Checked on an earlier version/)).toBeInTheDocument();
+
+    const section = screen.getByText("Deep QA").closest("section") ?? document.body;
+    const text = section.textContent ?? "";
+    for (const internal of [
+      "[PLATFORM]", "[HARNESS]", "[INSTRUMENT]", "[PRODUCT]", "INFO", "WARN",
+      "ace#", "PR #", "2c493f08", "c737c5a5", "re-run the deep gate",
+      "not a defect", "Full grader detail", "time budget",
+    ]) {
+      expect(text).not.toContain(internal);
+    }
   });
 });
+
 
 /**
  * The open-questions ledger folds into decision rows (ACE spec 2026-10-04).
