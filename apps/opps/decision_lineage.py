@@ -473,6 +473,26 @@ def _fork_retired_predecessor(row: dict, run: ChainRun) -> str:
     return ""
 
 
+def trim_leading_absent(history: list[dict]) -> list[dict]:
+    """Drop the runs from BEFORE the decision first existed.
+
+    A history's leading ``found: False`` entries are runs older than the
+    first one that has the decision — under ``scope=opp`` that can be a dozen
+    runs from before the decision was ever written, which say nothing.
+    Entries from the earliest run that has it onward are kept, including a
+    not-found run between two found ones (a decision that disappeared and
+    came back is real information). When no other run has it at all, the
+    history is returned unchanged: "no earlier match" is itself the answer,
+    and the runs that were searched are its evidence.
+    """
+    if not any(e.get("found") and not e.get("current") for e in history):
+        return history
+    # The earliest found entry — this run's own counts, so a decision only
+    # NEWER runs of the opp share never loses this run's entry.
+    first = next(i for i, e in enumerate(history) if e.get("found") or e.get("current"))
+    return history[first:]
+
+
 def build_lineage(chain: list[ChainRun], others: list[ChainRun] | None = None) -> dict:
     """Origins + histories for every LIVE row of ``chain[0]``.
 
@@ -492,7 +512,7 @@ def build_lineage(chain: list[ChainRun], others: list[ChainRun] | None = None) -
         hist = history_for(row, chain, others)
         origin = origin_for(row, hist, chain)
         origins[rid] = origin
-        histories[rid] = collapse_clones(hist, chain, others)
+        histories[rid] = trim_leading_absent(collapse_clones(hist, chain, others))
         counts[origin["kind"]] += 1
     return {
         "chain": [_chain_step(r) for r in chain],
