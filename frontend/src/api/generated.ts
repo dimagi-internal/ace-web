@@ -2513,6 +2513,40 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/site-admin/users": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Users */
+        readonly get: operations["site_admin_list_users"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/site-admin/users/{user_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /** Patch User */
+        readonly patch: operations["site_admin_patch_user"];
+        readonly trace?: never;
+    };
     readonly "/api/canopy/jwks": {
         readonly parameters: {
             readonly query?: never;
@@ -5386,6 +5420,69 @@ export interface components {
              * @default user
              */
             readonly kind: string;
+        };
+        /** SiteAdminMembershipOut */
+        readonly SiteAdminMembershipOut: {
+            /** Workspace Slug */
+            readonly workspace_slug: string;
+            /** Workspace Name */
+            readonly workspace_name: string;
+            /** Role */
+            readonly role: string;
+        };
+        /** SiteAdminUserOut */
+        readonly SiteAdminUserOut: {
+            /** Id */
+            readonly id: number;
+            /** Email */
+            readonly email: string;
+            /** Display Name */
+            readonly display_name: string;
+            /** Is Staff */
+            readonly is_staff: boolean;
+            /** Is Active */
+            readonly is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Last Login */
+            readonly last_login?: string | null;
+            /** Workspaces */
+            readonly workspaces: readonly components["schemas"]["SiteAdminMembershipOut"][];
+        };
+        /** SiteAdminUsersOut */
+        readonly SiteAdminUsersOut: {
+            /** Users */
+            readonly users: readonly components["schemas"]["SiteAdminUserOut"][];
+            /** Recent Changes */
+            readonly recent_changes: readonly components["schemas"]["StaffChangeOut"][];
+        };
+        /** StaffChangeOut */
+        readonly StaffChangeOut: {
+            /** Id */
+            readonly id: number;
+            /** Changed By Email */
+            readonly changed_by_email: string;
+            /** Target Email */
+            readonly target_email: string;
+            /** Old Is Staff */
+            readonly old_is_staff: boolean;
+            /** New Is Staff */
+            readonly new_is_staff: boolean;
+            /** Source */
+            readonly source: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+        };
+        /** StaffPatchIn */
+        readonly StaffPatchIn: {
+            /** Is Staff */
+            readonly is_staff: boolean;
         };
         /**
          * HealthCheckOut
@@ -8754,6 +8851,54 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["CanopyTokenOut"];
+                };
+            };
+        };
+    };
+    readonly site_admin_list_users: {
+        readonly parameters: {
+            readonly query?: {
+                readonly q?: string;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SiteAdminUsersOut"];
+                };
+            };
+        };
+    };
+    readonly site_admin_patch_user: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly user_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["StaffPatchIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SiteAdminUserOut"];
                 };
             };
         };

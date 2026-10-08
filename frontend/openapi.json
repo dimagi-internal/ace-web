@@ -6481,6 +6481,91 @@
         ]
       }
     },
+    "/api/site-admin/users": {
+      "get": {
+        "operationId": "site_admin_list_users",
+        "summary": "List Users",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteAdminUsersOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "site-admin"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/site-admin/users/{user_id}": {
+      "patch": {
+        "operationId": "site_admin_patch_user",
+        "summary": "Patch User",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteAdminUserOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "site-admin"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/canopy/jwks": {
       "get": {
         "operationId": "apps_canopy_api_jwks",
@@ -12791,6 +12876,174 @@
           "expires_at"
         ],
         "title": "CanopyTokenOut",
+        "type": "object"
+      },
+      "SiteAdminMembershipOut": {
+        "additionalProperties": false,
+        "properties": {
+          "workspace_slug": {
+            "title": "Workspace Slug",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_slug",
+          "workspace_name",
+          "role"
+        ],
+        "title": "SiteAdminMembershipOut",
+        "type": "object"
+      },
+      "SiteAdminUserOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "is_staff": {
+            "title": "Is Staff",
+            "type": "boolean"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_login": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login"
+          },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/SiteAdminMembershipOut"
+            },
+            "title": "Workspaces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "is_staff",
+          "is_active",
+          "created_at",
+          "workspaces"
+        ],
+        "title": "SiteAdminUserOut",
+        "type": "object"
+      },
+      "SiteAdminUsersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/SiteAdminUserOut"
+            },
+            "title": "Users",
+            "type": "array"
+          },
+          "recent_changes": {
+            "items": {
+              "$ref": "#/components/schemas/StaffChangeOut"
+            },
+            "title": "Recent Changes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "recent_changes"
+        ],
+        "title": "SiteAdminUsersOut",
+        "type": "object"
+      },
+      "StaffChangeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "changed_by_email": {
+            "title": "Changed By Email",
+            "type": "string"
+          },
+          "target_email": {
+            "title": "Target Email",
+            "type": "string"
+          },
+          "old_is_staff": {
+            "title": "Old Is Staff",
+            "type": "boolean"
+          },
+          "new_is_staff": {
+            "title": "New Is Staff",
+            "type": "boolean"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "changed_by_email",
+          "target_email",
+          "old_is_staff",
+          "new_is_staff",
+          "source",
+          "created_at"
+        ],
+        "title": "StaffChangeOut",
+        "type": "object"
+      },
+      "StaffPatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "is_staff": {
+            "title": "Is Staff",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_staff"
+        ],
+        "title": "StaffPatchIn",
         "type": "object"
       },
       "HealthCheckOut": {

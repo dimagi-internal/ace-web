@@ -56,13 +56,20 @@ export interface CurrentUser {
   user_id: number;
   email: string;
   display_name: string;
+  /** Site admin (`User.is_staff`) — gates the Site admin menu link. */
+  is_staff: boolean;
 }
 
 export const getCurrentUser = async (): Promise<CurrentUser> => {
   const { data, response } = await apiClient.GET("/api/auth/me");
   if (data) {
     const out: MeOut = data as MeOut;
-    return { user_id: out.id, email: out.email, display_name: out.display_name };
+    return {
+      user_id: out.id,
+      email: out.email,
+      display_name: out.display_name,
+      is_staff: Boolean(out.is_staff),
+    };
   }
   // The `content?: never` fallback for some schema versions. It can no longer
   // read the body — openapi-fetch already consumed it — so there is nothing to

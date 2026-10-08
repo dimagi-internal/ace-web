@@ -18,6 +18,7 @@ import RunComparePage from "./pages/RunComparePage";
 import { SessionStructurePage } from "./pages/SessionStructurePage";
 import SessionsPage from "./pages/SessionsPage";
 import SettingsPage from "./pages/SettingsPage";
+import SiteAdminUsersPage from "./pages/SiteAdminUsersPage";
 import SystemPage from "./pages/SystemPage";
 import UnscopedOppLinkPage from "./pages/UnscopedOppLinkPage";
 import VideoExplorerPage from "./pages/VideoExplorerPage";
@@ -97,6 +98,7 @@ export const router = createBrowserRouter(
         { path: "invite/:token", element: <InviteAcceptPage /> },
         { path: "settings", element: <SettingsPage /> },
         { path: "system", element: <SystemPage /> },
+        { path: "site-admin/users", element: <SiteAdminUsersPage /> },
         { path: "auth/cli", element: <AuthCliPage /> },
 
         // Legacy redirects: bare /opps, /sessions, /chat — resolve to the
