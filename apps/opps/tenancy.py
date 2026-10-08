@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from apps.common.schemas import StrictModel
 
