@@ -2,7 +2,6 @@
 
 A single unified list of recently-touched runs, one row per opp's most
 recent run. Used by ace-web's Activity page.
-`/ace activity` command.
 
 Design principle: observable facts only. We don't claim what's "alive" —
 just report what we observed in Drive + what ace-web Sessions exist.
