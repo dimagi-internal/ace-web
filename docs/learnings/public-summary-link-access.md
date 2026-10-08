@@ -42,10 +42,15 @@ into:
 "access": ACCESS_ADMIN,   # or ACCESS_PUBLIC
 ```
 
-`viewer.is_member` rides along on the payload and decides only whether the page
-*draws* the tag — a member already knows which links are internal, so tagging
-them there is noise. Member and public payloads stay cached under separate
-keys (`opp-summary:v2:{member|public}:…`), as they were before.
+`viewer.plain` rides along on the payload and decides whether the page *draws*
+the tag — Dimagi's team already knows which links are internal, so tagging them
+there is noise. Since 2026-10-07 the payload carries two separate facts about
+the reader (`apps/opps/api.py::_summary_viewer`): `viewer.is_member` is ACCESS
+(any member, of any role, may confirm/change/comment) and `viewer.plain` is
+PRESENTATION — owners and editors get the team view, while a `viewer`-role
+member (how partner reviewers are invited) and a non-member get the partner
+view. The three variants are cached under separate keys
+(`opp-summary:v4:{team|partner|public}:…`).
 
 Do not reintroduce an `include_internal_links`-style flag that changes *which*
 links are served. Membership changes the tag, not the content.

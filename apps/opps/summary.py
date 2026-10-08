@@ -2632,6 +2632,7 @@ def build_summary_payload(
     run_id: str,
     viewer_is_member: bool = True,
     tenancy: dict | None = None,
+    viewer_plain: bool | None = None,
 ) -> dict | None:
     """Build the public summary JSON payload for a per-run summary page.
 
@@ -2642,6 +2643,14 @@ def build_summary_payload(
     Returns ``None`` when the workspace's ACE root, the opp folder, or
     the requested run folder can't be located, so callers can map to a
     404 without leaking which segment was the miss.
+
+    ``viewer_plain`` asks for the PARTNER view (defaults to ``not
+    viewer_is_member``): the API passes ``True`` for a ``viewer``-role
+    member, a partner reviewer who may still write but is shown what an
+    outsider is shown. It is echoed as ``viewer.plain``, and the
+    member-only payload details below (claim ``evidence``, a private
+    review's ledger) follow the TEAM view, ``viewer_is_member and not
+    viewer_plain`` — the page draws one version per reader, not a hybrid.
 
     ``viewer_is_member`` is echoed back as ``viewer.is_member``. It does
     NOT change which links are served — with ONE exception: a privately
@@ -2656,6 +2665,9 @@ def build_summary_payload(
     can\'t use is the same failure as letting it 404 silently, just
     quieter. Both variants stay separately cached.
     """
+    if viewer_plain is None:
+        viewer_plain = not viewer_is_member
+    team_view = bool(viewer_is_member) and not viewer_plain
     ace_root_id = getattr(workspace, "drive_root_folder_id", None)
     if not ace_root_id:
         return None
@@ -2774,10 +2786,10 @@ def build_summary_payload(
         # most of them: the auditor must read absence as "this run has no
         # claims", not as a missing section.
         "claims": _read_claims(
-            drive, run_folder.id, viewer_is_member=viewer_is_member,
+            drive, run_folder.id, viewer_is_member=team_view,
         ),
         "feedback": _read_feedback(
-            drive, opp_folder.id, viewer_is_member=viewer_is_member, access=access,
+            drive, opp_folder.id, viewer_is_member=team_view, access=access,
         ),
         "decisions": decisions,
         # Partner reactions collected on this page, keyed by decision id.
@@ -2795,5 +2807,5 @@ def build_summary_payload(
         # reversible change rather than a fait accompli.
         "decision_edits": decision_edits,
         "workbench": workbench,
-        "viewer": {"is_member": bool(viewer_is_member)},
+        "viewer": {"is_member": bool(viewer_is_member), "plain": bool(viewer_plain)},
     }

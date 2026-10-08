@@ -5,6 +5,7 @@ import { ArrowRight, FileText, Scale } from "lucide-react";
 import { ApiError } from "@/api/client";
 import {
   getPublicOppSummary,
+  isPlainViewer,
   postDecisionEdit,
   postDecisionReaction,
   type DecisionReaction,
@@ -462,7 +463,11 @@ export default function OppSummaryPage() {
   // Every link is served to everyone and carries its own `access`. Whether
   // the page DRAWS the "admin only" tag is decided once, here: a member
   // already knows which links are internal, so the tag would be noise.
-  const showAccessTags = !viewer?.is_member;
+  // Two separate facts about the reader: `canWrite` (a member of any role)
+  // is access; `plain` (partner view — viewer role or not a member) is
+  // presentation. Owners and editors get the team view.
+  const plain = isPlainViewer(viewer);
+  const showAccessTags = plain;
   const link = (label: string, href: string, access?: LinkAccess) => ({
     label,
     href,
@@ -552,7 +557,7 @@ export default function OppSummaryPage() {
           )}
         >
           <div className="truncate text-muted-foreground">{opp.display_name}</div>
-          {viewer?.is_member && (
+          {!plain && (
             <div className="font-mono tracking-tight text-muted-foreground/70">
               run {opp.run_id}
             </div>
@@ -585,7 +590,7 @@ export default function OppSummaryPage() {
           {/* Orientation — what this page is and what we need from the
               reader. Outsiders only; a member already knows. */}
           <SummaryOrientation
-            isMember={!!viewer?.is_member}
+            isMember={!plain}
             confirmOutstanding={confirm.outstanding}
             confirmTotal={confirm.total}
             answerOutstanding={asks.answer.outstanding}
@@ -774,7 +779,7 @@ export default function OppSummaryPage() {
               safety-adjacent procedure. */}
           {deep_qa && (
             <SummarySection title="Deep QA">
-              <DeepQaSection deepQa={deep_qa} isMember={!!viewer?.is_member} />
+              <DeepQaSection deepQa={deep_qa} isMember={!plain} />
             </SummarySection>
           )}
 
@@ -829,7 +834,7 @@ export default function OppSummaryPage() {
                           {" · "}
                           {w.withheld_reason ?? "Not shown — did not pass quality review"}
                         </span>
-                        <WalkthroughCaveats ddd={w.ddd} isMember={!!viewer?.is_member} />
+                        <WalkthroughCaveats ddd={w.ddd} isMember={!plain} />
                       </>
                     }
                     links={[]}
@@ -844,12 +849,12 @@ export default function OppSummaryPage() {
                         {/* The eval score is ACE's internal concept-judge
                             grade — members only (a partner reading "eval
                             3/5" learns nothing about the demo). */}
-                        {viewer?.is_member && w.eval_score != null && (
+                        {!plain && w.eval_score != null && (
                           <span className="text-muted-foreground">
                             {" · "}eval {formatEvalScore(w.eval_score)}
                           </span>
                         )}
-                        <WalkthroughCaveats ddd={w.ddd} isMember={!!viewer?.is_member} />
+                        <WalkthroughCaveats ddd={w.ddd} isMember={!plain} />
                       </>
                     }
                     links={[link("Open deck", w.url, w.access)]}
@@ -1036,6 +1041,7 @@ export default function OppSummaryPage() {
                 reactions={reactions}
                 edits={edits}
                 viewerIsMember={!!viewer?.is_member}
+                plain={plain}
                 onReact={handleReact}
                 onEdit={handleEdit}
                 lineage={lineage}

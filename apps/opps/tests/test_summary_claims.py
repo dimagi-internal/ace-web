@@ -130,6 +130,7 @@ claims:
 
 def _payload(
     claims_yaml: str | None = CLAIMS_YAML, *, viewer_is_member: bool = True,
+    viewer_plain: bool | None = None,
 ) -> dict:
     drive = FakeDriveClient.from_tree(_full_tree())
     if claims_yaml is not None:
@@ -139,7 +140,7 @@ def _payload(
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
     payload = build_summary_payload(
         drive, workspace=ws, opp_slug=OPP, run_id=RUN,
-        viewer_is_member=viewer_is_member,
+        viewer_is_member=viewer_is_member, viewer_plain=viewer_plain,
     )
     assert payload is not None
     return payload
@@ -288,6 +289,16 @@ def test_the_audit_evidence_never_reaches_a_non_member():
     import json
 
     assert "commcare_download_ccz" not in json.dumps(anon)
+
+
+def test_the_audit_evidence_never_reaches_a_partner_view_member():
+    """A ``viewer``-role member (a partner reviewer) is drawn the partner
+    view: same as an outsider, though they may write."""
+    partner = _payload(viewer_is_member=True, viewer_plain=True)
+    assert partner["viewer"] == {"is_member": True, "plain": True}
+    assert all(c["evidence"] is None for c in _all_claims(partner["claims"]))
+    team = _payload(viewer_is_member=True, viewer_plain=False)
+    assert any(c["evidence"] for c in _all_claims(team["claims"]))
 
 
 def test_a_member_still_gets_the_audit_record():

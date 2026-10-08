@@ -303,7 +303,7 @@ _URL = f"/api/opps/public/spark/{OPP}/runs/{RUN}/lineage"
 @pytest.mark.django_db
 def test_an_outsider_gets_the_strip_and_badges_in_plain_words(client, lineage_workspaces):
     body = client.get(_URL).json()
-    assert body["viewer"] == {"is_member": False}
+    assert body["viewer"] == {"is_member": False, "plain": True}
     assert [s["via"] for s in body["chain"]] == ["cloned", "seeded", "forked", ""]
     # No run plumbing for a non-member: no ids, no workspaces, no links, no history.
     for step in body["chain"]:
@@ -319,11 +319,11 @@ def test_an_outsider_gets_the_strip_and_badges_in_plain_words(client, lineage_wo
 @pytest.mark.django_db
 def test_a_clone_member_sees_the_source_as_a_label_not_a_link(client, lineage_workspaces):
     _dt, spark = lineage_workspaces
-    user = User.objects.create_user(email="partner@example.org")
-    WorkspaceMembership.objects.create(workspace=spark, user=user, role="viewer")
+    user = User.objects.create_user(email="spark-editor@example.org")
+    WorkspaceMembership.objects.create(workspace=spark, user=user, role="editor")
     client.force_login(user)
     body = client.get(_URL).json()
-    assert body["viewer"] == {"is_member": True}
+    assert body["viewer"] == {"is_member": True, "plain": False}
     head, source = body["chain"][0], body["chain"][1]
     assert head["workbench_url"] == f"/w/spark/opps/{OPP}/runs/{RUN}"
     assert source["workspace"] == "dimagi-team" and source["run_id"] == RUN
@@ -332,6 +332,42 @@ def test_a_clone_member_sees_the_source_as_a_label_not_a_link(client, lineage_wo
     # Three runs, the last one this run (folded into the source it copies).
     assert [e["linked"] for e in hist] == [False, False, False]
     assert hist[-1]["current"] is True
+
+
+@pytest.mark.django_db
+def test_a_viewer_role_member_gets_the_partner_shape(client, lineage_workspaces):
+    """Partner reviewers are invited with role ``viewer``. They are members
+    (they may confirm, change and comment) but are drawn the PARTNER view:
+    the same plain shape an outsider gets — no run ids, no history, no
+    links, no ``scope=opp``."""
+    _dt, spark = lineage_workspaces
+    user = User.objects.create_user(email="partner@example.org")
+    WorkspaceMembership.objects.create(workspace=spark, user=user, role="viewer")
+    client.force_login(user)
+    body = client.get(_URL).json()
+    assert body["viewer"] == {"is_member": True, "plain": True}
+    for step in body["chain"]:
+        assert step["run_id"] is None and step["workspace"] is None
+        assert step["at_phase"] == ""
+        assert step["workbench_url"] is None and step["summary_url"] is None
+    assert body["histories"] == {}
+    o = body["origins"]["working-language"]
+    assert o["from_run"] is None and o["in_run"] is None
+    assert o["from_date"] == "2026-09-25"
+    assert client.get(f"{_URL}?scope=opp").json()["scope"] == "lineage"
+
+
+@pytest.mark.django_db
+def test_an_owner_gets_the_team_shape(client, lineage_workspaces):
+    _dt, spark = lineage_workspaces
+    user = User.objects.create_user(email="spark-owner@example.org")
+    WorkspaceMembership.objects.create(workspace=spark, user=user, role="owner")
+    client.force_login(user)
+    body = client.get(_URL).json()
+    assert body["viewer"] == {"is_member": True, "plain": False}
+    assert body["chain"][0]["run_id"] == RUN
+    assert body["chain"][0]["workbench_url"] == f"/w/spark/opps/{OPP}/runs/{RUN}"
+    assert body["histories"]["working-language"]
 
 
 @pytest.mark.django_db

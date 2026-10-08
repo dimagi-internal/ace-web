@@ -113,7 +113,8 @@ export interface DecisionLineage {
   counts: Record<OriginKind, number>;
   /** Members only; `{}` for anyone else. Oldest first, ending at this run. */
   histories: Record<string, DecisionHistoryEntry[]>;
-  viewer: { is_member: boolean };
+  /** `is_member`: may write. `plain`: drawn in plain words (partner view). */
+  viewer: { is_member: boolean; plain?: boolean };
 }
 
 export async function getDecisionLineage(

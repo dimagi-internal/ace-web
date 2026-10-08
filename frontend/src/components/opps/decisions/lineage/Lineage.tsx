@@ -121,7 +121,10 @@ export function LineageStrip({
 }) {
   if (!lineage || !hasAncestors(lineage)) return null;
   const head = lineage.chain[0];
-  const canWiden = !!onScopeChange && lineage.viewer.is_member;
+  // Widening to every run of the opp is the team view's; the server refuses
+  // `scope=opp` to a partner (plain) reader anyway.
+  const canWiden =
+    !!onScopeChange && !(lineage.viewer.plain ?? !lineage.viewer.is_member);
   return (
     <nav
       aria-label="Where this run came from"

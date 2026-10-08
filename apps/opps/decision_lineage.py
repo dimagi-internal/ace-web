@@ -839,15 +839,22 @@ def _person(value: str, *, member: bool) -> str:
 
 
 def shape_for_viewer(core: dict, *, member: bool, accessible: set[str],
-                     script_name: str = "") -> dict:
+                     script_name: str = "", plain: bool | None = None) -> dict:
     """Project the core for one viewer.
 
+    - ``member`` — a signed-in member of the head run's workspace (any role).
+      Echoed as ``viewer.is_member``; it is access, not presentation.
+    - ``plain`` — draw the partner view. Defaults to ``not member``; the API
+      passes ``True`` for a ``viewer``-role member too (a partner reviewer).
     - ``accessible`` — workspace slugs the viewer is a member of. A chain step
       in one of them carries ``workbench_url`` + ``summary_url``; any other is
       a label only (a clone's source in a workspace the viewer cannot open).
-    - a non-member (``member=False``) gets the strip and the badges in plain
-      words: no run ids, workspaces or opp slugs, no per-decision history.
+    - the plain view gets the strip and the badges in plain words: no run ids,
+      workspaces or opp slugs, no per-decision history, no links.
     """
+    if plain is None:
+        plain = not member
+    team = member and not plain
     steps = []
     for i, step in enumerate(core.get("chain") or []):
         linked = step["workspace"] in accessible and step.get("readable")
@@ -858,15 +865,15 @@ def shape_for_viewer(core: dict, *, member: bool, accessible: set[str],
         shaped = {
             "position": i,
             "via": step["via"],
-            "at_phase": step["at_phase"] if member else "",
+            "at_phase": step["at_phase"] if team else "",
             "stage": stage_label(step["at_phase"]),
             "date": step["date"],
             "copied_date": step.get("copied_date", ""),
             "readable": step["readable"],
-            "workbench_url": base if (member and linked) else None,
-            "summary_url": summary if (member and linked) else None,
+            "workbench_url": base if (team and linked) else None,
+            "summary_url": summary if (team and linked) else None,
         }
-        if member:
+        if team:
             shaped.update({
                 "workspace": step["workspace"],
                 "opp": step["opp"],
@@ -888,21 +895,21 @@ def shape_for_viewer(core: dict, *, member: bool, accessible: set[str],
         origins[rid] = {
             "kind": o["kind"],
             "from_position": pos,
-            "from_run": o.get("from_run") if member else None,
+            "from_run": o.get("from_run") if team else None,
             "from_date": chain_core[pos]["date"] if pos is not None else "",
             # Where the value was (re)decided: this run (0), or the run a
             # clone was copied from.
             "in_position": in_pos,
-            "in_run": o.get("in_run") if member else None,
+            "in_run": o.get("in_run") if team else None,
             "in_date": chain_core[in_pos]["date"] if in_pos is not None else "",
             "on_copy": bool(o.get("on_copy")),
-            "previous_value": o.get("previous_value", "") if member else "",
-            "by": _person(o.get("by", ""), member=member),
+            "previous_value": o.get("previous_value", "") if team else "",
+            "by": _person(o.get("by", ""), member=team),
             "at": o.get("at", ""),
         }
 
     histories: dict[str, list[dict]] = {}
-    if member:
+    if team:
         for rid, hist in (core.get("histories") or {}).items():
             histories[rid] = [
                 {
@@ -920,5 +927,5 @@ def shape_for_viewer(core: dict, *, member: bool, accessible: set[str],
         "origins": origins,
         "counts": core.get("counts") or _zero_counts(),
         "histories": histories,
-        "viewer": {"is_member": member},
+        "viewer": {"is_member": member, "plain": plain},
     }
