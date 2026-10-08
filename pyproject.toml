@@ -42,7 +42,7 @@ dependencies = [
 # only on the local DriveClient Protocol, not the Google SDK.
 [tool.uv.sources]
 canopy-agent-runs = { git = "https://github.com/dimagi-internal/canopy-web.git", subdirectory = "packages/canopy_agent_runs", tag = "canopy-agent-runs-v0.1.4" }
-dimagi-canopy = { git = "https://github.com/dimagi-internal/canopy-web.git", subdirectory = "sdk/python", tag = "dimagi-canopy-v0.7.0" }
+dimagi-canopy = { git = "https://github.com/dimagi-internal/canopy-web.git", subdirectory = "sdk/python", tag = "dimagi-canopy-v0.7.1" }
 
 [project.optional-dependencies]
 dev = [

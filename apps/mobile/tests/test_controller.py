@@ -382,8 +382,8 @@ def test_ensure_running_boot_timeout_when_status_never_ok(
         "start_instances", {"StartingInstances": []}
     )
     # Queue a very long string of "initializing" responses — more than
-    # the 180/5 = 36 polls _wait_for_ec2_ok will make before giving up.
-    for _ in range(60):
+    # the 420/5 = 84 polls _wait_for_ec2_ok will make before giving up.
+    for _ in range(100):
         controller_factory.ec2_stub.add_response(
             "describe_instance_status",
             _instance_status_resp(inst_status="initializing"),
