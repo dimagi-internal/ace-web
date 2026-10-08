@@ -34,6 +34,7 @@ dependencies = [
     # our MCP. Import name `canopy_sdk`; the distribution name may change, the
     # import will not. Pinned by tag below.
     "dimagi-canopy[django]",
+    "argon2-cffi>=23.1",
 ]
 
 # The Django-free run-lifecycle core (read model + DriveRunStore) lives in the

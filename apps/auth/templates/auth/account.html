@@ -1,0 +1,19 @@
+{% extends "auth/base.html" %}
+{% block title %}Account{% endblock %}
+{% block content %}
+    <p class="center"><strong>{{ user.email }}</strong></p>
+    <p class="small">Ways to sign in to this account. They are all the same account, matched by email.</p>
+
+    <p><strong>Password:</strong> {% if has_password %}set{% else %}not set{% endif %}</p>
+    <a class="btn btn-secondary" href="{% url 'auth:password_change' %}">{% if has_password %}Change password{% else %}Set a password{% endif %}</a>
+
+    {% if google_enabled %}
+    <p><strong>Google:</strong> {% if google_linked %}linked{% else %}not linked{% endif %}</p>
+    {% if not google_linked %}
+    <a class="btn btn-secondary" href="{% url 'auth:google_initiate' %}?mode=link">Link Google</a>
+    <p class="small">Choose the Google account whose email is {{ user.email }}; it must be a verified address.</p>
+    {% endif %}
+    {% endif %}
+
+    <p class="small center"><a href="{{ request.META.SCRIPT_NAME }}/">Back to ace-web</a> · <a href="{% url 'auth:logout' %}">Sign out</a></p>
+{% endblock %}

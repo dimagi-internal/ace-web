@@ -15,46 +15,17 @@ from urllib.parse import urlencode
 import httpx
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login, logout
+from django.contrib.auth import logout
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
-from apps.auth.login_gate import admission_rule
-from apps.auth.models import User
+from apps.auth import identity
 from apps.auth.oauth import fetch_user_email, fetch_userinfo, introspect_token
 
 logger = logging.getLogger(__name__)
-
-
-def login_page(request: HttpRequest) -> HttpResponse:
-    """
-    Display the login page with a 'Sign in with Connect' button.
-
-    If already authenticated, redirect to the `next` query param (default /).
-    """
-    _prefix = settings.FORCE_SCRIPT_NAME or ""
-    default_next = f"{_prefix}/" if _prefix else "/"
-    if request.user.is_authenticated:
-        next_url = request.GET.get("next", default_next)
-        if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
-            next_url = default_next
-        return redirect(next_url)
-
-    next_url = request.GET.get("next", default_next)
-    show_test_login = bool(
-        getattr(settings, "DEBUG", False)
-        and getattr(settings, "ACE_ALLOW_TEST_LOGIN", False)
-    )
-    context = {
-        "next": next_url,
-        "show_test_login": show_test_login,
-        "test_login_url": f"{_prefix}/auth/test-login/",
-        "post_login_url": f"{_prefix}/" if _prefix else "/",
-    }
-    return render(request, "auth/login.html", context)
 
 
 def oauth_initiate(request: HttpRequest) -> HttpResponse:
@@ -72,7 +43,7 @@ def oauth_initiate(request: HttpRequest) -> HttpResponse:
         messages.error(
             request, "OAuth authentication is not configured. Please contact your administrator."
         )
-        return render(request, "auth/login.html", status=500)
+        return redirect("auth:login")
 
     # Generate CSRF state token
     state = secrets.token_urlsafe(32)
@@ -217,24 +188,8 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         if api_email:
             profile_data["email"] = api_email
 
-    # Admission: the allowed email domains (when the list is non-empty), a
-    # pending workspace invite, or an existing workspace membership. Checked
-    # BEFORE the User row is created, so a rejected outsider leaves nothing.
     email = (profile_data.get("email") or "").strip().lower()
     logger.info(f"Final email for admission check: {email!r}")
-    rule = admission_rule(email)
-    if rule is None:
-        logger.warning(f"Rejected login for non-admitted email: {email!r}")
-        allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
-        allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
-        messages.error(
-            request,
-            f"Access is restricted to {allowed_str} accounts. If you were invited, "
-            "sign in with the email address the invite was sent to.",
-        )
-        return redirect("auth:login")
-    if rule in ("invite", "membership"):
-        logger.info(f"Admitted login for {email!r} by {rule}")
 
     # Build display name
     first_name = profile_data.get("first_name", "")
@@ -245,11 +200,24 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         or email.split("@")[0]
     )
 
-    # Create or update the User row (keyed by email)
-    user, created = User.objects.update_or_create(
-        email=email,
-        defaults={"display_name": display_name},
+    # Read the post-login target before login() — it may flush the session.
+    # Default to FORCE_SCRIPT_NAME so the redirect lands on ace-web,
+    # not the ALB root (which routes to a different app on shared infra).
+    _prefix = settings.FORCE_SCRIPT_NAME or ""
+    default_next = f"{_prefix}/" if _prefix else "/"
+    next_url = request.session.pop("oauth_next", default_next)
+    request.session.pop("oauth_state", None)
+    request.session.pop("oauth_code_verifier", None)
+
+    # Admission, linking (by email, case-insensitive), session and auto-join
+    # are the SAME code for every sign-in method — apps/auth/identity.py.
+    user, refusal = identity.sign_in(
+        request, email, method=identity.METHOD_CONNECT,
+        display_name=display_name, update_display_name=True,
     )
+    if user is None:
+        messages.error(request, refusal)
+        return redirect("auth:login")
 
     # Store token info in session (NOT in the database — tokens are short-lived and
     # user-specific, sessions are the right scope). The Django session itself is
@@ -264,27 +232,6 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
             "display_name": display_name,
         },
     }
-
-    # Log the user in via Django's standard auth
-    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-
-    # Auto-join any workspaces that declared this user's email domain.
-    # Idempotent; safe to call on every login (not just first).
-    try:
-        from apps.workspaces.auto_join import ensure_auto_join_memberships
-
-        ensure_auto_join_memberships(user)
-    except Exception as exc:  # noqa: BLE001 — never block login on auto-join
-        logger.warning("auto_join failed for %s: %s", email, exc)
-
-    # Clean up temporary session keys
-    request.session.pop("oauth_state", None)
-    request.session.pop("oauth_code_verifier", None)
-    # Default to FORCE_SCRIPT_NAME so the redirect lands on ace-web,
-    # not the ALB root (which routes to a different app on shared infra).
-    _prefix = settings.FORCE_SCRIPT_NAME or ""
-    default_next = f"{_prefix}/" if _prefix else "/"
-    next_url = request.session.pop("oauth_next", default_next)
 
     logger.info(f"Successfully authenticated user {email} via Connect OAuth")
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, LayoutDashboard, LogOut, Settings, User } from "lucide-react";
+import { ChevronDown, KeyRound, LayoutDashboard, LogOut, Settings, User } from "lucide-react";
 
 import { getCurrentUser, type CurrentUser } from "@/api/auth";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -80,6 +80,17 @@ export function UserMenu() {
         >
           <Settings className="h-3.5 w-3.5" />
           Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          // Plain navigation — /auth/account/ is a Django-rendered page
+          // (add a password, link Google), not a React route.
+          onClick={() => {
+            window.location.href = "/ace/auth/account/";
+          }}
+          className="gap-2"
+        >
+          <KeyRound className="h-3.5 w-3.5" />
+          Sign-in methods
         </DropdownMenuItem>
         <div className="flex items-center justify-between px-2 py-1.5 text-xs">
           <span className="text-muted-foreground">Theme</span>

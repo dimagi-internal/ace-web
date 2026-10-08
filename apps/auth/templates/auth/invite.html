@@ -1,0 +1,41 @@
+{% extends "auth/base.html" %}
+{% block title %}Invitation{% endblock %}
+{% block content %}
+  {% if invalid %}
+    <p class="center">This invitation is no longer valid. Ask the person who invited you to send a new one.</p>
+    <a class="btn btn-secondary" href="{% url 'auth:login' %}">Sign in</a>
+  {% else %}
+    <p class="center">You've been invited to join<br>
+      <strong>{{ invite.workspace.display_name }}</strong> as {{ invite.role }}.</p>
+    <p class="small center">Invitation for <strong>{{ invite.email }}</strong>. Sign in with that address.</p>
+
+    {% if existing_account %}
+      <p class="note">There is already an account for {{ invite.email }}. Sign in the way you did before; you'll then accept the invitation. You can add a password later from your account page.</p>
+    {% else %}
+      <h2 style="font-size:1rem;margin:0 0 .75rem">Set a password</h2>
+      <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="field">
+          <label for="{{ form.password1.id_for_label }}">Password</label>
+          {{ form.password1 }}
+          {{ form.password1.errors }}
+          <div class="help">{{ form.password1.help_text|safe }}</div>
+        </div>
+        <div class="field">
+          <label for="{{ form.password2.id_for_label }}">Confirm password</label>
+          {{ form.password2 }}
+          {{ form.password2.errors }}
+        </div>
+        <button type="submit" class="btn">Set password and join</button>
+      </form>
+      <div class="divider"><span>or sign in with</span></div>
+    {% endif %}
+
+    {% if google_enabled %}
+    <a class="btn btn-secondary" href="{% url 'auth:google_initiate' %}?next={{ next|urlencode }}">Google</a>
+    {% endif %}
+    <a class="btn btn-secondary" href="{% url 'auth:initiate' %}?next={{ next|urlencode }}">CommCare</a>
+    <p class="note">You don't need a CommCare account: a password{% if google_enabled %} or Google{% endif %} works. If you do use CommCare, choose <strong>Log in with CommCare HQ</strong> on the Connect page.</p>
+  {% endif %}
+{% endblock %}

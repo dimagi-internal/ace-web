@@ -844,9 +844,8 @@ def invite_preview(request: HttpRequest, token: str) -> HttpResponse:
 def invite_accept(request: HttpRequest, token: str) -> HttpResponse:
     from django.db import transaction
     from django.http import JsonResponse
-    from django.utils import timezone
 
-    from apps.workspaces.models import WorkspaceInvite, WorkspaceMembership
+    from apps.workspaces.models import WorkspaceInvite
 
     with transaction.atomic():
         try:
@@ -866,23 +865,9 @@ def invite_accept(request: HttpRequest, token: str) -> HttpResponse:
                 type_=TYPE_FORBIDDEN,
             )
 
-        from apps.workspaces import permissions as perms
+        from apps.workspaces.invites import grant_invite
 
-        membership, created = WorkspaceMembership.objects.get_or_create(
-            workspace=invite.workspace,
-            user=request.user,
-            defaults={"role": invite.role, "invited_by": invite.invited_by},
-        )
-        # UPGRADE-ONLY (canopy-web's rule): an existing member moves to the
-        # HIGHER of their role and the invite's, never lower — a stray invite
-        # must not strip access. Demotion is the explicit role-change PATCH.
-        if not created:
-            higher = perms.higher_role(membership.role, invite.role)
-            if higher != membership.role:
-                membership.role = higher
-                membership.save(update_fields=["role"])
-        invite.accepted_at = timezone.now()
-        invite.save(update_fields=["accepted_at"])
+        membership = grant_invite(invite, request.user)
 
     payload = InviteAcceptOut.model_validate(
         {
