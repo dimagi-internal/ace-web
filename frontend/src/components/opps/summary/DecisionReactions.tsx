@@ -34,6 +34,16 @@ function formatWhen(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/**
+ * The one sentence that separates the two acts on a row. A comment is
+ * stored on the decision for the team and other reviewers; it does not
+ * move the answer, and nothing is sent to anyone when it is posted, so
+ * the copy promises neither.
+ */
+const NOT_AN_EDIT =
+  "A comment doesn't change the answer — use Confirm or pick an option above for that. " +
+  "It stays on this decision for the ACE team and other reviewers to read.";
+
 export interface ReactionSubmit {
   comment: string;
 }
@@ -43,15 +53,18 @@ export function DecisionReactions({
   reactions,
   onSubmit,
   canWrite,
-  prompt,
+  contested = false,
 }: {
   decisionId: string;
   reactions: DecisionReaction[];
   onSubmit: (decisionId: string, body: ReactionSubmit) => Promise<void>;
   /** A signed-in workspace member. Anyone else reads, and is offered sign-in. */
   canWrite: boolean;
-  /** Row-specific invitation — a conflicting row deserves a sharper one. */
-  prompt?: string;
+  /**
+   * ACE's sources disagreed on this row. The box is then pitched at the
+   * reviewer who is not ready to pick an answer: ask what would settle it.
+   */
+  contested?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
@@ -78,8 +91,24 @@ export function DecisionReactions({
 
   const canSubmit = comment.trim().length >= 3 && !busy;
 
+  // Say what the box DOES before anyone types in it. The old copy ("Not
+  // sure enough to change it? Say what you'd want to know.") named the
+  // act only by contrast with the editor above it, a reviewer could not
+  // tell whether sending it changed the answer, and the placeholder then
+  // asked the opposite question ("What would you have picked?").
+  const opener = contested
+    ? "Not ready to decide? Ask what you'd need to know"
+    : "Ask a question or raise a concern";
+  const placeholder = contested
+    ? "What would you need to know before choosing? e.g. who relies on this, or which source is right"
+    : "What is unclear or worrying about this answer?";
+
   return (
     <div className="mt-4 border-t border-border/70 pt-3">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        Questions and concerns
+      </p>
+
       {reactions.length > 0 && (
         <ul className="mb-3 space-y-2.5">
           {reactions.map((r) => (
@@ -98,24 +127,26 @@ export function DecisionReactions({
 
       {done && !open && (
         <p className="mb-2 text-[13px] text-emerald-400">
-          Recorded — it goes to the team building this and shows up in the
-          feedback ledger for this run.
+          Saved on this decision. The answer above is unchanged.
         </p>
       )}
 
       {!canWrite ? (
         <SignInToEdit>Sign in to comment</SignInToEdit>
       ) : !open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground underline-offset-4 hover:underline"
-        >
-          <MessageSquarePlus size={14} />
-          {reactions.length > 0
-            ? "Add your own"
-            : (prompt ?? "Think we got this wrong? Tell us")}
-        </button>
+        <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            <MessageSquarePlus size={14} />
+            {reactions.length > 0 ? "Add a question or concern" : opener}
+          </button>
+          <p className="text-[12px] leading-[1.5] text-muted-foreground">
+            {NOT_AN_EDIT}
+          </p>
+        </div>
       ) : (
         <form onSubmit={submit} className="space-y-2.5">
           <textarea
@@ -124,10 +155,14 @@ export function DecisionReactions({
             maxLength={2000}
             rows={3}
             autoFocus
-            placeholder="What would you have picked, and why?"
+            placeholder={placeholder}
             aria-label="Your comment on this decision"
+            aria-describedby={`reaction-help-${decisionId}`}
             className="w-full rounded border border-border bg-background px-3 py-2 text-[13px] leading-[1.6] text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
           />
+          <p id={`reaction-help-${decisionId}`} className="text-[12px] leading-[1.5] text-muted-foreground">
+            {NOT_AN_EDIT}
+          </p>
           {error && <p className="text-[13px] text-red-400">{error}</p>}
           <div className="flex items-center gap-3">
             <button
@@ -140,7 +175,7 @@ export function DecisionReactions({
                   : "cursor-not-allowed bg-muted text-muted-foreground",
               )}
             >
-              {busy ? "Sending…" : "Send"}
+              {busy ? "Posting…" : "Post comment"}
             </button>
             <button
               type="button"

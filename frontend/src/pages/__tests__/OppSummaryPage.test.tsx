@@ -945,7 +945,7 @@ describe("OppSummaryPage", () => {
     // "Sign in" replaces both the editor and the comment box.
     expect(screen.getByText("Sign in to edit")).toBeTruthy();
     expect(screen.getByText("Sign in to comment")).toBeTruthy();
-    expect(screen.queryByText(/Think we got this wrong/)).toBeNull();
+    expect(screen.queryByText(/Ask a question or raise a concern/)).toBeNull();
     const href = screen.getByText("Sign in to edit").closest("a")!.getAttribute("href")!;
     expect(href).toMatch(/\/auth\/login\/\?next=/);
     expect(edit).not.toHaveBeenCalled();
@@ -992,14 +992,17 @@ describe("OppSummaryPage", () => {
     renderWith({ ...CONFLICTED, ...MEMBER });
     await openDecisionsTab();
     await openRow("A contested call");
-    fireEvent.click(await screen.findByText(/Say what you.d want to know/));
+    fireEvent.click(await screen.findByText(/Not ready to decide\? Ask what you.d need to know/));
+    // Before anything is sent, the row says a comment is not an edit.
+    expect(screen.getAllByText(/A comment doesn.t change the answer/).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
       target: { value: "The later date is right." },
     });
     expect(screen.queryByLabelText("Your name")).toBeNull();
-    fireEvent.click(screen.getByText("Send"));
+    fireEvent.click(screen.getByText("Post comment"));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(post.mock.calls[0][4]).toEqual({ comment: "The later date is right." });
+    expect(await screen.findByText(/The answer above is unchanged/)).toBeTruthy();
     expect(await screen.findByText("The later date is right.")).toBeTruthy();
   });
 
