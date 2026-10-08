@@ -179,6 +179,61 @@ LOGIN_URL = "/auth/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/auth/login/"
 
+# --- Passwords (email + password sign-in; docs/specs/2026-10-08-normal-login-design.md) ---
+# Argon2 first so every NEW hash is Argon2; PBKDF2 stays listed so a hash made
+# before this change still verifies (and is upgraded to Argon2 on next login).
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+]
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 12},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+# A reset link is a password. One hour, not Django's three days.
+PASSWORD_RESET_TIMEOUT = env.int("ACE_PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
+
+# Password reset is a FLAG, off until outbound email exists. ace-web has no
+# mail backend in prod (Django's default would try SMTP on localhost and fail
+# every send), and a reset form that silently drops its email is worse than
+# no form. Turn on only together with EMAIL_URL — see docs/auth.md.
+ACE_PASSWORD_RESET_ENABLED = env.bool("ACE_PASSWORD_RESET_ENABLED", default=False)
+# e.g. EMAIL_URL=smtps://user:pass@email-smtp.us-east-1.amazonaws.com:465  (SES SMTP)
+_email_url = env("EMAIL_URL", default="")
+if _email_url:
+    EMAIL_CONFIG = env.email_url("EMAIL_URL")
+    EMAIL_BACKEND = EMAIL_CONFIG["EMAIL_BACKEND"]
+    EMAIL_HOST = EMAIL_CONFIG.get("EMAIL_HOST", "")
+    EMAIL_PORT = EMAIL_CONFIG.get("EMAIL_PORT", 25)
+    EMAIL_HOST_USER = EMAIL_CONFIG.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = EMAIL_CONFIG.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = EMAIL_CONFIG.get("EMAIL_USE_TLS", False)
+    EMAIL_USE_SSL = EMAIL_CONFIG.get("EMAIL_USE_SSL", False)
+else:
+    # Nothing configured: fail LOUDLY into the log instead of trying SMTP.
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ace-web <ace@dimagi-ai.com>")
+
+# Brute-force ceilings on the password endpoints (apps/common/rate_limit.py:
+# fixed window on the cache, fails open). Per client address AND per target
+# email, so rotating X-Forwarded-For does not unlock a single account.
+ACE_LOGIN_RATE_LIMIT_IP = (30, 900)      # (attempts, window seconds)
+ACE_LOGIN_RATE_LIMIT_EMAIL = (10, 900)
+ACE_RESET_RATE_LIMIT_IP = (10, 3600)
+ACE_RESET_RATE_LIMIT_EMAIL = (3, 3600)
+
+# --- Google sign-in (OIDC code + PKCE) ---
+# Both unset = the button is hidden and /auth/google/* 404s. See docs/auth.md
+# for the one console step a human must do.
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
+GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")
+
 # --- Claude integration ---
 # CLI backend (Phase 2): spawns `claude -p` as a subprocess. The OAuth token
 # is persisted in the ace_common_systemconfig DB table (see auth_flow.py) —

@@ -186,3 +186,30 @@ def test_token_round_trips_via_bearer_auth(client, user):
 def _urlencode(params: dict) -> str:
     from urllib.parse import urlencode
     return urlencode(params)
+
+
+# --- a PASSWORD session can authorize a CLI token (agents without HQ) ----------
+
+def test_password_session_authorizes_a_cli_token(user):
+    from urllib.parse import urlencode
+
+    user.set_password("agent-passphrase-for-cli-1")
+    user.save()
+    anon = Client()
+    authorize = "/auth/cli/authorize/?" + urlencode(_qs(label="hal-agent"))
+
+    # Not signed in: bounced to the one login page, carrying where to come back to.
+    bounce = anon.get(authorize)
+    assert bounce.status_code == 302 and "/auth/login/" in bounce.url
+
+    # Sign in with email + password — no Connect, no HQ — and land back on the authorize page.
+    back = anon.post("/auth/login/", {
+        "username": "op@example.com", "password": "agent-passphrase-for-cli-1", "next": authorize,
+    })
+    assert back.status_code == 302 and back.url == authorize
+    assert anon.get(authorize).status_code == 200
+
+    done = anon.post(authorize)
+    assert done.status_code == 302
+    raw = parse_qs(urlparse(done.url).query)["token"][0]
+    assert PersonalToken.lookup(raw).user == user

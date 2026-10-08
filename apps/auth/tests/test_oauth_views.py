@@ -25,14 +25,15 @@ def _oauth_config(settings):
 def test_login_page_public(client):
     resp = client.get("/auth/login/")
     assert resp.status_code == 200
-    assert b"Sign in with Connect" in resp.content
+    assert b"Sign in with CommCare" in resp.content
+    assert b"Sign in with email" in resp.content
 
 
-def test_login_page_shows_hq_first_help_for_invite_links(client):
-    resp = client.get("/auth/login/?next=/ace/invite/tok123")
-    assert b"Log in with CommCare HQ" in resp.content
-    plain = client.get("/auth/login/")
-    assert b"Log in with CommCare HQ" not in plain.content
+def test_login_page_tells_partners_without_commcare_to_use_email_or_google(client):
+    body = client.get("/auth/login/").content.decode()
+    assert "No CommCare account? You don't need one" in body
+    # ...and keeps the warning for people who DO use CommCare.
+    assert "Log in with CommCare HQ" in body
 
 
 def test_initiate_redirects_to_connect_with_pkce(client):
@@ -50,7 +51,10 @@ def test_initiate_redirects_to_connect_with_pkce(client):
 def test_initiate_fails_when_not_configured(client, settings):
     settings.CONNECT_OAUTH_CLIENT_ID = ""
     resp = client.get("/auth/initiate/")
-    assert resp.status_code == 500
+    # Back to the login page (which now offers other methods) with the reason,
+    # rather than a bare 500 page that offers nothing.
+    assert resp.status_code == 302
+    assert resp.url == "/auth/login/"
 
 
 def test_callback_rejects_invalid_state(client):

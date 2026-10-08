@@ -1,45 +1,44 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign in — ace-web</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #f5f5f5; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .container { background: #fff; border-radius: 8px; padding: 2.5rem 3rem; max-width: 400px; width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,.1); text-align: center; }
-    h1 { font-size: 1.4rem; margin: 0 0 1rem; color: #1a1a1a; }
-    p { color: #555; margin: 0 0 1.5rem; line-height: 1.5; }
-    .btn { display: inline-block; background: #1a56db; color: #fff; text-decoration: none; padding: .75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; border: none; width: 100%; box-sizing: border-box; }
-    .btn:hover { background: #1e429f; }
-    .messages { margin-bottom: 1rem; }
-    .invite-help { margin-top: 1rem; font-size: .9rem; color: #4b5563; }
-    .messages li { list-style: none; background: #fee2e2; color: #991b1b; padding: .6rem 1rem; border-radius: 4px; margin-bottom: .5rem; }
-    .dev-panel { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed #ddd; text-align: left; }
-    .dev-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #888; font-weight: 600; margin-bottom: .5rem; }
-    .dev-panel h2 { font-size: .95rem; margin: .25rem 0 .5rem; color: #1a1a1a; }
-    .dev-panel p { font-size: .8rem; color: #666; margin: 0 0 .75rem; }
-    .dev-panel input { width: 100%; box-sizing: border-box; padding: .55rem .75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: .9rem; margin-bottom: .5rem; font-family: inherit; }
-    .dev-panel .btn { background: #4b5563; font-size: .9rem; padding: .55rem 1rem; }
-    .dev-panel .btn:hover { background: #374151; }
-    .dev-error { color: #991b1b; font-size: .8rem; margin-top: .5rem; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>ace-web</h1>
-    <p>Sign in with your Connect account to continue.</p>
-    {% if messages %}
-    <ul class="messages">
-      {% for message in messages %}<li>{{ message }}</li>{% endfor %}
-    </ul>
+{% extends "auth/base.html" %}
+{% block content %}
+    <p class="center">Sign in to continue.</p>
+
+    <form method="post" action="{% url 'auth:login' %}">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="field">
+        <label for="{{ form.username.id_for_label }}">Email</label>
+        {{ form.username }}
+        {{ form.username.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.password.id_for_label }}">Password</label>
+        {{ form.password }}
+        {{ form.password.errors }}
+      </div>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit" class="btn">Sign in with email</button>
+      {% if reset_enabled %}<p class="small center"><a href="{% url 'auth:password_reset' %}">Forgot your password?</a></p>{% endif %}
+    </form>
+
+    <div class="divider"><span>or</span></div>
+
+    {% if google_enabled %}
+    <a class="btn btn-secondary" href="{% url 'auth:google_initiate' %}?next={{ next|urlencode }}">Sign in with Google</a>
     {% endif %}
-    <a class="btn" href="{% url 'auth:initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Sign in with Connect</a>
-    {% if "/invite/" in next %}
-    <p class="invite-help">You've been invited to a workspace. On the Connect page, choose
-      <strong>Log in with CommCare HQ</strong> and sign in with the email address the invite
-      was sent to. No Connect account yet? That creates one for you. If you don't have a
-      CommCare HQ account, create a free one at commcarehq.org first.</p>
-    {% endif %}
+    <a class="btn btn-secondary" href="{% url 'auth:initiate' %}?next={{ next|urlencode }}">Sign in with CommCare</a>
+
+    <p class="note">
+      <strong>No CommCare account? You don't need one.</strong> Use your email and
+      password{% if google_enabled %}, or Google{% endif %}. You must have been invited
+      to a workspace first; open your invite link to set a password.
+    </p>
+    <p class="note">
+      <strong>If you do use CommCare:</strong> on the Connect page choose
+      <strong>Log in with CommCare HQ</strong> and sign in with the email address your
+      invite was sent to. Accepting a Connect invite <em>before</em> signing in through
+      HQ creates a separate Connect password account, and HQ sign-in then stops working
+      for it.
+    </p>
 
     {% if show_test_login %}
     <div class="dev-panel">
@@ -47,12 +46,7 @@
       <h2>Sign in as a test user</h2>
       <p>No OAuth credentials needed. Available because <code>DEBUG=True</code> and <code>ACE_ALLOW_TEST_LOGIN=True</code>.</p>
       <form id="test-login-form" autocomplete="off">
-        <input
-          id="test-login-email"
-          type="email"
-          placeholder="you@example.com"
-          required
-        >
+        <input id="test-login-email" type="email" placeholder="you@example.com" required>
         <button type="submit" class="btn">Sign in as test user</button>
         <div id="test-login-error" class="dev-error" hidden></div>
       </form>
@@ -86,6 +80,4 @@
       })();
     </script>
     {% endif %}
-  </div>
-</body>
-</html>
+{% endblock %}

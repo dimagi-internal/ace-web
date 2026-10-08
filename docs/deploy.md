@@ -21,7 +21,7 @@ ALB on AWS ECS Fargate, reusing the shared connect-labs infrastructure
   storage. Sourced via the `REDIS_URL` secret (see below)
 - **Secrets:** AWS Secrets Manager under the `ace-web/` prefix
 - **Logs:** CloudWatch Logs group `/ecs/labs-jj-ace-web`, 30-day retention
-- **Auth:** Connect OAuth with PKCE, `@dimagi.com` email filter
+- **Auth:** email + password, Sign in with Google, Sign in with CommCare (Connect OAuth + PKCE), all behind one invite-only admission gate — see [auth.md](auth.md)
 - **Deploy:** GitHub Actions `.github/workflows/deploy-ace-web-labs.yml` (manual
   `workflow_dispatch` trigger)
 

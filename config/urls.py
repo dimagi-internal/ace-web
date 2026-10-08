@@ -7,9 +7,24 @@ from django.views.generic import TemplateView
 
 from apps.api.api import api
 from apps.api.views import redoc_docs, scalar_docs
+from apps.auth.invite_views import invite_entry
 from apps.canopy import grant as canopy_grant
 
+
+def admin_login_redirect(request):
+    from django.http import HttpResponseForbidden
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    if request.user.is_authenticated:
+        # Signed in but not staff: bouncing to the login page would loop back here.
+        return HttpResponseForbidden("The admin is for staff accounts.")
+    return redirect(f"{reverse('auth:login')}?next={reverse('admin:index')}")
+
 urlpatterns = [
+    # The admin's own login form would be a fourth door that skips the
+    # admission gate; send it through the one login page instead.
+    path("admin/login/", admin_login_redirect, name="admin_login_redirect"),
     path("admin/", admin.site.urls),
     # The canopy host grant's token endpoint (RFC 7523 jwt-bearer +
     # private_key_jwt + DPoP), straight from the canopy SDK. Refuses every
@@ -35,6 +50,9 @@ urlpatterns = [
     ),
     path("auth/", include("apps.auth.urls")),
     path("auth/slack/", include("apps.slack.auth_urls")),
+    # Invite links: anonymous visitors choose how to sign in (password, Google,
+    # CommCare) on the server-rendered invite page; signed-in ones get the SPA.
+    re_path(r"^invite/(?P<token>[^/]+)/?$", invite_entry, name="spa_invite"),
     # Public per-run opp summary page. SPA shell served WITHOUT
     # login_required so anonymous viewers can hit the page directly
     # (the React app then fetches /api/opps/public/... which is also

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Sign in{% endblock %} — ace-web</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .container { background: #fff; border-radius: 8px; padding: 2.5rem 3rem; max-width: 400px; width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+    h1 { font-size: 1.4rem; margin: 0 0 1rem; color: #1a1a1a; text-align: center; }
+    p { color: #555; margin: 0 0 1.25rem; line-height: 1.5; }
+    a { color: #1a56db; }
+    .btn { display: block; background: #1a56db; color: #fff; text-decoration: none; text-align: center; padding: .75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; border: none; width: 100%; box-sizing: border-box; margin-bottom: .6rem; }
+    .btn:hover { background: #1e429f; }
+    .btn-secondary { background: #fff; color: #1a1a1a; border: 1px solid #d1d5db; }
+    .btn-secondary:hover { background: #f3f4f6; }
+    .field { margin-bottom: .9rem; }
+    .field label { display: block; font-size: .85rem; font-weight: 600; color: #374151; margin-bottom: .25rem; }
+    .field input { width: 100%; box-sizing: border-box; padding: .6rem .75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; font-family: inherit; }
+    .field .help, .field .help ul { font-size: .78rem; color: #6b7280; margin: .25rem 0 0; padding-left: 1.1rem; }
+    .field .help { padding-left: 0; }
+    .errorlist, .messages { margin: 0 0 1rem; padding: 0; }
+    .errorlist li, .messages li { list-style: none; background: #fee2e2; color: #991b1b; padding: .6rem 1rem; border-radius: 4px; margin-bottom: .5rem; font-size: .9rem; }
+    .messages li.success { background: #dcfce7; color: #166534; }
+    .divider { display: flex; align-items: center; color: #9ca3af; font-size: .8rem; margin: 1rem 0; }
+    .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid #e5e7eb; }
+    .divider span { padding: 0 .75rem; }
+    .small { font-size: .88rem; color: #4b5563; }
+    .center { text-align: center; }
+    .note { margin-top: 1rem; font-size: .85rem; color: #4b5563; background: #f9fafb; border-radius: 6px; padding: .7rem .9rem; }
+    .dev-panel { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed #ddd; text-align: left; }
+    .dev-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #888; font-weight: 600; margin-bottom: .5rem; }
+    .dev-panel h2 { font-size: .95rem; margin: .25rem 0 .5rem; color: #1a1a1a; }
+    .dev-panel p { font-size: .8rem; color: #666; margin: 0 0 .75rem; }
+    .dev-panel input { width: 100%; box-sizing: border-box; padding: .55rem .75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: .9rem; margin-bottom: .5rem; font-family: inherit; }
+    .dev-panel .btn { background: #4b5563; font-size: .9rem; padding: .55rem 1rem; }
+    .dev-error { color: #991b1b; font-size: .8rem; margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ace-web</h1>
+    {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

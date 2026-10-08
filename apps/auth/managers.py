@@ -4,6 +4,18 @@ from django.contrib.auth.base_user import BaseUserManager
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
+    def get_by_natural_key(self, email):
+        """Case-insensitive, so "Jon@X.com" signs in as the "jon@x.com" row.
+
+        Django's ModelBackend resolves the login name through here. Two rows
+        differing only by case (the UNIQUE constraint is case-sensitive) are
+        ambiguous, and an ambiguous login is a refused one.
+        """
+        matches = list(self.filter(email__iexact=(email or "").strip())[:2])
+        if len(matches) != 1:
+            raise self.model.DoesNotExist(email)
+        return matches[0]
+
     def create_user(self, email: str, display_name: str = "", google_sub: str | None = None):
         if not email:
             raise ValueError("Email is required")

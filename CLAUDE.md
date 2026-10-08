@@ -178,22 +178,48 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
 
 ## Key architectural decisions
 
-- **Auth**: Connect OAuth with PKCE, hand-rolled session-based flow ported
-  from connect-labs (NOT django-allauth). Implementation in
-  `apps/auth/oauth_views.py` + `apps/auth/oauth.py`. Tenant-unique session cookies
-  (`sessionid_ace`, `csrftoken_ace`) and path-scoped (`/ace/`) to avoid collisions
+- **Auth**: three ways in — **email + password** (Django's own
+  `LoginView`/`PasswordReset*`/`PasswordChangeView`, stock validators, Argon2
+  first with PBKDF2 kept), **Sign in with Google** (hand-rolled OIDC code +
+  PKCE; `apps/auth/google_oauth.py` + `google_views.py`; state, nonce, RS256
+  signature and `email_verified` all checked; hidden until
+  `GOOGLE_OAUTH_CLIENT_ID/SECRET` are set), and **Sign in with CommCare** (the
+  original Connect OAuth + PKCE flow, `apps/auth/oauth_views.py` +
+  `oauth.py`, ported from connect-labs; NOT django-allauth, authlib not
+  adopted either). All three end in **one module, `apps/auth/identity.py`**:
+  `admit` → `resolve_user` (one `User` per person, matched by email
+  case-insensitively) → `start_session` (`login()`, which rotates the session,
+  then auto-join-by-domain). Never reimplement those in a method's view;
+  *enforced:* `apps/auth/tests/test_admission_parity.py` runs every admission
+  rule through all three real views. Tenant-unique session cookies
+  (`sessionid_ace`, `csrftoken_ace`) path-scoped (`/ace/`) to avoid collisions
   with scout on the shared `labs.connect.dimagi.com` host.
   `AUTH_USER_MODEL = "ace_auth.User"`. Workspace membership is the
   access-control gate. **Sign-in admission** is `apps/auth/login_gate.admission_rule`
   (invite-only login, 2026-09-28): an email is admitted by
   `ACE_ALLOWED_EMAIL_DOMAINS` (empty list = anyone), OR a pending
   `WorkspaceInvite`, OR an existing `WorkspaceMembership` — checked before the
-  User row is created. The membership rule is load-bearing: accepting an invite
-  uses it up, so without it an invited partner signs in exactly once; removing
-  someone's last membership is how an outsider is cut off. Invitees are told on
-  the login page to use "Log in with CommCare HQ" at Connect (a Connect invite
-  accepted before HQ sign-in yields a password account that then breaks HQ SSO).
-  This is step A of `docs/specs/2026-09-28-clone-and-release-design.md`
+  User row is created, for password, Google and CommCare alike. The membership
+  rule is load-bearing: accepting an invite uses it up, so without it an invited
+  partner signs in exactly once; removing someone's last membership is how an
+  outsider is cut off. **No open signup:** a password is set by accepting an
+  invite on the public page `/auth/invite/<token>/` (set a password, Google or
+  CommCare) or by an admin in Django admin; an invite link can create a
+  password account but never set one on an EXISTING account (takeover guard).
+  A Connect-first user adds a password or Google later from `/auth/account/`
+  (same `User`; Google needs a verified email equal to the account's). Brute
+  force: `apps/common/rate_limit.py` per address AND per email on login/reset.
+  **Password reset is behind `ACE_PASSWORD_RESET_ENABLED` (default off)** —
+  prod has no mail backend yet; it must not answer differently for unknown
+  addresses. PATs are untouched (`PersonalToken`, Bearer middleware,
+  `/auth/cli/authorize/` — a password session can authorize a CLI token, which
+  is how agents get a token without an HQ account). Login-page copy: partners
+  with no CommCare account are told to use email or Google; the warning for
+  people who DO use CommCare (choose "Log in with CommCare HQ" at Connect — a
+  Connect invite accepted before HQ sign-in yields a password account that then
+  breaks HQ SSO) stays. Design: `docs/specs/2026-10-08-normal-login-design.md`;
+  what a human still configures (Google client, mail): `docs/auth.md`.
+  The admission design is step A of `docs/specs/2026-09-28-clone-and-release-design.md`
   (per-opp tenancy, opp-bound ACE sessions, clone-to-new-workspace, release).
 - **Per-opp tenancy + clone-to-new-workspace** (same spec, steps B/C). Each
   opp records where its assets live — `OppWorkspace.tenancy` (`hq_domain`,
