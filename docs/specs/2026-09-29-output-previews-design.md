@@ -161,8 +161,9 @@ labs reports and any Drive file the viewer cannot draw had nothing.
   never re-derives ace-web's product walk.
 * `auth` says which signed-in session can open `url`: `connect`
   (connect.dimagi.com), `labs` (labs.connect.dimagi.com), `canopy`
-  (`labs.connect.dimagi.com/canopy/…` — same host, but its own sign-in: a
-  labs session is sent to Google sign-in there), `hq` (commcarehq.org), `ocs`
+  (`canopy.dimagi.com/…`, or the old `labs.connect.dimagi.com/canopy/…` mount
+  that 302s there — its own sign-in: a labs session is sent to Google sign-in
+  there), `hq` (commcarehq.org), `ocs`
   (openchatstudio.com), `google` (a Drive file — use the Drive
   thumbnail/export, not a browser), or `public`.
 * `public_url`: the page anyone can open without signing in, when the output
