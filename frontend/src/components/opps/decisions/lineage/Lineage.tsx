@@ -269,16 +269,18 @@ export function OriginBadge({
   plain: boolean;
   edit?: EditLike;
   /**
-   * Drop the "carried over unchanged" badge. On a copied run it sits on
-   * nearly every row, so it says nothing and buries the rows that ARE new
-   * or changed. The summary sets this; the Workbench keeps the full trail.
+   * Drop the "carried over unchanged" and "decided by ACE in <the run this is
+   * a copy of>" badges. On a copied run they sit on nearly every row, so they
+   * say nothing and bury the rows that ARE new or changed. The summary sets
+   * this; the Workbench keeps the full trail.
    */
   hideCarried?: boolean;
 }) {
   if (!lineage) return null;
   const badge = originBadge(lineage.origins[id], lineage, plain, edit);
   if (!badge) return null;
-  if (hideCarried && lineage.origins[id]?.kind === "carried" && badge.tone === "neutral") {
+  const kind = lineage.origins[id]?.kind;
+  if (hideCarried && (kind === "carried" || kind === "decided") && badge.tone === "neutral") {
     return null;
   }
   return (
@@ -303,7 +305,10 @@ export function DecisionLineageHistory({
   const entries = lineage?.histories[id];
   if (!lineage || !entries || entries.length === 0 || !hasAncestors(lineage)) return null;
   const headWs = lineage.chain[0]?.workspace ?? null;
-  const earlier = entries.slice(0, -1);
+  // This run's entry is flagged `current` (other runs of the opp can be newer).
+  const earlier = entries.some((e) => e.current)
+    ? entries.filter((e) => !e.current)
+    : entries.slice(0, -1);
   const anyEarlier = earlier.some((e) => e.found);
   // Carried over verbatim (a clone, or a re-run that kept its answer): no
   // history to tell. The row's origin badge already says "unchanged". A
@@ -325,7 +330,9 @@ export function DecisionLineageHistory({
             key={`${e.workspace}/${e.run_id}`}
             entry={e}
             headWs={headWs}
-            isCurrent={i === entries.length - 1}
+            isCurrent={
+              entries.some((x) => x.current) ? !!e.current : i === entries.length - 1
+            }
             currentId={id}
             prev={entries.slice(0, i).reverse().find((x) => x.found)}
           />
@@ -371,6 +378,16 @@ function HistoryItem({
           <span className="font-mono text-[11px] text-foreground/90">{label}</span>
         )}
         {isCurrent && <span className="text-muted-foreground">(this run)</span>}
+        {entry.copied_to?.map((c) => (
+          <span
+            key={c.workspace}
+            className="text-muted-foreground"
+            title="The same run, copied into another workspace — not a separate run"
+          >
+            · copied to {c.workspace}
+            {c.date ? ` on ${formatDay(c.date)}` : ""}
+          </span>
+        ))}
         {!entry.in_lineage && (
           <span className="text-muted-foreground" title="Another run of this opportunity, not one this run was built from">
             · other run

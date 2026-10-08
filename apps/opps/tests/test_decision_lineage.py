@@ -81,10 +81,12 @@ def test_a_value_unchanged_since_the_root_is_carried_from_the_root(spark_core):
 
 def test_a_value_rewritten_under_a_new_id_is_reaffirmed_not_new(spark_core):
     """`connect-latitude-payment-amount` became `…-2208` then `…-spark`: same
-    7500 at every hop, re-written each time a phase re-ran."""
+    7500 at every hop. The seeded fork re-ran Connect setup in dimagi-team and
+    re-emitted it — that is the re-decision; the clone's `-spark` copy is not."""
     o = spark_core["origins"]["connect-latitude-payment-amount-spark"]
     assert o["kind"] == "reaffirmed"
     assert o["from_run"] == "20260925-1536"
+    assert (o["in_workspace"], o["in_run"]) == ("dimagi-team", RUN)
 
 
 def test_a_human_override_says_a_person_set_it(spark_core):
@@ -99,6 +101,9 @@ def test_a_value_that_differs_from_the_parent_is_changed_here(spark_core):
     assert o["from_run"] == RUN
     assert o["from_workspace"] == "dimagi-team"
     assert o["previous_value"]
+    # The copy into spark is what changed it (the partner's own program).
+    assert o["on_copy"] is True
+    assert (o["in_workspace"], o["in_run"]) == ("spark", RUN)
 
 
 def test_a_row_no_earlier_run_has_is_new(spark_core):
@@ -124,19 +129,21 @@ def test_counts_add_up_to_the_live_rows(spark_core):
 
 def test_history_runs_oldest_first_and_follows_renamed_ids(spark_core):
     hist = spark_core["histories"]["connect-latitude-payment-amount-spark"]
+    # The clone and its source are ONE run: one entry, the source's, marked
+    # as copied to spark and as this run.
     assert [(e["workspace"], e["run_id"]) for e in hist] == [
         ("dimagi-team", "20260925-1536"),
         ("dimagi-team", "20260926-1800"),
         ("dimagi-team", RUN),
-        ("spark", RUN),
     ]
     assert [e["row_id"] for e in hist] == [
         "connect-latitude-payment-amount",
         "connect-latitude-payment-amount",
         "connect-latitude-payment-amount-2208",
-        "connect-latitude-payment-amount-spark",
     ]
     assert {e["value"] for e in hist} == {"7500"}
+    assert hist[-1]["current"] is True
+    assert [c["workspace"] for c in hist[-1]["copied_to"]] == ["spark"]
 
 
 def test_history_shows_a_fork_renaming_a_decision(spark_core):
@@ -145,7 +152,12 @@ def test_history_shows_a_fork_renaming_a_decision(spark_core):
     old = by_run[("dimagi-team", "20260926-1800")]
     assert old["row_id"] == "learn-latitude-baseline-pretest"
     assert old["match"] == "earlier-id"
-    assert old["value"] != by_run[("spark", RUN)]["value"]
+    assert old["value"] != by_run[("dimagi-team", RUN)]["value"]
+    # The seeded fork is where it changed — the clone only copied that.
+    o = spark_core["origins"]["learn-latitude-starting-quiz"]
+    assert (o["kind"], o["in_workspace"], o["from_run"]) == (
+        "changed", "dimagi-team", "20260926-1800",
+    )
 
 
 def test_history_carries_the_humans_reason_on_an_override(spark_core):
@@ -317,7 +329,9 @@ def test_a_clone_member_sees_the_source_as_a_label_not_a_link(client, lineage_wo
     assert source["workspace"] == "dimagi-team" and source["run_id"] == RUN
     assert source["workbench_url"] is None and source["summary_url"] is None
     hist = body["histories"]["working-language"]
-    assert [e["linked"] for e in hist] == [False, False, False, True]
+    # Three runs, the last one this run (folded into the source it copies).
+    assert [e["linked"] for e in hist] == [False, False, False]
+    assert hist[-1]["current"] is True
 
 
 @pytest.mark.django_db
@@ -388,3 +402,206 @@ def test_shape_never_shows_an_outsider_an_email():
     out = shape_for_viewer(core, member=False, accessible=set())
     assert out["origins"]["x"]["by"] == "a reviewer"
     assert out["origins"]["x"]["at"] == "2026-01-02"
+
+
+# ─── A clone of a FRESH run (spark/20261004-1706) ───────────────────
+#
+# Modelled on the live case of 2026-10-08: dimagi-team/20261004-1706 was an
+# independent /ace:run (no forked_from / seeded_from, no inherited_from_run on
+# any row); spark/20261004-1706 is a clone of it that re-minted the Connect
+# rows for the partner's own orgs — the original kept as `<id>-dimagi-team`,
+# superseded by a fresh `<id>` (same value, or a new one where the partner's
+# Connect differs). Before the fix every row read "carried from
+# 20261004-1706" (an earlier run decided it — false) or "re-affirmed (same as
+# dimagi-team / 20261004-1706)", and opp-scope history missed the dimagi-team
+# runs where the value actually evolved.
+
+FRESH = "20261004-1706"
+GPS = "gps-per-meeting-capture"
+RULE = "connect-rule-one-paid-per-worker-per-day"
+
+
+def _decisions(*rows: dict) -> str:
+    return yaml.safe_dump({"decisions": list(rows)})
+
+
+def _d(rid: str, value: str, **extra) -> dict:
+    return {"id": rid, "ai-default": value, "status": "ai-default", **extra}
+
+
+def _clone_state(run: str) -> str:
+    return (f"run_id: '{run}'\ncreated: '2026-10-04T17:06:00+00:00'\n"
+            f"clone:\n  from: {{workspace: dimagi-team, opp: {OPP}, run: '{run}'}}\n")
+
+
+_SOURCE_ROWS = [
+    _d("working-language", "English"),
+    _d(GPS, "Captured with accuracy, optional, advisory only"),
+    _d(RULE, "Connect payment unit limit"),
+    _d("connect-opportunity", "dimagi-ace-pm opportunity 812"),
+]
+
+_CLONE_ROWS = [
+    _d("working-language", "English"),
+    _d(GPS, "Captured with accuracy, optional, advisory only"),
+    # The re-mint: same value under the same id, the original kept aside.
+    _d(f"{RULE}-dimagi-team", "Connect payment unit limit", superseded_by=RULE,
+       inherited_from_run=FRESH),
+    _d(RULE, "Connect payment unit limit"),
+    # A re-mint that DID change the value: the partner's own opportunity.
+    _d("connect-opportunity-dimagi-team", "dimagi-ace-pm opportunity 812",
+       superseded_by="connect-opportunity", inherited_from_run=FRESH),
+    _d("connect-opportunity", "spark-pm opportunity 905"),
+    # Written in the clone only.
+    _d("wo-fixed-costs-fee-structure", "Per-meeting fee only"),
+]
+
+
+def _fresh_clone_tree() -> dict:
+    def run(state: str, *rows: dict) -> dict:
+        return {"run_state.yaml": state, "decisions.yaml": _decisions(*rows)}
+
+    return {
+        "DT": {OPP: {"runs": {
+            # Independent earlier runs, where the GPS answer actually evolved.
+            "20260910-1624": run("run_id: '20260910-1624'\n",
+                                 _d(GPS, "Captured with accuracy, advisory only")),
+            "20260926-1413": run("run_id: '20260926-1413'\n",
+                                 _d(GPS, "Captured with accuracy, review only")),
+            "20261001-2208": run("run_id: '20261001-2208'\n",
+                                 _d(GPS, "Captured with accuracy, advisory only")),
+            FRESH: run(f"run_id: '{FRESH}'\ncreated: '2026-10-04T17:06:00+00:00'\n",
+                       *_SOURCE_ROWS),
+        }}},
+        "SPARK": {OPP: {"runs": {
+            # An older clone of dimagi-team's 2208: the same run, not another.
+            "20261001-2208": run(_clone_state("20261001-2208"),
+                                 _d(GPS, "Captured with accuracy, advisory only")),
+            FRESH: run(_clone_state(FRESH), *_CLONE_ROWS),
+        }}},
+    }
+
+
+def _fresh_chain() -> list[ChainRun]:
+    return [
+        ChainRun("spark", OPP, FRESH, "cloned", date="2026-10-04", rows=_CLONE_ROWS,
+                 copied_date="2026-10-06"),
+        ChainRun("dimagi-team", OPP, FRESH, date="2026-10-04", rows=_SOURCE_ROWS),
+    ]
+
+
+@pytest.fixture(scope="module")
+def fresh_core() -> dict:
+    return build_lineage(_fresh_chain())
+
+
+def test_a_clone_of_a_fresh_run_traces_to_the_run_that_decided_it(fresh_core):
+    """Never "carried": the source decided these itself, in that run."""
+    for rid in ("working-language", GPS):
+        o = fresh_core["origins"][rid]
+        assert o["kind"] == "decided", rid
+        assert (o["from_workspace"], o["from_run"]) == ("dimagi-team", FRESH)
+        assert (o["in_workspace"], o["in_run"]) == ("dimagi-team", FRESH)
+
+
+def test_a_clone_re_mint_with_the_same_value_is_not_an_event(fresh_core):
+    """`<id>-dimagi-team` superseded by a same-value `<id>` reads exactly like
+    an unchanged row — not "re-affirmed (same as dimagi-team / …)"."""
+    o = fresh_core["origins"][RULE]
+    assert o["kind"] == "decided"
+    assert o["from_run"] == FRESH and o["from_workspace"] == "dimagi-team"
+
+
+def test_a_clone_re_mint_that_changed_the_value_says_the_copy_changed_it(fresh_core):
+    o = fresh_core["origins"]["connect-opportunity"]
+    assert o["kind"] == "changed" and o["on_copy"] is True
+    assert o["previous_value"] == "dimagi-ace-pm opportunity 812"
+    assert (o["in_workspace"], o["from_workspace"]) == ("spark", "dimagi-team")
+
+
+def test_a_row_written_only_in_the_clone_is_new_here(fresh_core):
+    assert fresh_core["origins"]["wo-fixed-costs-fee-structure"]["kind"] == "new"
+
+
+def test_a_clone_of_a_fresh_run_has_no_carried_or_reaffirmed_rows(fresh_core):
+    counts = fresh_core["counts"]
+    assert counts["carried"] == counts["reaffirmed"] == 0
+    assert counts == {"new": 1, "decided": 3, "carried": 0, "changed": 1,
+                      "reaffirmed": 0, "human": 0}
+    live = [r for r in _CLONE_ROWS if not r.get("superseded_by")]
+    assert sum(counts.values()) == len(live)
+
+
+def test_a_clone_and_its_source_are_one_history_entry(fresh_core):
+    hist = fresh_core["histories"][GPS]
+    assert [(e["workspace"], e["run_id"]) for e in hist] == [("dimagi-team", FRESH)]
+    assert hist[0]["current"] is True
+    assert hist[0]["copied_to"] == [{"workspace": "spark", "date": "2026-10-06"}]
+    # A copy that changed the value is two entries: that is a real change.
+    changed = fresh_core["histories"]["connect-opportunity"]
+    assert [e["workspace"] for e in changed] == ["dimagi-team", "spark"]
+
+
+def test_shape_points_a_decided_origin_at_the_source_step(fresh_core):
+    out = shape_for_viewer(fresh_core, member=True, accessible={"spark"})
+    o = out["origins"][GPS]
+    assert (o["kind"], o["from_position"], o["in_position"]) == ("decided", 1, 1)
+    assert o["from_run"] == FRESH and o["in_date"] == "2026-10-04"
+    assert out["chain"][0]["copied_date"] == "2026-10-06"
+    outsider = shape_for_viewer(fresh_core, member=False, accessible=set())
+    assert outsider["origins"][GPS]["in_run"] is None
+    assert outsider["origins"][GPS]["in_position"] == 1
+
+
+@pytest.fixture
+def fresh_workspaces(db, monkeypatch):
+    from django.core.cache import cache
+
+    cache.clear()
+    drive = FakeDriveClient.from_tree(_fresh_clone_tree())
+    creator = User.objects.create_user(email="fresh-creator@example.com")
+    dt = Workspace.objects.create(slug="dimagi-team", display_name="Dimagi",
+                                  drive_root_folder_id=drive.folder_id("DT"), created_by=creator)
+    spark = Workspace.objects.create(slug="spark", display_name="Spark",
+                                     drive_root_folder_id=drive.folder_id("SPARK"),
+                                     created_by=creator)
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client",
+                        lambda workspace=None: drive)
+    return dt, spark
+
+
+@pytest.mark.django_db
+def test_scope_opp_on_a_clone_reads_the_source_workspaces_runs(client, fresh_workspaces):
+    """The GPS answer evolved across dimagi-team's independent runs; a spark
+    member asking for opp-wide history of the clone must see them, with the
+    older spark clone folded into its dimagi-team source."""
+    dt, spark = fresh_workspaces
+    RunClone.objects.create(source_workspace=dt, target_workspace=spark, opp_slug=OPP,
+                            run_id=FRESH, status="done")
+    user = User.objects.create_user(email="both@dimagi.com")
+    for ws in (dt, spark):
+        WorkspaceMembership.objects.create(workspace=ws, user=user, role="editor")
+    client.force_login(user)
+    body = client.get(f"/api/opps/public/spark/{OPP}/runs/{FRESH}/lineage?scope=opp").json()
+    assert body["scope"] == "opp"
+    hist = body["histories"][GPS]
+    assert [(e["workspace"], e["run_id"]) for e in hist] == [
+        ("dimagi-team", "20260910-1624"),
+        ("dimagi-team", "20260926-1413"),
+        ("dimagi-team", "20261001-2208"),
+        ("dimagi-team", FRESH),
+    ]
+    assert [e["value"] for e in hist] == [
+        "Captured with accuracy, advisory only",
+        "Captured with accuracy, review only",
+        "Captured with accuracy, advisory only",
+        "Captured with accuracy, optional, advisory only",
+    ]
+    # Each clone is folded into its source — no run appears twice.
+    assert [c["workspace"] for c in hist[2]["copied_to"]] == ["spark"]
+    assert hist[-1]["current"] is True and hist[-1]["copied_to"][0]["workspace"] == "spark"
+    # Other runs never move the origin.
+    assert body["origins"][GPS]["kind"] == "decided"
+    assert body["counts"]["carried"] == body["counts"]["reaffirmed"] == 0
+    # The copy date comes from the RunClone row when the stamp has none.
+    assert body["chain"][0]["copied_date"]

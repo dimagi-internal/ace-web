@@ -13,8 +13,8 @@ This module answers that from the decision logs themselves:
 * :func:`build_lineage` (pure) takes the runs of the chain — newest first,
   each with its raw ``decisions.yaml`` rows — and returns, for every live row
   of the newest run, its **history** (the value in each earlier run, in order)
-  and its **origin** (one of ``new`` / ``carried`` / ``changed`` /
-  ``reaffirmed`` / ``human``).
+  and its **origin** (one of ``new`` / ``decided`` / ``carried`` /
+  ``changed`` / ``reaffirmed`` / ``human``).
 * :func:`load_chain` walks ``run_state.yaml`` lineage keys across Drive,
   crossing into the source workspace for a clone.
 * :func:`shape_for_viewer` strips what a viewer may not see — links into
@@ -32,6 +32,16 @@ stable. In order:
    under, with the suffix stripped.
 
 Anything else is reported as "no earlier match", never guessed at.
+
+**A clone hop is not a run.** A clone is the SAME run copied into another
+workspace (same run id, same decisions), so provenance traces THROUGH it: the
+origin of a clone's row is the origin of its source's row, and "How this
+decision evolved" shows a clone and its source as one entry (the source,
+``copied_to`` the clone's workspace). The clone re-minting a Connect row for
+the partner's own orgs (``<id>`` kept as ``<id>-<source-workspace>`` with
+``superseded_by`` → a fresh ``<id>`` of the same value) is therefore not an
+event either — only a value the copy actually CHANGED is reported, as
+``changed`` with ``on_copy``.
 """
 from __future__ import annotations
 
@@ -50,7 +60,7 @@ MAX_HOPS = 8
 #: How many runs of an opp the ``scope=opp`` history reads (newest first).
 MAX_OPP_RUNS = 30
 
-ORIGIN_KINDS = ("new", "carried", "changed", "reaffirmed", "human")
+ORIGIN_KINDS = ("new", "decided", "carried", "changed", "reaffirmed", "human")
 
 _HUMAN_STATUSES = ("overridden", "human-decided")
 _RUN_ID_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})")
@@ -84,6 +94,13 @@ class ChainRun:
     readable: bool = True
     #: In the lineage chain (True) or another run of the opp (``scope=opp``).
     in_lineage: bool = True
+    #: ``(workspace, run_id)`` of the run this one is a CLONE of, when it is
+    #: one — a clone and its source are one run (see the module docstring).
+    #: For a chain run, ``via == "cloned"`` says the same about ``chain[i+1]``.
+    clone_of: tuple[str, str] | None = None
+    #: For a clone: the day it was copied (``YYYY-MM-DD``), ``""`` if unknown.
+    #: Its ``date`` is the SOURCE's — a clone copies ``created`` verbatim.
+    copied_date: str = ""
 
 
 # ─── Pure helpers ──────────────────────────────────────────────────
@@ -255,7 +272,7 @@ def history_for(row: dict, chain: list[ChainRun], others: list[ChainRun] | None 
     """
     current = chain[0]
     cand = _Candidates.for_row(current.rows, _sid(row))
-    entries = [_entry(current, row, "id")]
+    entries = [{**_entry(current, row, "id"), "current": True}]
     all_names = {cand.exact, *cand.earlier}
     all_retired = set(cand.retired)
     for run in chain[1:]:
@@ -282,20 +299,86 @@ def history_for(row: dict, chain: list[ChainRun], others: list[ChainRun] | None 
     return entries
 
 
+def _clone_pairs(chain: list[ChainRun], others: list[ChainRun] | None = None,
+                 ) -> dict[tuple[str, str], tuple[str, str]]:
+    """``{clone key: source key}`` for every run known to be a clone of another."""
+    pairs: dict[tuple[str, str], tuple[str, str]] = {}
+    for i, run in enumerate(chain):
+        if run.via == "cloned" and i + 1 < len(chain):
+            pairs[(run.workspace, run.run_id)] = (chain[i + 1].workspace, chain[i + 1].run_id)
+        elif run.clone_of:
+            pairs[(run.workspace, run.run_id)] = run.clone_of
+    for run in others or []:
+        if run.clone_of:
+            pairs[(run.workspace, run.run_id)] = run.clone_of
+    return pairs
+
+
+def collapse_clones(history: list[dict], chain: list[ChainRun],
+                    others: list[ChainRun] | None = None) -> list[dict]:
+    """Fold each clone's entry into its source's: one run, one entry.
+
+    The surviving entry is the SOURCE's (its run is where the value was
+    decided), with ``copied_to`` naming the clone's workspace and copy date,
+    and ``current`` / ``in_lineage`` carried over from the clone. A clone whose
+    value or status differs from its source keeps its own entry — that copy
+    changed the decision, which is history worth showing.
+    """
+    pairs = _clone_pairs(chain, others)
+    if not pairs:
+        return history
+    runs = {(r.workspace, r.run_id): r for r in [*chain, *(others or [])]}
+    at = {(e["workspace"], e["run_id"]): i for i, e in enumerate(history)}
+    out = [dict(e) for e in history]
+    dropped: set[int] = set()
+    # Oldest first, so a clone of a clone folds into the run it was copied from.
+    for clone_key, src_key in sorted(pairs.items(), key=lambda kv: at.get(kv[0], -1)):
+        ci, si = at.get(clone_key), at.get(src_key)
+        if ci is None or si is None or ci in dropped:
+            continue
+        clone_e, src_e = out[ci], out[si]
+        if clone_e.get("found") != src_e.get("found"):
+            continue
+        if clone_e.get("found") and (
+            _norm(clone_e.get("value", "")) != _norm(src_e.get("value", ""))
+            or clone_e.get("status") != src_e.get("status")
+        ):
+            continue
+        clone_run = runs.get(clone_key)
+        src_e["copied_to"] = [
+            *src_e.get("copied_to", []),
+            *clone_e.get("copied_to", []),
+            {"workspace": clone_key[0],
+             "date": clone_run.copied_date if clone_run else ""},
+        ]
+        if clone_e.get("current"):
+            src_e["current"] = True
+        src_e["in_lineage"] = bool(src_e.get("in_lineage") or clone_e.get("in_lineage"))
+        dropped.add(ci)
+    return [e for i, e in enumerate(out) if i not in dropped]
+
+
 def origin_for(row: dict, history: list[dict], chain: list[ChainRun]) -> dict:
     """Where the current row's value came from, in one word.
 
     - ``human``: a person set it (``overridden`` / ``human-decided``);
-    - ``new``: no earlier run of the chain has it (or there is no chain);
-    - ``carried``: the parent run had the same decision with the same value,
+    - ``new``: ACE decided it in THIS run — no earlier run of the chain has it;
+    - ``decided``: ACE decided it in the run this one is a clone of (a clone
+      and its source are one run, so the decision belongs to the source);
+    - ``carried``: an earlier run had the same decision with the same value,
       under the same id — copied forward, not re-decided;
-    - ``reaffirmed``: same value, but this run wrote it again (a re-run phase
-      re-emitted it under a new id, or a fork retired the old row);
-    - ``changed``: the parent run had it, with a different value.
+    - ``reaffirmed``: same value, but a re-run phase in the same workspace
+      wrote it again (a new id, or a fork retired the old row);
+    - ``changed``: the run before had it, with a different value.
 
-    ``from_run`` is the run the value is traced to: for ``carried`` /
-    ``reaffirmed`` the EARLIEST run in an unbroken streak of the same value,
-    for ``changed`` the parent (whose value was replaced).
+    Leading clone hops are transparent: the clone's value is compared to its
+    source, and when it matches, the SOURCE's own ancestry decides the kind.
+    ``in_run`` is the run where the value was (re)decided — the head, or the
+    clone's source; ``from_run`` is the run it is traced to: for ``carried`` /
+    ``reaffirmed`` the EARLIEST run of an unbroken streak of the same value,
+    for ``changed`` the run whose value was replaced, for ``new`` /
+    ``decided`` the run itself. ``on_copy`` marks a ``changed`` that happened
+    when the run was copied into this workspace.
     """
     status = _status(row)
     value = effective_value(row)
@@ -310,31 +393,72 @@ def origin_for(row: dict, history: list[dict], chain: list[ChainRun]) -> dict:
         }
     lineage = [e for e in history if e.get("in_lineage")]
     by_run = {(e["workspace"], e["run_id"]): e for e in lineage}
-    if len(chain) < 2:
-        return {"kind": "new", "from_run": "", "previous_value": ""}
-    parent = by_run.get((chain[1].workspace, chain[1].run_id))
-    if parent is None or not parent.get("found"):
-        return {"kind": "new", "from_run": "", "previous_value": ""}
+
+    def found(i: int) -> dict | None:
+        e = by_run.get((chain[i].workspace, chain[i].run_id))
+        return e if e is not None and e.get("found") else None
+
+    def here(kind: str, i: int, **extra) -> dict:
+        return {
+            "kind": kind,
+            "from_run": chain[i].run_id if i else "",
+            "from_workspace": chain[i].workspace if i else "",
+            "in_run": chain[i].run_id,
+            "in_workspace": chain[i].workspace,
+            "previous_value": "",
+            **extra,
+        }
+
+    # Skip the clone hops: while the run is a copy of the next one and the
+    # copy kept the value, the next one is where the value really lives.
+    h = 0
+    while chain[h].via == "cloned" and h + 1 < len(chain):
+        src = found(h + 1)
+        if src is None:
+            break
+        if _norm(src["value"]) != _norm(value):
+            return {
+                **here("changed", h),
+                "from_run": chain[h + 1].run_id,
+                "from_workspace": chain[h + 1].workspace,
+                "previous_value": src.get("plain_value") or src["value"],
+                "on_copy": True,
+            }
+        h += 1
+
+    fresh = "new" if h == 0 else "decided"
+    if h + 1 >= len(chain):
+        return here(fresh, h)
+    parent = found(h + 1)
+    if parent is None:
+        return here(fresh, h)
     if _norm(parent["value"]) != _norm(value):
         return {
-            "kind": "changed",
-            "from_run": chain[1].run_id,
-            "from_workspace": chain[1].workspace,
+            **here("changed", h),
+            "from_run": chain[h + 1].run_id,
+            "from_workspace": chain[h + 1].workspace,
             "previous_value": parent.get("plain_value") or parent["value"],
         }
     # Same value: trace the streak back to the earliest run that had it.
-    since = chain[1]
-    for run in chain[2:]:
-        e = by_run.get((run.workspace, run.run_id))
-        if e is None or not e.get("found") or _norm(e["value"]) != _norm(value):
+    since = chain[h + 1]
+    for i in range(h + 2, len(chain)):
+        e = found(i)
+        if e is None or _norm(e["value"]) != _norm(value):
             break
-        since = run
-    rewritten = parent.get("match") != "id" or bool(_fork_retired_predecessor(row, chain[0]))
+        since = chain[i]
+    head_row = row
+    if h:
+        head_e = found(h)
+        head_row = next(
+            (r for r in chain[h].rows if _sid(r) == (head_e or {}).get("row_id")), row,
+        )
+    rewritten = parent.get("match") != "id" or bool(
+        _fork_retired_predecessor(head_row, chain[h])
+    )
     return {
-        "kind": "reaffirmed" if rewritten else "carried",
+        **here("reaffirmed" if rewritten else "carried", h),
         "from_run": since.run_id,
         "from_workspace": since.workspace,
-        "previous_value": "",
     }
 
 
@@ -368,7 +492,7 @@ def build_lineage(chain: list[ChainRun], others: list[ChainRun] | None = None) -
         hist = history_for(row, chain, others)
         origin = origin_for(row, hist, chain)
         origins[rid] = origin
-        histories[rid] = hist
+        histories[rid] = collapse_clones(hist, chain, others)
         counts[origin["kind"]] += 1
     return {
         "chain": [_chain_step(r) for r in chain],
@@ -392,6 +516,7 @@ def _chain_step(run: ChainRun) -> dict:
         "date": run.date,
         "readable": run.readable,
         "decisions": len(run.rows),
+        "copied_date": run.copied_date,
     }
 
 
@@ -448,6 +573,29 @@ def _run_clone_source(workspace: str, opp: str, run_id: str):
     if rc is None:
         return None
     return (rc.source_workspace.slug, opp, run_id, "cloned", "")
+
+
+def _clone_date(state: dict, workspace: str, opp: str, run_id: str) -> str:
+    """The day a clone was copied: ``clone.at`` / ``clone.cloned_at`` when the
+    stamp carries one, else the ``RunClone`` row's ``created_at``; ``""``."""
+    clone = state.get("clone")
+    if isinstance(clone, dict):
+        for key in ("at", "cloned_at", "created"):
+            got = run_date("", {"created": clone.get(key)}) if clone.get(key) else ""
+            if got:
+                return got
+    try:
+        from apps.workspaces.models import RunClone
+
+        rc = (
+            RunClone.objects.filter(target_workspace__slug=workspace, opp_slug=opp,
+                                    run_id=run_id, status="done")
+            .order_by("-created_at")
+            .first()
+        )
+    except Exception:  # noqa: BLE001 — lineage is best-effort
+        return ""
+    return rc.created_at.date().isoformat() if rc is not None and rc.created_at else ""
 
 
 _FOLDER = "application/vnd.google-apps.folder"
@@ -604,30 +752,47 @@ def load_chain(drive_for_workspace, *, workspace: str, opp: str, run_id: str,
             break
         pws, pop, prid, via, at_phase = parent
         run.via, run.at_phase = via, at_phase
+        if via == "cloned":
+            run.clone_of = (pws, prid)
+            run.copied_date = _clone_date(state, ws, op, rid)
         cur = (pws, pop, prid)
     return chain
 
 
 def load_opp_runs(drive_for_workspace, chain: list[ChainRun], *,
                   limit: int = MAX_OPP_RUNS) -> list[ChainRun]:
-    """Every other run of the current run's opp (its own workspace), for
-    ``scope=opp`` — newest ``limit`` of them, minus those already in the chain."""
+    """Every other run of the opp, for ``scope=opp`` — newest ``limit`` of
+    them per workspace, minus those already in the chain.
+
+    "The opp" spans every workspace the chain passes through: a clone's
+    history lives in its SOURCE workspace (the runs it was decided across),
+    so a run in ``spark`` that was copied from ``dimagi-team`` reads the
+    ``dimagi-team`` runs too. Each run's ``clone_of`` is filled in from its
+    run_state, so a clone and its source fold into one history entry.
+    """
     if not chain:
         return []
     reader = _RunReader(drive_for_workspace)
-    head = chain[0]
     in_chain = {(r.workspace, r.run_id) for r in chain}
-    wanted = [
-        rid for rid in reader.list_runs(head.workspace, head.opp)[:limit]
-        if (head.workspace, rid) not in in_chain
-    ]
-    got = reader.read_many(head.workspace, head.opp, wanted)
-    return [
-        ChainRun(workspace=head.workspace, opp=head.opp, run_id=rid, rows=rows,
-                 date=run_date(rid, state), in_lineage=False)
-        for rid, (state, rows) in sorted(got.items(), reverse=True)
-        if rows
-    ]
+    places = list(dict.fromkeys((r.workspace, r.opp) for r in chain if r.readable))
+    out: list[ChainRun] = []
+    for ws, opp in places:
+        wanted = [
+            rid for rid in reader.list_runs(ws, opp)[:limit] if (ws, rid) not in in_chain
+        ]
+        got = reader.read_many(ws, opp, wanted)
+        for rid, (state, rows) in got.items():
+            if not rows:
+                continue
+            run = ChainRun(workspace=ws, opp=opp, run_id=rid, rows=rows,
+                           date=run_date(rid, state), in_lineage=False)
+            parent = parent_of(state, workspace=ws, opp=opp)
+            if parent is not None and parent[3] == "cloned":
+                run.clone_of = (parent[0], parent[2])
+                run.copied_date = _clone_date(state, ws, opp, rid)
+            out.append(run)
+    out.sort(key=lambda r: (r.date, r.run_id, r.workspace), reverse=True)
+    return out
 
 
 # ─── Viewer shaping ────────────────────────────────────────────────
@@ -696,6 +861,7 @@ def shape_for_viewer(core: dict, *, member: bool, accessible: set[str],
             "at_phase": step["at_phase"] if member else "",
             "stage": stage_label(step["at_phase"]),
             "date": step["date"],
+            "copied_date": step.get("copied_date", ""),
             "readable": step["readable"],
             "workbench_url": base if (member and linked) else None,
             "summary_url": summary if (member and linked) else None,
@@ -715,13 +881,21 @@ def shape_for_viewer(core: dict, *, member: bool, accessible: set[str],
         (s["workspace"], s["run_id"]): i for i, s in enumerate(core.get("chain") or [])
     }
     origins = {}
+    chain_core = core.get("chain") or []
     for rid, o in (core.get("origins") or {}).items():
         pos = run_pos.get((o.get("from_workspace", ""), o.get("from_run", "")))
+        in_pos = run_pos.get((o.get("in_workspace", ""), o.get("in_run", "")))
         origins[rid] = {
             "kind": o["kind"],
             "from_position": pos,
             "from_run": o.get("from_run") if member else None,
-            "from_date": core["chain"][pos]["date"] if pos is not None else "",
+            "from_date": chain_core[pos]["date"] if pos is not None else "",
+            # Where the value was (re)decided: this run (0), or the run a
+            # clone was copied from.
+            "in_position": in_pos,
+            "in_run": o.get("in_run") if member else None,
+            "in_date": chain_core[in_pos]["date"] if in_pos is not None else "",
+            "on_copy": bool(o.get("on_copy")),
             "previous_value": o.get("previous_value", "") if member else "",
             "by": _person(o.get("by", ""), member=member),
             "at": o.get("at", ""),

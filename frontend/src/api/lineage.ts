@@ -24,6 +24,11 @@ export interface LineageStep {
   stage: string;
   /** YYYY-MM-DD, or "" when nothing dates the run. */
   date: string;
+  /**
+   * For a clone (`via: "cloned"`): the day it was copied into its workspace;
+   * "" when unknown. Its `date` is the SOURCE's — a clone is the same run.
+   */
+  copied_date?: string;
   readable: boolean;
   /** Members only, and only for a workspace the viewer belongs to. */
   workbench_url: string | null;
@@ -35,7 +40,17 @@ export interface LineageStep {
   decisions: number | null;
 }
 
-export type OriginKind = "new" | "carried" | "changed" | "reaffirmed" | "human";
+/**
+ * - `new` — ACE decided it in THIS run;
+ * - `decided` — ACE decided it in the run this one is a copy (clone) of: a
+ *   clone and its source are one run, so the decision is the source's;
+ * - `carried` — an earlier run decided it; it came forward unchanged;
+ * - `reaffirmed` — a re-run in the same workspace decided it again, same answer;
+ * - `changed` — decided differently from the run before (`on_copy`: the copy
+ *   into this workspace changed it);
+ * - `human` — a person set it.
+ */
+export type OriginKind = "new" | "decided" | "carried" | "changed" | "reaffirmed" | "human";
 
 export interface DecisionOrigin {
   kind: OriginKind;
@@ -44,6 +59,16 @@ export interface DecisionOrigin {
   /** Members only. */
   from_run: string | null;
   from_date: string;
+  /**
+   * Index into `chain` of the run where the value was (re)decided — 0 for
+   * this run, the source's index for a clone. Absent on older payloads.
+   */
+  in_position?: number | null;
+  /** Members only. */
+  in_run?: string | null;
+  in_date?: string;
+  /** `changed` happened when this run was copied into its workspace. */
+  on_copy?: boolean;
   /** For `changed`: the value it replaced (members only). */
   previous_value: string;
   /** For `human`: who set it (never an email for a non-member) and when. */
@@ -71,6 +96,13 @@ export interface DecisionHistoryEntry {
   by?: string;
   at?: string;
   reason?: string;
+  /** This run's entry (not always the last: other runs may be newer). */
+  current?: boolean;
+  /**
+   * Clones of this run folded into this entry — a clone and its source are
+   * one run, so they are one entry in the history.
+   */
+  copied_to?: { workspace: string; date: string }[];
 }
 
 export interface DecisionLineage {

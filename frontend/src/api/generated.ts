@@ -1405,7 +1405,7 @@ export interface paths {
          * Decision lineage of a run: where each decision came from
          * @description The run's lineage chain (the run it was forked / seeded / cloned from,
          *     and so on back), and for every live decision row its origin — ``new`` /
-         *     ``carried`` / ``changed`` / ``reaffirmed`` / ``human`` — plus, for
+         *     ``decided`` / ``carried`` / ``changed`` / ``reaffirmed`` / ``human`` — plus, for
          *     members, its value in each earlier run (``apps/opps/decision_lineage``).
          *
          *     Served on the public path because the public run summary renders it, the
