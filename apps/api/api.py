@@ -149,6 +149,7 @@ from apps.presence.api import router as presence_router  # noqa: E402
 from apps.service_accounts.api import router as tokens_router  # noqa: E402
 from apps.sessions.api import router as sessions_router  # noqa: E402
 from apps.sessions.sweep_api import router as sessions_sweep_router  # noqa: E402
+from apps.site_admin.api import router as site_admin_router  # noqa: E402
 from apps.slack.api import router as slack_router  # noqa: E402
 from apps.system.api import router as system_router  # noqa: E402
 from apps.videos.api import router as videos_router  # noqa: E402
@@ -176,6 +177,7 @@ api.add_router("/tokens", tokens_router)
 api.add_router("/auth", auth_router)
 api.add_router("/sessions/sweep", sessions_sweep_router)
 api.add_router("/canopy", canopy_router)
+api.add_router("/site-admin", site_admin_router)
 api.add_router("/canopy", canopy_public_router)
 api.add_router("", common_router)
 api.add_router("", presence_router)

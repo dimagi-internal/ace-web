@@ -46,6 +46,13 @@ Parameters:
   ImageTag:
     Type: String
     Default: latest
+  # Comma-separated emails granted site admin (`User.is_staff`) on sign-in
+  # (apps/site_admin/signals.py). Empty = no bootstrap; the Site admin page
+  # (/ace/site-admin/users) is the normal path. Grant-only. The deploy workflow
+  # passes only ImageTag, so a value set here as the Default is what persists.
+  SiteAdminEmails:
+    Type: String
+    Default: ""
 
 Resources:
   LogGroup:
@@ -170,6 +177,8 @@ Resources:
             Retries: 3
             StartPeriod: 30
           Environment:
+            - Name: ACE_SITE_ADMIN_EMAILS
+              Value: !Ref SiteAdminEmails
             - Name: ACE_ALLOWED_EMAIL_DOMAINS
               Value: "dimagi.com,dimagi-ai.com,dimagi-associate.com"
             - Name: ACE_MOBILE_AMI_VERSION

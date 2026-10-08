@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     # table and the delegated-token table behind the host grant.
     "canopy_sdk.django",
     "apps.presence.apps.PresenceConfig",
+    "apps.site_admin.apps.SiteAdminConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -370,6 +371,12 @@ ACE_RESUME_SWEEP_CALLERS = env.list("ACE_RESUME_SWEEP_CALLERS", default=[])
 # deployment safety knob (set to a non-empty list to revert to allow-listed
 # signups).
 ACE_ALLOWED_EMAIL_DOMAINS = env.list("ACE_ALLOWED_EMAIL_DOMAINS", default=[])
+
+# --- Site admin bootstrap ---
+# Emails granted `User.is_staff` when they sign in (apps.site_admin.signals).
+# Default empty = no bootstrap; the Site admin page (/ace/site-admin/users) is
+# the normal way to grant it. Grant-only: removing an email here revokes nothing.
+ACE_SITE_ADMIN_EMAILS = env.list("ACE_SITE_ADMIN_EMAILS", default=[])
 
 # --- Service Accounts ---
 SERVICE_ACCOUNTS = {
