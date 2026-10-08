@@ -10,13 +10,11 @@ SPARK = {
     "hq_domain": "connect-ace-spark",
     "connect_pm_org": "spark-pm-org-test",
     "connect_holding_org": "spark-nm-org-test",
-    "labs_allowed_domains": ["@sparkmicrogrants.org"],
 }
 SHARED = {
     "hq_domain": "connect-ace-prod",
     "connect_holding_org": "ace-nm-org",
     "ocs_team": "connect-ace",
-    "labs_allowed_domains": ["@dimagi.com", "@dimagi-ai.com"],
 }
 HQ = "https://www.commcarehq.org/a/{}/apps/view/8c073531bbb94350a7f0e8b894709ec0/"
 CONNECT = "https://connect.dimagi.com/a/{}/opportunity/ad6c2d40/"
@@ -28,7 +26,6 @@ def test_spark_links_inside_its_own_tenancy_are_reviewer_openable():
     assert t.hq_app(HQ.format("connect-ace-spark"))
     assert t.connect(CONNECT.format("spark-nm-org-test"))
     assert t.connect(CONNECT.format("spark-pm-org-test"))
-    assert t.labs()
     assert t.workbench()
 
 
@@ -48,7 +45,6 @@ def test_shared_tenancy_keeps_everything_internal():
     assert not t.has_own_tenancy
     assert not t.hq_app(HQ.format("connect-ace-prod"))
     assert not t.connect(CONNECT.format("ace-nm-org"))
-    assert not t.labs()
     assert not t.workbench()
 
 
@@ -57,5 +53,4 @@ def test_unknown_tenancy_is_internal_not_guessed():
         assert not t.has_own_tenancy
         assert not t.hq_app(HQ.format("anything"))
         assert not t.connect(CONNECT.format("anything"))
-        assert not t.labs()
         assert not t.workbench()

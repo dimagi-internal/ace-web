@@ -2,7 +2,6 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as slackApi from "@/api/slack";
 import * as wsApi from "@/api/workspaces";
 import type { WorkspaceDetail, WorkspaceMember, WorkspaceRole } from "@/api/workspaces";
 import WorkspaceSettingsPage from "@/pages/WorkspaceSettingsPage";
@@ -52,7 +51,6 @@ function renderAs(role: WorkspaceRole) {
       expires_at: "2026-10-15T00:00:00Z",
     },
   ]);
-  vi.spyOn(slackApi, "getSlackStatus").mockRejectedValue(new Error("no slack"));
   render(
     <MemoryRouter initialEntries={["/w/spark/settings"]}>
       <Routes>

@@ -21,7 +21,6 @@ import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "canopy-ui/ui";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
 import { PhaseSkillRow } from "@/components/views/PhaseSkillRow";
-import { PushToSlackButton } from "@/components/views/PushToSlackButton";
 import {
   decisionsReducer,
   initialDecisionsEditState,
@@ -565,7 +564,6 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
                 phase={selectedPhaseInfo}
                 steps={selectedPhaseSteps}
                 oppSlug={oppSlug}
-                workspaceSlug={workspaceSlug}
                 sourceRunId={snapshot.current_run.run_id}
                 sourceLastActorAt={
                   // The active run's last_actor_at lives in runs[] (RunSummary)
@@ -865,7 +863,6 @@ interface PhasePanelHeaderProps {
   phase: PhaseInfo;
   steps: Step[];
   oppSlug: string;
-  workspaceSlug: string;
   sourceRunId: string;
   sourceLastActorAt: string | null;
   /** When true, the "Fork from here" button is hidden — there's a
@@ -879,7 +876,6 @@ function PhasePanelHeader({
   phase,
   steps,
   oppSlug,
-  workspaceSlug,
   sourceRunId,
   sourceLastActorAt,
   hidePerPhaseFork,
@@ -911,15 +907,6 @@ function PhasePanelHeader({
           </h2>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {workspaceSlug && sourceRunId && (
-            <PushToSlackButton
-              workspaceSlug={workspaceSlug}
-              oppSlug={oppSlug}
-              runId={sourceRunId}
-              phaseName={phase.name}
-              phaseDisplay={phase.display_name}
-            />
-          )}
           {/* Fork CTA: mints a NEW RUN under this opp seeded from the
               current run's upstream phase artifacts. Per-opp state
               (opp.yaml, inputs, calibration) stays shared.

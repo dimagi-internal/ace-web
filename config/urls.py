@@ -37,7 +37,6 @@ urlpatterns = [
     # public URL is CANOPY_HOST["PROBE"]["ENDPOINT"] — keep the two in step.
     path("api/canopy/oauth/probe", canopy_grant_probe_endpoint, name="canopy_grant_probe"),
     path("api/", api.urls),
-    path("api/slack/", include("apps.slack.urls")),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
     # React pages under /auth/ that must be served by the SPA, not by
@@ -49,7 +48,6 @@ urlpatterns = [
         name="spa_auth_cli",
     ),
     path("auth/", include("apps.auth.urls")),
-    path("auth/slack/", include("apps.slack.auth_urls")),
     # Invite links: anonymous visitors choose how to sign in (password, Google,
     # CommCare) on the server-rendered invite page; signed-in ones get the SPA.
     re_path(r"^invite/(?P<token>[^/]+)/?$", invite_entry, name="spa_invite"),

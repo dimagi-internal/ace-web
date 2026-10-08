@@ -6,7 +6,6 @@ import { DefaultTenancyPanel, tenancyPatch } from "./DefaultTenancyPanel";
 const SHARED = {
   hq_domain: "connect-ace-prod",
   connect_holding_org: "ace-nm-org",
-  labs_allowed_domains: ["@dimagi.com", "@dimagi-ai.com"],
 };
 
 describe("tenancyPatch", () => {
@@ -16,20 +15,8 @@ describe("tenancyPatch", () => {
         hq_domain: "connect-ace-prod",
         connect_pm_org: "ace-pm-org",
         connect_holding_org: "",
-        labs_allowed_domains: "@dimagi.com, @dimagi-ai.com",
       }),
     ).toEqual({ connect_pm_org: "ace-pm-org", connect_holding_org: null });
-  });
-
-  it("splits Labs domains on commas and spaces", () => {
-    expect(
-      tenancyPatch(SHARED, {
-        hq_domain: "connect-ace-prod",
-        connect_pm_org: "",
-        connect_holding_org: "ace-nm-org",
-        labs_allowed_domains: "@sparkmicrogrants.org  @dimagi.com",
-      }),
-    ).toEqual({ labs_allowed_domains: ["@sparkmicrogrants.org", "@dimagi.com"] });
   });
 });
 

@@ -262,12 +262,6 @@ Resources:
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-op-service-account-token-aW4N8Y"
             - Name: REDIS_URL
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-redis-url-H4HN9I"
-            - Name: SLACK_CLIENT_ID
-              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-id-tNVN7G"
-            - Name: SLACK_CLIENT_SECRET
-              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-secret-KaEozS"
-            - Name: SLACK_SIGNING_SECRET
-              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-signing-secret-9CmCYh"
           LogConfiguration:
             LogDriver: awslogs
             Options:

@@ -81,7 +81,7 @@ function renderView(openSkill: string | null, replay: Replay = OFF, path = "/") 
 
 beforeEach(() => {
   onCloseStep = vi.fn();
-  // The panel's side fetches (skill products, Slack config) are not under test.
+  // The panel's side fetches (skill products) are not under test.
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
 });
 afterEach(() => vi.unstubAllGlobals());

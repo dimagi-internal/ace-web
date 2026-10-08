@@ -159,21 +159,20 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
 # isolated. That is no longer true and you should expect access, so the
 # things that are truly dimagi admin only are what we should be using").
 # `/ace:release` invites each reviewer into the opp's own HQ project space,
-# Connect org and ace-web workspace, and Labs is opened to the tenancy's
-# `labs_allowed_domains`. So each non-Drive link is classified PER LINK
+# Connect org and ace-web workspace. So each non-Drive link is classified PER LINK
 # against the opp's tenancy (``apps.opps.tenancy.TenancyAccess``):
 #
 # ``reviewer`` — inside the opp's own tenancy. A released reviewer should
 #   expect to open it; the page draws NO tag.
 #   * CommCare HQ app pages   — when the URL's space is the opp's hq_domain.
 #   * Connect opportunity     — when the URL's org is the opp's PM/holding org.
-#   * connect-labs dashboards + solicitation — when labs_allowed_domains
-#     reaches beyond Dimagi's own domains.
 #   * ace-web Workbench       — when the opp has its own tenancy.
 #
 # ``admin`` — stays Dimagi-internal:
+#   * connect-labs dashboards + solicitation, always — Labs stays
+#     Dimagi-only (the per-opp Labs domain list was removed 2026-10-08);
 #   * any of the above on a SHARED-tenancy opp (`connect-ace-prod`,
-#     `ace-pm-org` / `ace-nm-org`, Dimagi-only Labs domains — e.g.
+#     `ace-pm-org` / `ace-nm-org` — e.g.
 #     `dimagi-team`'s opps), or a URL outside the opp's tenancy;
 #   * the OCS team console, always — reviewers use the public chatbot;
 #   * a Drive doc that is NOT anyone-with-link, on ANY tenancy —
@@ -1350,9 +1349,8 @@ def _read_dashboards(state: dict, access: LinkAccessReader | None = None) -> lis
         out.append({
             "title": title,
             "url": url,
-            # connect-labs is opened to the tenancy's labs_allowed_domains;
-            # Dimagi-only domains mean only Dimagi can open it.
-            "access": _tenant_tag(bool(access) and access.tenancy.labs()),
+            # connect-labs stays Dimagi-only.
+            "access": ACCESS_ADMIN,
         })
     return out
 
@@ -1378,7 +1376,7 @@ def _read_solicitation(state: dict, access: LinkAccessReader | None = None) -> d
         "deadline": sol.get("deadline"),
         "status": sol.get("status"),
         # Published on connect-labs — same rule as the dashboards.
-        "access": _tenant_tag(bool(access) and access.tenancy.labs()),
+        "access": ACCESS_ADMIN,
     }
 
 
