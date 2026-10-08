@@ -144,7 +144,7 @@ def _to_record(job: Job) -> JobRecord:
 def write(job: JobRecord) -> None:
     """Persist (or overwrite) a job record. Always refreshes the TTL so
     a long-running job's record can't expire mid-execution."""
-    _store()._write(Job.from_dict(job.to_dict()))  # noqa: SLF001
+    _store().put(Job.from_dict(job.to_dict()))
 
 
 def read(job_id: str) -> JobRecord | None:
