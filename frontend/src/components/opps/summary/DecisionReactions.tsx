@@ -35,14 +35,32 @@ function formatWhen(iso: string): string {
 }
 
 /**
- * The one sentence that separates the two acts on a row. A comment is
- * stored on the decision for the team and other reviewers; it does not
- * move the answer, and nothing is sent to anyone when it is posted, so
- * the copy promises neither.
+ * What the box is for, said in plain terms before anyone types in it.
+ *
+ * Every clause has to be TRUE of what posting does today
+ * (`apps.opps.reactions`): the comment is written to a feedback-ledger
+ * record in Drive, shown on this decision to anyone with the link, and
+ * read by Dimagi's team and the next ACE build. Posting notifies no one
+ * (ace-web#875 tracks notification), so the copy says so and points a
+ * reviewer who needs an answer at the email that sent them here. The
+ * old copy promised "the ACE team and other reviewers" would read it —
+ * a partner cannot know who the ACE team is, and nobody is told.
  */
-const NOT_AN_EDIT =
-  "A comment doesn't change the answer — use Confirm or pick an option above for that. " +
-  "It stays on this decision for the ACE team and other reviewers to read.";
+export const COMMENT_HELP = [
+  "Saved on this decision for Dimagi’s team. Anyone with this page’s link can see it.",
+  "It doesn’t change the answer — use Confirm or pick an option for that.",
+  "It isn’t sent to anyone right away. If you need a reply, reply to the email that sent you this link.",
+] as const;
+
+function CommentHelp({ id }: { id?: string }) {
+  return (
+    <div id={id} className="space-y-0.5 text-[12px] leading-[1.5] text-muted-foreground">
+      {COMMENT_HELP.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
+  );
+}
 
 export interface ReactionSubmit {
   comment: string;
@@ -106,7 +124,7 @@ export function DecisionReactions({
   return (
     <div className="mt-4 border-t border-border/70 pt-3">
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        Questions and concerns
+        Questions or concerns about this answer
       </p>
 
       {reactions.length > 0 && (
@@ -143,9 +161,7 @@ export function DecisionReactions({
             <MessageSquarePlus size={14} />
             {reactions.length > 0 ? "Add a question or concern" : opener}
           </button>
-          <p className="text-[12px] leading-[1.5] text-muted-foreground">
-            {NOT_AN_EDIT}
-          </p>
+          <CommentHelp />
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-2.5">
@@ -160,9 +176,7 @@ export function DecisionReactions({
             aria-describedby={`reaction-help-${decisionId}`}
             className="w-full rounded border border-border bg-background px-3 py-2 text-[13px] leading-[1.6] text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
           />
-          <p id={`reaction-help-${decisionId}`} className="text-[12px] leading-[1.5] text-muted-foreground">
-            {NOT_AN_EDIT}
-          </p>
+          <CommentHelp id={`reaction-help-${decisionId}`} />
           {error && <p className="text-[13px] text-red-400">{error}</p>}
           <div className="flex items-center gap-3">
             <button
