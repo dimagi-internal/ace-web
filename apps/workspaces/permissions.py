@@ -29,7 +29,7 @@ capability            minimum    what it protects
                                  not team view; owner decision 2026-10-08)
 ``content.write``     editor     create / change / delete workspace content:
                                  opps, runs, forks, gate decisions, seeded runs,
-                                 sessions, uploads, videos, Slack pushes
+                                 sessions, uploads, videos
 ``decisions.write``   editor     confirm, change or comment on a decision (run
                                  summary + the Workbench's decision overrides)
 ``summary.team_view`` admin      the TEAM view of a run summary (run ids,
@@ -63,7 +63,7 @@ READ = "read"
 # --- editor: making things --------------------------------------------------------
 
 #: Create, change or delete workspace content: opps, runs, forks, gate
-#: decisions, seeded runs, sessions, uploads, videos, Slack pushes.
+#: decisions, seeded runs, sessions, uploads, videos.
 CONTENT_WRITE = "content.write"
 
 #: Confirm, change or comment on a decision — on the run summary
