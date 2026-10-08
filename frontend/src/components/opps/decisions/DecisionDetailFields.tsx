@@ -59,6 +59,7 @@ export function DecisionDetailFields({
   effectiveReason,
   optionsSlot,
   optionsLabel = "Options",
+  compact = false,
 }: {
   decision: Decision;
   /** Answer currently in force (override / staged edit / AI default). */
@@ -68,26 +69,23 @@ export function DecisionDetailFields({
   /** Replaces the static pills — used by the editable surfaces. */
   optionsSlot?: React.ReactNode;
   optionsLabel?: string;
+  /**
+   * The reviewer's layout (run summary): the choice and ACE's reasoning up
+   * front, and everything about WHERE the call came from (the exact
+   * wording, source, evidence basis, conflicting signals) folded behind one
+   * "Sources and evidence" disclosure. "Raised by" — ACE's skill and row id
+   * — is dropped: it means nothing outside ACE. A partner opening a row
+   * used to meet eight labelled blocks, and an "Exact question" worded
+   * differently from the question they had just read (Jonathan,
+   * 2026-10-07: "overwhelming and also not very clear").
+   */
+  compact?: boolean;
 }) {
   const replaced = effectiveValue !== decision.ai_default;
   const shown = decisionDisplay(decision, effectiveValue);
-  return (
+
+  const choice = (
     <>
-      {/* The row headline/value may be ACE's plain wording; the technical
-          reader still sees the exact question and option. */}
-      {shown.rawQuestionDiffers && (
-        <DetailRow
-          wide
-          label="Exact question"
-          value={<span className="text-muted-foreground">{decision.question}</span>}
-        />
-      )}
-      {shown.rawValueDiffers && (
-        <DetailRow
-          label="Exact option"
-          value={<span className="font-mono text-[11px] text-foreground">{effectiveValue}</span>}
-        />
-      )}
       <DetailRow
         wide
         label={optionsLabel}
@@ -110,7 +108,7 @@ export function DecisionDetailFields({
       {decision.notes && (
         <DetailRow
           wide
-          label="AI reasoning"
+          label={compact ? "Why ACE picked this" : "AI reasoning"}
           value={
             <span className="whitespace-pre-line text-muted-foreground">{decision.notes}</span>
           }
@@ -119,10 +117,35 @@ export function DecisionDetailFields({
       {effectiveReason && (
         <DetailRow
           wide
-          label="Override reason"
+          label={compact ? "Why it was changed" : "Override reason"}
           value={<span className="whitespace-pre-line text-sky-400/90">{effectiveReason}</span>}
         />
       )}
+    </>
+  );
+
+  const exactWording = (
+    <>
+      {/* The row headline/value may be ACE's plain wording; the technical
+          reader still sees the exact question and option. */}
+      {shown.rawQuestionDiffers && (
+        <DetailRow
+          wide
+          label={compact ? "ACE's internal wording" : "Exact question"}
+          value={<span className="text-muted-foreground">{decision.question}</span>}
+        />
+      )}
+      {shown.rawValueDiffers && (
+        <DetailRow
+          label="Exact option"
+          value={<span className="font-mono text-[11px] text-foreground">{effectiveValue}</span>}
+        />
+      )}
+    </>
+  );
+
+  const provenance = (
+    <>
       {decision.source && (
         <DetailRow
           label="Source"
@@ -196,6 +219,31 @@ export function DecisionDetailFields({
             }
           />
         )}
+    </>
+  );
+
+  if (compact) {
+    return (
+      <>
+        {choice}
+        <details className="min-w-0 sm:col-span-full">
+          <summary className="cursor-pointer select-none font-medium text-muted-foreground hover:text-foreground">
+            Sources and evidence
+          </summary>
+          <div className={cn(DETAIL_GRID, "mt-2")}>
+            {exactWording}
+            {provenance}
+          </div>
+        </details>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {exactWording}
+      {choice}
+      {provenance}
       <DetailRow
         label="Raised by"
         value={

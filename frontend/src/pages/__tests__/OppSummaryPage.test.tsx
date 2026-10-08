@@ -102,8 +102,13 @@ function renderWith(payload: OppSummaryPayload) {
 }
 
 /** The review surface is a tab now — open it the way a reader would. */
-async function openDecisionsTab() {
+async function openDecisionsTab({ expand = true } = {}) {
   fireEvent.click(await screen.findByText("Review the decisions"));
+  await screen.findByText("About these decisions");
+  // "Everything else ACE decided" starts collapsed; most tests read rows in
+  // it, so open it the way a reader would.
+  const expandAll = screen.queryByText("Expand all");
+  if (expand && expandAll) fireEvent.click(expandAll);
 }
 
 /** Rows start collapsed; open one by its question, the way a reader would. */
@@ -718,12 +723,33 @@ describe("OppSummaryPage", () => {
   };
   const MEMBER = { viewer: { is_member: true } };
 
+  it("starts the reference phases collapsed, below the asks", async () => {
+    renderWith(ASKS);
+    await openDecisionsTab({ expand: false });
+    expect(await screen.findByText("Everything else ACE decided")).toBeTruthy();
+    expect(screen.getByText(/Nothing here needs you/)).toBeTruthy();
+    // The pinned ask is on the page; reference rows wait for "Expand all".
+    expect(screen.getByText("Which slice does the pilot cover?")).toBeTruthy();
+    expect(screen.getByText("Expand all")).toBeTruthy();
+    // The tally and lineage live in a collapsed "About these decisions".
+    expect(screen.getByText("About these decisions").closest("details")!.open).toBe(false);
+  });
+
+  it("keeps an expanded row to the choice and ACE's reasoning", async () => {
+    renderWith(ASKS);
+    await openDecisionsTab();
+    await openRow("Which slice does the pilot cover?");
+    // Provenance folds behind one disclosure; ACE's skill and row id are gone.
+    expect(screen.getByText("Sources and evidence").closest("details")!.open).toBe(false);
+    expect(screen.queryByText("Raised by")).toBeNull();
+  });
+
   it("pins the confirm-before-launch rows on top, as ordinary rows", async () => {
     renderWith(ASKS);
     await openDecisionsTab();
     // The first match is the pinned section's own header.
     const pinned = (await screen.findAllByText("Confirm before launch"))[0];
-    const choices = screen.getByText("Choices ACE made");
+    const choices = screen.getByText("Everything else ACE decided");
     expect(
       pinned.compareDocumentPosition(choices) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -731,7 +757,8 @@ describe("OppSummaryPage", () => {
     // the marker and the reason in the row itself.
     const row = screen.getByText("Which slice does the pilot cover?").closest("button")!;
     expect(row.getAttribute("aria-expanded")).toBe("false");
-    expect(row.textContent).toContain("Confirm before launch");
+    // The group is titled "Confirm before launch"; the row does not repeat it.
+    expect(row.textContent).not.toContain("Confirm before launch");
     expect(row.textContent).toContain("Only Spark knows the facilitator cadence.");
     expect(row.textContent).toContain("Learn module 1");
     // One decision, one home.
@@ -841,7 +868,7 @@ describe("OppSummaryPage", () => {
     expect(header.textContent).toContain("The middle of the proposed band.");
     expect(header.textContent).not.toContain("Which FLW amount");
     fireEvent.click(q);
-    expect(screen.getByText("Exact question")).toBeTruthy();
+    expect(screen.getByText("ACE's internal wording")).toBeTruthy();
     expect(screen.getByText("Which FLW amount within the PDD's proposed band is configured?")).toBeTruthy();
     expect(screen.getByText("Exact option")).toBeTruthy();
   });
@@ -1380,7 +1407,8 @@ describe("review asks", () => {
       await screen.findByText("Answer before an implementing organisation is chosen"),
     ).toBeTruthy();
     expect(screen.getByText("Confirm before launch", { selector: "span.text-sm" })).toBeTruthy();
-    expect(screen.getByText("Answer before award")).toBeTruthy();
+    // The group names the stage; the row does not repeat it as a chip.
+    expect(screen.queryByText("Answer before award")).toBeNull();
     // The solicitation channel, in plain words — and no question id for an outsider.
     expect(
       screen.getByText(/Through the call for implementing organisations/),
@@ -1404,7 +1432,7 @@ describe("review asks", () => {
     expect(screen.queryByText(/Spark plans an expansion/)).toBeNull();
     fireEvent.click(heading);
     expect(await screen.findByText(/Spark plans an expansion beyond Malawi/)).toBeTruthy();
-    // One decision, one home: it is not also under "Choices ACE made".
+    // One decision, one home: it is not also under "Everything else ACE decided".
     expect(
       screen.getAllByText("How is payment attributed where two CBFs share one community?"),
     ).toHaveLength(1);
@@ -1471,10 +1499,9 @@ describe("decision lineage on the Decisions tab", () => {
     renderWith({ ...BASE, decisions: DECISIONS });
     await openDecisionsTab();
     expect(await screen.findByText("This version")).toBeTruthy();
-    expect(
-      await screen.findByText("carried over unchanged from the 25 Sep 2026 version"),
-    ).toBeTruthy();
-    expect(screen.getByText("changed in this version")).toBeTruthy();
+    expect(await screen.findByText("changed in this version")).toBeTruthy();
+    // "Carried over unchanged" is the norm on a copied run, so it is not drawn.
+    expect(screen.queryByText("carried over unchanged from the 25 Sep 2026 version")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Changed 1" }));
     expect(screen.queryByText("Which working languages?")).toBeNull();
     expect(screen.getByText("Reuse the program or create one?")).toBeTruthy();
@@ -1484,9 +1511,10 @@ describe("decision lineage on the Decisions tab", () => {
     vi.spyOn(lineageApi, "getDecisionLineage").mockResolvedValue(MEMBER_LINEAGE);
     renderWith({ ...BASE, viewer: { is_member: true }, decisions: DECISIONS });
     await openDecisionsTab();
-    expect(await screen.findByText("carried from dimagi-team / 20260925-1536 unchanged")).toBeTruthy();
-    // Carried over verbatim in every run: no "evolved" history to tell.
+    // Carried over verbatim in every run: no "evolved" history to tell, and
+    // no "carried … unchanged" badge on the summary either.
     await openRow("Which working languages?");
+    expect(screen.queryByText("carried from dimagi-team / 20260925-1536 unchanged")).toBeNull();
     expect(screen.queryByText("How this decision evolved")).toBeNull();
     // Create → Reuse → Create: that one did evolve.
     await openRow("Reuse the program or create one?");
