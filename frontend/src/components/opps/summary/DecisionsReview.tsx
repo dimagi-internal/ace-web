@@ -88,13 +88,15 @@ interface PhaseGroup {
 }
 
 /**
- * The heading a phase group reads under. Members see the Workbench's
- * phase name; an outside reader sees the plain stage name ("App build")
- * the rest of the page uses, falling back to the phase name when the
- * row carries none.
+ * The heading a phase group reads under: the plain stage name ("App
+ * build") the rest of the page uses, for EVERY viewer — falling back to
+ * the phase name only when the row carries none. Members once got the
+ * Workbench's phase names ("Idea to Design", "OCS Setup") here, but a
+ * signed-in partner is a member too, and the summary page is theirs;
+ * the Workbench keeps the internal names.
  */
-export function phaseGroupLabel(d: ReviewDecision, plain: boolean): string {
-  return (plain && d.stage_label) || d.phase_label;
+export function phaseGroupLabel(d: ReviewDecision): string {
+  return d.stage_label || d.phase_label;
 }
 
 /** A row ACE recommends the reviewer confirm before launch. Live rows only. */
@@ -375,13 +377,13 @@ export function DecisionsReview({
       else
         byPhase.set(key, {
           key,
-          label: phaseGroupLabel(d, !viewerIsMember),
+          label: phaseGroupLabel(d),
           ordinal: d.phase_ordinal,
           rows: [d],
         });
     }
     return [...byPhase.values()].sort((a, b) => a.ordinal - b.ordinal);
-  }, [visible, viewerIsMember]);
+  }, [visible]);
 
   // Phases start COLLAPSED (2026-10-07): they are reference, not asks.
   const [openPhases, setOpenPhases] = useState<Record<string, boolean>>({});
@@ -439,12 +441,12 @@ export function DecisionsReview({
         ))}
       </p>
       <p className="mt-2 max-w-3xl text-[0.975rem] leading-[1.7] text-muted-foreground">
-        {total} load-bearing {total === 1 ? "call" : "calls"} in all, made building this run.
+        {total} load-bearing {total === 1 ? "call" : "calls"} in all, made while designing and building this program.
         Each one records what it picked, what else was on the table, and why.{" "}
         {viewerIsMember ? (
           <>
             <span className="text-foreground">You can confirm or change any of them here</span>
-            {" "}— what you change is what the next run builds from.
+            {" "}— what you change here is what Dimagi builds the next version from.
           </>
         ) : (
           <>Members of this workspace can confirm or change them.</>

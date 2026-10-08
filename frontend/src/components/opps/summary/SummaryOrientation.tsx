@@ -3,6 +3,36 @@ import { ArrowRight } from "lucide-react";
 import { signInHref } from "@/components/opps/summary/SignInToEdit";
 
 /**
+ * The program's own name for its field worker, when its description says
+ * it plainly — so the glossary can say "FLW … in this program, the
+ * facilitator" instead of handing a partner ACE's vocabulary as theirs.
+ *
+ * Deliberately a short list and a whole-word match, longest first: a
+ * wrong guess ("agent" in "agent of change") is worse than none, and
+ * none just leaves the generic definition. The payload carries no
+ * per-opp vocabulary today; when ACE writes one, read it instead.
+ */
+const WORKER_NOUNS = [
+  "community health volunteer",
+  "community health worker",
+  "health worker",
+  "facilitator",
+  "enumerator",
+  "volunteer",
+  "promoter",
+  "mentor",
+] as const;
+
+export function programWorkerNoun(description: string | null | undefined): string | null {
+  if (!description) return null;
+  const text = description.toLowerCase();
+  for (const noun of WORKER_NOUNS) {
+    if (new RegExp(`\\b${noun}s?\\b`).test(text)) return noun;
+  }
+  return null;
+}
+
+/**
  * The first thing an outside reader sees on the Overview: what this page
  * is, why they have it, what we need from them, how to answer, and who
  * reads the answer.
@@ -28,8 +58,11 @@ export function SummaryOrientation({
   answerTotal = 0,
   hasDecisions,
   onOpenDecisions,
+  programDescription,
 }: {
   isMember: boolean;
+  /** `opp.description` — only read for the program's word for its worker. */
+  programDescription?: string | null;
   /** Recommended confirmations still waiting — `askCounts(...).confirm`. */
   confirmOutstanding: number;
   confirmTotal: number;
@@ -41,6 +74,7 @@ export function SummaryOrientation({
   onOpenDecisions: () => void;
 }) {
   if (isMember) return null;
+  const workerNoun = programWorkerNoun(programDescription);
 
   // Both kinds of ask count (ACE spec 2026-10-04): the confirmations and the
   // questions that must be answered before a stage.
@@ -115,19 +149,22 @@ export function SummaryOrientation({
           </dd>
         </div>
         <div>
-          <dt className="inline font-medium text-foreground">Who sees your reply: </dt>
+          <dt className="inline font-medium text-foreground">Where your reply goes: </dt>
           <dd className="inline">
-            Dimagi’s team reads every reply, and ACE uses them to shape the next
-            version.
+            Confirming or changing an answer updates what Dimagi builds the
+            next version from. A comment is saved on that decision for
+            Dimagi’s team; nobody is notified when you post it. If you need
+            a reply, reply to the email that sent you this link.
           </dd>
         </div>
         <div>
-          <dt className="inline font-medium text-foreground">Terms used here: </dt>
+          <dt className="inline font-medium text-foreground">Abbreviations you may see: </dt>
           <dd className="inline">
             <span className="text-foreground">LLO</span> — the implementing
             organisation that runs the program locally.{" "}
             <span className="text-foreground">FLW</span> — a field worker, the
-            person who visits communities and records each visit in the app.{" "}
+            person who records each visit in the app
+            {workerNoun ? `; in this program, the ${workerNoun}.` : "."}{" "}
             <span className="text-foreground">Connect</span> — Dimagi’s platform
             that checks each recorded visit and pays for it.
           </dd>
