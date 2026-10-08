@@ -190,9 +190,15 @@ They are different acts and each row shows both:
 Collapsing them costs something real in both directions:
 comments-only was the promotion gate that just got removed;
 edits-only would force anyone with a *question* to assert an *answer*.
-On a conflicting row the comment prompt is therefore sharpened to name
-the other act: *"Not sure enough to change it? Say what you'd want to
-know."*
+On a conflicting row the comment prompt is pitched at the reviewer who is
+not ready to pick: *"Not ready to decide? Ask what you'd need to know."*
+Every row also says, before anything is typed, that a comment does not
+change the answer and stays on the decision for the team and other
+reviewers. The first copy (*"Not sure enough to change it? Say what you'd
+want to know."*) named the act only by contrast with the editor, sat over a
+placeholder asking the opposite question ("What would you have picked?"),
+and confirmed with "it goes to the team building this" when nothing is sent
+to anyone. Reviewers could not tell what the box did (Jonathan, 2026-10-07).
 
 The `public-` slug marker on feedback records is untouched, and so is the
 test asserting a privately-captured review is never republished.

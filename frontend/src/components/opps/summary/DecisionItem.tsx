@@ -204,11 +204,7 @@ export function DecisionItem({
         reactions={reactions}
         onSubmit={onReact}
         canWrite={canWrite}
-        prompt={
-          decision.evidence_basis === "conflicting"
-            ? "Not sure enough to change it? Say what you'd want to know."
-            : undefined
-        }
+        contested={decision.evidence_basis === "conflicting"}
       />
     </DecisionRow>
   );
