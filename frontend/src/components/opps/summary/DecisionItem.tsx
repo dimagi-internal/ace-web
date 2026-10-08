@@ -1,19 +1,18 @@
 import { useState } from "react";
-import { CheckCircle2, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 
 import type {
   DecisionReaction,
   PublicDecisionEdit,
   ReviewDecision,
 } from "@/api/oppSummary";
-import { DecisionAnswerEditor } from "@/components/opps/decisions/DecisionAnswerEditor";
 import { DecisionHistory } from "@/components/opps/decisions/DecisionHistory";
 import { DecisionRow } from "@/components/opps/decisions/DecisionRow";
-import { decisionDisplay } from "@/components/opps/decisions/decisionDisplay";
 import {
   DecisionReactions,
   type ReactionSubmit,
 } from "@/components/opps/summary/DecisionReactions";
+import { AnswerChoice } from "@/components/opps/summary/AnswerChoice";
 import { SignInToEdit } from "@/components/opps/summary/SignInToEdit";
 
 export interface DecisionEditSubmit {
@@ -105,7 +104,7 @@ export function DecisionItem({
       open={open}
       onToggle={onToggle}
       anchorId={`decision-${decision.id}`}
-      optionsLabel={canWrite ? "Confirm or change" : "Options"}
+      optionsLabel={canWrite ? "Your answer" : "Options"}
       statusChip={false}
       showAskIds={canWrite}
       askMarkers={false}
@@ -148,42 +147,17 @@ export function DecisionItem({
       }
       optionsSlot={
         canWrite ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2 text-[13px]">
-              {confirmed ? (
-                <span className="inline-flex items-center gap-1.5 text-emerald-400">
-                  <CheckCircle2 size={14} aria-hidden />
-                  Confirmed{edit?.decided_by_name ? ` by ${edit.decided_by_name}` : ""}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void write({ value: answer, confirm: true })}
-                  className="rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={`Confirm: ${decisionDisplay(decision, answer).value || answer}`}
-                >
-                  {busy ? "Saving…" : "Confirm this answer"}
-                </button>
-              )}
-              <span className="text-muted-foreground">
-                or pick a different one below — it saves as soon as you click:
-              </span>
-            </div>
-            <DecisionAnswerEditor
-              decision={decision}
-              effectiveValue={answer}
-              effectiveReason={reason}
-              voice="partner"
-              dense
-              onCommit={commit}
-              onRevert={
-                answer !== decision.ai_default ? () => commit(decision.ai_default, "") : undefined
-              }
-              busy={busy}
-              error={error}
-            />
-          </div>
+          <AnswerChoice
+            decision={decision}
+            answer={answer}
+            reason={reason}
+            confirmed={confirmed}
+            confirmedBy={edit?.decided_by_name}
+            busy={busy}
+            error={error}
+            onConfirm={() => write({ value: answer, confirm: true })}
+            onCommit={commit}
+          />
         ) : undefined
       }
     >

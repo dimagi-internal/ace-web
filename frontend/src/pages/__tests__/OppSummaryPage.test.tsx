@@ -996,7 +996,7 @@ describe("OppSummaryPage", () => {
     renderWith({ ...CONFLICTED, ...MEMBER });
     await openDecisionsTab();
     await openRow("A contested call");
-    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    fireEvent.click(await screen.findByRole("radio", { name: /the other one/i }));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(post.mock.calls[0].slice(0, 4)).toEqual([
       "dimagi-team", "spark-facilitator", "20260813-2126", "loud-one",
@@ -1006,6 +1006,29 @@ describe("OppSummaryPage", () => {
     expect(screen.queryByLabelText("Your name")).toBeNull();
     expect(screen.queryByText("Save this answer")).toBeNull();
     expect(await screen.findByText(/changed by Anne Kuhlmann/)).toBeTruthy();
+  });
+
+  it("offers one radio list for the answer, ACE's pick labelled, and a typed answer", async () => {
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue({
+      ...EDIT,
+      override: "a third way",
+    });
+    renderWith({ ...CONFLICTED, ...MEMBER });
+    await openDecisionsTab();
+    await openRow("A contested call");
+    const pick = (await screen.findByRole("radio", { name: /the pick/i })) as HTMLInputElement;
+    expect(pick.checked).toBe(true);
+    expect(screen.getByText("ACE's pick")).toBeTruthy();
+    // One confirm control for the answer in force; no separate write-in editor.
+    expect(screen.getAllByRole("button", { name: /^Confirm:/ })).toHaveLength(1);
+    expect(screen.queryByText("Write in a different answer")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /Something else/ }));
+    fireEvent.change(screen.getByLabelText("New option for: A contested call"), {
+      target: { value: "a third way" },
+    });
+    fireEvent.click(screen.getByText("Save this answer"));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][4]).toEqual({ value: "a third way", reasoning: undefined });
   });
 
   it("lets a member comment on one row, as themselves", async () => {
@@ -1073,7 +1096,7 @@ describe("OppSummaryPage", () => {
     renderWith({ ...CONFLICTED, ...MEMBER });
     await openDecisionsTab();
     await openRow("A contested call");
-    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    fireEvent.click(await screen.findByRole("radio", { name: /the other one/i }));
     expect(await screen.findByText(/Only members of this workspace/)).toBeTruthy();
   });
 
