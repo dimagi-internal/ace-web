@@ -6,6 +6,7 @@ import { ApiError } from "@/api/client";
 import {
   getPublicOppSummary,
   isPlainViewer,
+  viewerCanWrite,
   postDecisionEdit,
   postDecisionReaction,
   type DecisionReaction,
@@ -1041,6 +1042,7 @@ export default function OppSummaryPage() {
                 reactions={reactions}
                 edits={edits}
                 viewerIsMember={!!viewer?.is_member}
+                viewerCanWrite={viewerCanWrite(viewer)}
                 plain={plain}
                 onReact={handleReact}
                 onEdit={handleEdit}

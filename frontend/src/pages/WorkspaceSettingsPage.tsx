@@ -9,10 +9,12 @@ import {
   leaveWorkspace,
   listActivity,
   listMembers,
+  listPendingInvites,
   removeMember,
   updateWorkspace,
   verifyDriveAccess,
   type ActivityRow,
+  type PendingInvite,
   type WorkspaceDetail,
   type WorkspaceMember,
   type WorkspaceRole,
@@ -21,8 +23,47 @@ import { Button } from "canopy-ui/ui";
 import { SlackPanel } from "@/components/SlackPanel";
 import { useNavigate } from "react-router-dom";
 import { DefaultTenancyPanel, type Tenancy } from "@/components/workspaces/DefaultTenancyPanel";
+import {
+  ROLE_DESCRIPTIONS,
+  ROLE_LABELS,
+  WORKSPACE_ROLES,
+  assignableRoles,
+  mayManage,
+  roleAllows,
+} from "@/lib/workspaceRoles";
 
-const ROLE_OPTIONS: WorkspaceRole[] = ["owner", "editor", "viewer"];
+/** A role `<select>`: Owner / Admin / Editor / Viewer, limited to `options`. */
+export function RolePicker({
+  value,
+  options,
+  onChange,
+  label,
+  className,
+}: {
+  value: WorkspaceRole;
+  options: readonly WorkspaceRole[];
+  onChange: (role: WorkspaceRole) => void;
+  label: string;
+  className?: string;
+}) {
+  // The current value is always listed, even when the picker could not grant
+  // it, so a row never silently displays the wrong role.
+  const shown = WORKSPACE_ROLES.filter((r) => r === value || options.includes(r));
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value as WorkspaceRole)}
+      className={className}
+    >
+      {shown.map((r) => (
+        <option key={r} value={r} disabled={!options.includes(r)} title={ROLE_DESCRIPTIONS[r]}>
+          {ROLE_LABELS[r]}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export default function WorkspaceSettingsPage() {
   const { workspaceSlug } = useParams<{ workspaceSlug: string }>();
@@ -41,6 +82,7 @@ export default function WorkspaceSettingsPage() {
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
   const [driveBroken, setDriveBroken] = useState<string | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [domainsInput, setDomainsInput] = useState("");
   const [domainsMsg, setDomainsMsg] = useState<string | null>(null);
   const [domainsSaving, setDomainsSaving] = useState(false);
@@ -57,8 +99,13 @@ export default function WorkspaceSettingsPage() {
   }, [workspaceSlug, reload]);
 
   useEffect(() => {
-    if (!workspaceSlug || !ws || ws.role !== "owner") return;
-    listActivity(workspaceSlug).then(setActivity).catch(() => {});
+    if (!workspaceSlug || !ws) return;
+    if (roleAllows(ws.role, "logs.read")) {
+      listActivity(workspaceSlug).then(setActivity).catch(() => {});
+    }
+    if (roleAllows(ws.role, "members.manage")) {
+      listPendingInvites(workspaceSlug).then(setPendingInvites).catch(() => {});
+    }
   }, [workspaceSlug, ws, reload]);
 
   useEffect(() => {
@@ -71,7 +118,11 @@ export default function WorkspaceSettingsPage() {
   if (!ws) return <div className="p-6 text-muted-foreground">Loading…</div>;
 
   const myRole = ws.role;
-  const isOwner = myRole === "owner";
+  // What the UI OFFERS — the server decides (apps/workspaces/permissions.py).
+  const isOwner = roleAllows(myRole, "own");
+  const canManageMembers = roleAllows(myRole, "members.manage");
+  const canReadLogs = roleAllows(myRole, "logs.read");
+  const grantable = assignableRoles(myRole);
 
   async function handleInvite() {
     setError(null);
@@ -208,27 +259,25 @@ export default function WorkspaceSettingsPage() {
                 <td className="py-2 text-foreground">{m.user.email}</td>
                 <td className="py-2 text-muted-foreground">{m.user.display_name ?? m.user.email}</td>
                 <td className="py-2">
-                  {isOwner ? (
-                    <select
+                  {canManageMembers && mayManage(myRole, m.role) ? (
+                    <RolePicker
+                      label={`Role for ${m.user.email}`}
                       value={m.role}
-                      onChange={(e) =>
-                        handleRoleChange(m.user.id, e.target.value as WorkspaceRole)
-                      }
+                      options={grantable}
+                      onChange={(r) => handleRoleChange(m.user.id, r)}
                       className="rounded border border-input bg-background px-2 py-1 text-xs"
-                    >
-                      {ROLE_OPTIONS.map((r) => (
-                        <option key={r} value={r}>{r}</option>
-                      ))}
-                    </select>
+                    />
                   ) : (
-                    <span className="text-foreground">{m.role}</span>
+                    <span className="text-foreground" title={ROLE_DESCRIPTIONS[m.role]}>
+                      {ROLE_LABELS[m.role]}
+                    </span>
                   )}
                 </td>
                 <td className="py-2 text-muted-foreground">
                   {new Date(m.joined_at).toLocaleDateString()}
                 </td>
                 <td className="py-2 text-right">
-                  {isOwner && m.role !== "owner" && (
+                  {canManageMembers && mayManage(myRole, m.role) && m.role !== "owner" && (
                     <button
                       type="button"
                       onClick={() => handleRemove(m.user.email, m.user.id)}
@@ -278,7 +327,7 @@ export default function WorkspaceSettingsPage() {
         }}
       />
 
-      {isOwner && (
+      {canManageMembers && (
         <section className="mt-8">
           <h2 className="text-lg font-medium text-foreground">Invite a teammate</h2>
           <div className="mt-3 flex gap-2">
@@ -289,19 +338,20 @@ export default function WorkspaceSettingsPage() {
               onChange={(e) => setInviteEmail(e.target.value)}
               className="flex-1 rounded border border-input bg-background px-3 py-2 text-sm text-foreground"
             />
-            <select
+            <RolePicker
+              label="Role for the invite"
               value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as WorkspaceRole)}
+              options={grantable}
+              onChange={setInviteRole}
               className="rounded border border-input bg-background px-2 py-2 text-sm"
-            >
-              {ROLE_OPTIONS.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
+            />
             <Button onClick={handleInvite} disabled={!inviteEmail.trim()}>
               Send invite
             </Button>
           </div>
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="invite-role-description">
+            {ROLE_LABELS[inviteRole]}: {ROLE_DESCRIPTIONS[inviteRole]}
+          </p>
           {inviteResult && (
             <div className="mt-3 rounded border border-border bg-muted p-3 text-sm">
               <p className="text-foreground">
@@ -315,9 +365,23 @@ export default function WorkspaceSettingsPage() {
         </section>
       )}
 
+      {canManageMembers && pendingInvites.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-lg font-medium text-foreground">Pending invites</h2>
+          <ul className="mt-2 divide-y divide-border text-sm">
+            {pendingInvites.map((i) => (
+              <li key={`${i.email}-${i.created_at}`} className="flex justify-between py-2">
+                <span className="text-foreground">{i.email}</span>
+                <span className="text-muted-foreground">{ROLE_LABELS[i.role]}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <SlackPanel workspaceSlug={workspaceSlug} />
 
-      {isOwner && activity.length > 0 && (
+      {canReadLogs && activity.length > 0 && (
         <section className="mt-8">
           <h2 className="text-lg font-medium text-foreground">Recent activity</h2>
           <p className="text-xs text-muted-foreground">

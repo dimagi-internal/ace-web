@@ -25,6 +25,7 @@ from .schemas import (
     WorkspaceMemberOut,
     WorkspaceOut,
     WorkspacePatchIn,
+    WorkspacePendingInviteOut,
 )
 
 router = Router(auth=session_auth, tags=["workspaces"])
@@ -147,11 +148,52 @@ def _set_default_tenancy(ws, user, raw: dict) -> None:
     tenancy_mod.record_change(workspace=ws, opp_slug="", user=user, before=before, after=after)
 
 
-def _require_owner_role(workspace, user) -> None:
-    from apps.workspaces.permissions import role_for
+def _require(workspace, user, capability: str, title: str = "Forbidden") -> None:
+    """403 unless `user` holds `capability` here (`permissions.MINIMUM_ROLE`)."""
+    from apps.workspaces import permissions as perms
 
-    if role_for(user, workspace) != "owner":
-        raise ProblemError(403, "Owner required", type_=TYPE_FORBIDDEN)
+    if not perms.can(user, workspace, capability):
+        raise ProblemError(403, title, type_=TYPE_FORBIDDEN)
+
+
+def _require_owner_role(workspace, user) -> None:
+    from apps.workspaces import permissions as perms
+
+    _require(workspace, user, perms.OWN, "Owner required")
+
+
+def _require_may_manage(workspace, actor, target_role: str | None,
+                        new_role: str | None) -> None:
+    """MEMBERS_MANAGE, and only strictly below the actor's own role
+    (`permissions.may_manage_member`) — an admin invites, promotes and removes
+    editors and viewers; only an owner touches an admin or mints an owner."""
+    from apps.workspaces import permissions as perms
+
+    _require(workspace, actor, perms.MEMBERS_MANAGE, "Admin or owner required")
+    if not perms.may_manage_member(perms.role_for(actor, workspace), target_role, new_role):
+        raise ProblemError(
+            403, "Forbidden", type_=TYPE_FORBIDDEN,
+            detail="You can only invite, change or remove members below your own role.",
+        )
+
+
+def _parse_role(raw) -> str:
+    from apps.workspaces import permissions as perms
+
+    role = (raw or "").strip().lower() if isinstance(raw, str) else ""
+    if not perms.is_role(role):
+        raise ProblemError(
+            400, "role must be one of: " + ", ".join(perms.ROLES), type_=TYPE_VALIDATION,
+        )
+    return role
+
+
+def _last_owner(workspace, membership) -> bool:
+    """Is `membership` the workspace's only owner?"""
+    from apps.workspaces import permissions as perms
+
+    return perms.is_owner_role(membership.role) and not perms.owners(workspace).exclude(
+        pk=membership.pk).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +265,8 @@ def create_workspace(user, body: WorkspaceCreateIn) -> dict:
                 drive_root_folder_id=folder_id,
                 created_by=user,
             )
-            WorkspaceMembership.objects.create(workspace=ws, user=user, role="owner")
+            WorkspaceMembership.objects.create(
+                workspace=ws, user=user, role=WorkspaceMembership.OWNER)
     except IntegrityError as exc:
         raise ProblemError(409, str(exc), type_=TYPE_CONFLICT) from exc
 
@@ -422,13 +465,10 @@ def invite_member_to_workspace(workspace, inviter, email: str, role: str) -> dic
 
     from apps.workspaces.models import WorkspaceInvite
 
-    _require_owner_role(workspace, inviter)
+    role = _parse_role(role)
+    _require_may_manage(workspace, inviter, None, role)
     if not email or "@" not in email:
         raise ProblemError(400, "Valid email is required", type_=TYPE_VALIDATION)
-    if role not in {"owner", "editor", "viewer"}:
-        raise ProblemError(
-            400, "role must be owner, editor, or viewer", type_=TYPE_VALIDATION
-        )
     existing = workspace.memberships.filter(user__email__iexact=email).first()
     if existing is not None:
         raise ProblemError(
@@ -475,27 +515,77 @@ def invite_member(
 
 
 # ---------------------------------------------------------------------------
+# GET /workspaces/{slug}/invites — pending invites (admin and above)
+# ---------------------------------------------------------------------------
+
+
+def list_pending_invites(workspace, user) -> list[dict]:
+    from django.utils import timezone
+
+    from apps.workspaces import permissions as perms
+
+    _require(workspace, user, perms.MEMBERS_MANAGE, "Admin or owner required")
+    rows = (
+        workspace.invites.select_related("invited_by")
+        .filter(accepted_at__isnull=True, revoked_at__isnull=True,
+                expires_at__gt=timezone.now())
+        .order_by("-created_at")
+    )
+    return [
+        {
+            "email": i.email,
+            "role": i.role,
+            "invited_by_email": i.invited_by.email if i.invited_by_id else "",
+            "created_at": i.created_at,
+            "expires_at": i.expires_at,
+        }
+        for i in rows
+    ]
+
+
+@router.get(
+    "/{slug}/invites",
+    response={200: list[WorkspacePendingInviteOut]},
+    summary="List pending invites (admin and above)",
+)
+def list_invites(
+    request: HttpRequest,
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    """Invites nobody has accepted, revoked or let expire. No tokens: an invite
+    link is shown once, to whoever created it."""
+    from django.http import JsonResponse
+
+    from apps.api.deps import resolve_workspace_for_member
+
+    ws = resolve_workspace_for_member(request, slug)
+    rows = list_pending_invites(ws, request.user)
+    payload = [WorkspacePendingInviteOut.model_validate(r).model_dump(mode="json") for r in rows]
+    return JsonResponse(payload, safe=False)
+
+
+# ---------------------------------------------------------------------------
 # DELETE /workspaces/{slug}/members/{user_id} — remove member
 # ---------------------------------------------------------------------------
 
 
 def remove_member_from_workspace(workspace, requester, user_id: int) -> None:
+    from apps.workspaces import permissions as perms
     from apps.workspaces.models import WorkspaceMembership
 
-    _require_owner_role(workspace, requester)
+    _require(workspace, requester, perms.MEMBERS_MANAGE, "Admin or owner required")
     try:
         membership = workspace.memberships.select_related("user").get(user_id=user_id)
     except WorkspaceMembership.DoesNotExist as exc:
         raise ProblemError(404, "Member not found", type_=TYPE_NOT_FOUND) from exc
+    _require_may_manage(workspace, requester, membership.role, None)
 
-    if membership.role == "owner":
-        other_owners = workspace.memberships.filter(role="owner").exclude(user_id=user_id).count()
-        if other_owners == 0:
-            raise ProblemError(
-                400,
-                "Cannot remove the last owner; promote another member first",
-                type_=TYPE_VALIDATION,
-            )
+    if _last_owner(workspace, membership):
+        raise ProblemError(
+            400,
+            "Cannot remove the last owner; promote another member first",
+            type_=TYPE_VALIDATION,
+        )
     membership.delete()
 
 
@@ -522,16 +612,12 @@ def leave_workspace_op(workspace, user) -> None:
     membership = workspace.memberships.filter(user=user).first()
     if membership is None:
         raise ProblemError(404, "Not a member", type_=TYPE_NOT_FOUND)
-    if membership.role == "owner":
-        other_owners = (
-            workspace.memberships.filter(role="owner").exclude(user=user).count()
+    if _last_owner(workspace, membership):
+        raise ProblemError(
+            400,
+            "You are the last owner; promote someone else first",
+            type_=TYPE_VALIDATION,
         )
-        if other_owners == 0:
-            raise ProblemError(
-                400,
-                "You are the last owner; promote someone else first",
-                type_=TYPE_VALIDATION,
-            )
     membership.delete()
 
 
@@ -548,12 +634,14 @@ def leave_workspace(
 
 
 # ---------------------------------------------------------------------------
-# GET /workspaces/{slug}/activity — workspace audit log (owner only)
+# GET /workspaces/{slug}/activity — workspace audit log (admin and above)
 # ---------------------------------------------------------------------------
 
 
 def get_workspace_activity(workspace, user) -> list[dict]:
-    _require_owner_role(workspace, user)
+    from apps.workspaces import permissions as perms
+
+    _require(workspace, user, perms.LOGS_READ, "Admin or owner required")
     from apps.service_accounts.models import AccessLog
 
     rows = (
@@ -594,7 +682,7 @@ def get_workspace_activity(workspace, user) -> list[dict]:
     return items[:100]
 
 
-@router.get("/{slug}/activity", summary="Workspace audit log (owner only)")
+@router.get("/{slug}/activity", summary="Workspace audit log (admin and above)")
 def workspace_activity(
     request: HttpRequest,
     slug: Annotated[str, Path()],
@@ -672,10 +760,11 @@ def change_member_role(
     from django.http import JsonResponse
 
     from apps.api.deps import resolve_workspace_for_member
+    from apps.workspaces import permissions as perms
     from apps.workspaces.models import WorkspaceMembership
 
     ws = resolve_workspace_for_member(request, slug)
-    _require_owner_role(ws, request.user)
+    _require(ws, request.user, perms.MEMBERS_MANAGE, "Admin or owner required")
     try:
         membership = ws.memberships.select_related("user").get(user_id=user_id)
     except WorkspaceMembership.DoesNotExist as exc:
@@ -686,21 +775,18 @@ def change_member_role(
 
     try:
         body = _json.loads(request.body)
-        new_role = (body.get("role") or "").strip().lower()
+        raw_role = body.get("role")
     except Exception:  # noqa: BLE001
-        new_role = ""
+        raw_role = ""
+    new_role = _parse_role(raw_role)
+    _require_may_manage(ws, request.user, membership.role, new_role)
 
-    if new_role not in {"owner", "editor", "viewer"}:
-        raise ProblemError(400, "role must be owner, editor, or viewer", type_=TYPE_VALIDATION)
-
-    if membership.role == "owner" and new_role != "owner":
-        other_owners = ws.memberships.filter(role="owner").exclude(user_id=user_id).count()
-        if other_owners == 0:
-            raise ProblemError(
-                400,
-                "Cannot demote the last owner; promote another member first",
-                type_=TYPE_VALIDATION,
-            )
+    if not perms.is_owner_role(new_role) and _last_owner(ws, membership):
+        raise ProblemError(
+            400,
+            "Cannot demote the last owner; promote another member first",
+            type_=TYPE_VALIDATION,
+        )
     membership.role = new_role
     membership.save(update_fields=["role"])
     payload = WorkspaceMemberOut.model_validate(_membership_to_dict(membership)).model_dump(
@@ -780,11 +866,21 @@ def invite_accept(request: HttpRequest, token: str) -> HttpResponse:
                 type_=TYPE_FORBIDDEN,
             )
 
-        membership, _ = WorkspaceMembership.objects.get_or_create(
+        from apps.workspaces import permissions as perms
+
+        membership, created = WorkspaceMembership.objects.get_or_create(
             workspace=invite.workspace,
             user=request.user,
             defaults={"role": invite.role, "invited_by": invite.invited_by},
         )
+        # UPGRADE-ONLY (canopy-web's rule): an existing member moves to the
+        # HIGHER of their role and the invite's, never lower — a stray invite
+        # must not strip access. Demotion is the explicit role-change PATCH.
+        if not created:
+            higher = perms.higher_role(membership.role, invite.role)
+            if higher != membership.role:
+                membership.role = higher
+                membership.save(update_fields=["role"])
         invite.accepted_at = timezone.now()
         invite.save(update_fields=["accepted_at"])
 

@@ -86,9 +86,9 @@ def _forwards(clone) -> bool:
 
 
 def _require_owner(request: HttpRequest, workspace) -> None:
-    from apps.workspaces.permissions import role_for
+    from apps.workspaces import permissions as perms
 
-    if role_for(request.user, workspace) != "owner":
+    if not perms.can(request.user, workspace, perms.OWN):
         raise ProblemError(403, "Owner required", type_=TYPE_FORBIDDEN)
 
 
@@ -253,12 +253,9 @@ def forwarded_summary_target(workspace_slug: str, opp_slug: str, run_id: str):
 
 
 def _clear_public_summary_cache(workspace: str, opp_slug: str, run_id: str) -> None:
-    from django.core.cache import cache
+    from .api import _invalidate_summary_cache
 
-    from .api import _summary_cache_key
-
-    for member in (True, False):
-        cache.delete(_summary_cache_key(workspace, opp_slug, run_id, is_member=member))
+    _invalidate_summary_cache(workspace, opp_slug, run_id)
 
 
 @router.post(

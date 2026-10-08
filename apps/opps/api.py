@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import reverse
 from ninja import Path, Query, Router
 
 from apps.api.auth import session_auth
-from apps.api.deps import require_write_global, resolve_workspace_for_member
+from apps.api.deps import require_write_global, resolve_workspace_for, resolve_workspace_for_member
 from apps.api.errors import (
     TYPE_AUTH,
     TYPE_CONFLICT,
@@ -21,6 +21,7 @@ from apps.api.errors import (
     ProblemError,
 )
 from apps.api.etag import compute_etag, maybe_not_modified
+from apps.workspaces import permissions as perms
 
 from .schemas import (
     DecisionEditIn,
@@ -599,7 +600,7 @@ def create_opp_endpoint(
 ) -> HttpResponse:
     from apps.opps.opp_creator import CreateOppError
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     try:
         card = create_opp_and_return_card(workspace, request.user, body)
     except CreateOppError as exc:
@@ -684,7 +685,7 @@ def update_opp(
 ) -> HttpResponse:
     from apps.opps.opp_creator import CreateOppError
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     try:
         card = patch_opp_and_return_card(workspace, slug, body)
     except CreateOppError as exc:
@@ -749,7 +750,7 @@ def delete_opp(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
 ) -> HttpResponse:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     try:
         delete_opp_by_slug(workspace, slug)
     except FileNotFoundError as exc:
@@ -1214,7 +1215,7 @@ def delete_run(
     slug: Annotated[str, Path()],
     run_id: Annotated[str, Path()],
 ) -> HttpResponse:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     try:
         delete_run_by_id(workspace, slug, run_id)
     except FileNotFoundError as exc:
@@ -1637,7 +1638,7 @@ def fork_opp_endpoint(
     from apps.opps.attribution import RequestedByForbidden
     from apps.opps.opp_forker import ForkOppError
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     try:
         result = fork_opp_and_return(workspace, request.user, slug, body)
     except RequestedByForbidden as exc:
@@ -1716,7 +1717,7 @@ def save_decision_overrides_endpoint(
 ) -> HttpResponse:
     from apps.opps.decision_overrides import DecisionOverridesError
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.DECISIONS_WRITE)
     try:
         result = save_decision_overrides_and_return(workspace, slug, body)
     except DecisionOverridesError as exc:
@@ -1941,7 +1942,7 @@ def record_gate(
     skill: Annotated[str, Path()],
     body: GateDecisionIn,
 ) -> HttpResponse:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     try:
         gate = record_gate_decision(workspace, slug, skill, body, request.user)
     except FileNotFoundError as exc:
@@ -2231,7 +2232,7 @@ def seeded_run(
     )
     from apps.opps.attribution import RequestedByForbidden
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     try:
         result = seed_run_for_opp(workspace, slug, request.user, body)
     except RequestedByForbidden as exc:
@@ -2376,66 +2377,83 @@ def invalidate_snapshot(
 public_summary_router = Router(auth=None, tags=["opps-public"])
 
 
-#: Workspace roles that get the TEAM view of the run summary. Every other
-#: member — the ``viewer`` role, which is how outside partner reviewers are
-#: invited — gets the PARTNER (plain) view, the one an anonymous reader gets.
-TEAM_VIEW_ROLES = frozenset({"owner", "editor"})
+class SummaryViewer(NamedTuple):
+    """Who is reading a run summary — three separate questions, not one."""
+
+    #: A signed-in member of this workspace, of any role.
+    is_member: bool
+    #: PRESENTATION: draw the partner view (``summary.team_view`` not held).
+    plain: bool
+    #: ACCESS: may confirm, change and comment on decisions
+    #: (``decisions.write`` — editor and above; ``_member_reviewer``).
+    can_write: bool
 
 
-def _summary_viewer(request: HttpRequest, workspace: str) -> tuple[bool, bool]:
-    """``(is_member, plain)`` for the run summary's reader.
+def _summary_viewer(request: HttpRequest, workspace: str) -> SummaryViewer:
+    """The run summary's reader, decided by CAPABILITY
+    (``apps/workspaces/permissions.py``), never by role name.
 
-    Two separate questions, deliberately not one:
-
-    * ``is_member`` is ACCESS — a signed-in member of this workspace, of ANY
-      role, may confirm, change and comment on decisions
-      (``_member_reviewer``). Unchanged by role.
-    * ``plain`` is PRESENTATION — which version of the page to draw. Owners
-      and editors (Dimagi's team) get run ids, grader logs, lineage history;
-      a ``viewer`` (a partner reviewer) and a non-member get the partner
-      view: orientation block, plain deep QA, lineage in plain words.
-
-    Before this, ``is_member`` decided both, so the seven Spark partner
-    reviewers — invited as ``viewer`` — were shown the team's working and
-    never saw the "About this page" orientation written for them.
+    * ``plain`` is PRESENTATION — ``summary.team_view`` (admin and owner) gets
+      run ids, grader logs and lineage history; everyone else — editors,
+      viewers and non-members — gets the partner view: orientation block,
+      plain deep QA, lineage in plain words (owner decision 2026-10-07; PR
+      #883 drew the same line one role lower).
+    * ``can_write`` is ACCESS — ``decisions.write`` (editor and above) may
+      confirm, change and comment. A viewer is read-only, as in canopy-web.
     """
-    from apps.workspaces.models import WorkspaceMembership
+    from apps.workspaces import permissions as perms
 
-    if not getattr(request.user, "is_authenticated", False):
-        return False, True
-    role = (
-        WorkspaceMembership.objects.filter(workspace__slug=workspace, user=request.user)
-        .values_list("role", flat=True)
-        .first()
-    )
+    role = perms.role_for(request.user, workspace)
     if role is None:
-        return False, True
-    return True, role not in TEAM_VIEW_ROLES
+        return SummaryViewer(is_member=False, plain=True, can_write=False)
+    return SummaryViewer(
+        is_member=True,
+        plain=not perms.role_allows(role, perms.SUMMARY_TEAM_VIEW),
+        can_write=perms.role_allows(role, perms.DECISIONS_WRITE),
+    )
+
+
+#: Every variant of the summary payload, as ``(is_member, plain, can_write)``.
+_SUMMARY_VARIANTS = (
+    (True, False, True),   # team: admin / owner
+    (True, True, True),    # partner, may write: editor
+    (True, True, False),   # partner, read-only: viewer
+    (False, True, False),  # public: not a member
+)
 
 
 def _summary_cache_key(
     workspace: str, slug: str, run_id: str, *, is_member: bool, plain: bool | None = None,
+    can_write: bool | None = None,
 ) -> str:
     """Cache key for one variant of the public summary payload.
 
-    Three variants, cached separately: ``team`` (owner/editor), ``partner``
-    (a ``viewer``-role member — partner view, but may write) and ``public``
-    (not a member). Shared by the read path and by every write that must
-    invalidate it — a reaction that doesn't show up for 60 seconds reads as
-    a lost comment.
+    Four variants, cached separately (``_SUMMARY_VARIANTS``): ``team`` (admin /
+    owner), ``partner`` (editor — partner view, may write), ``partner-ro``
+    (viewer — partner view, read-only) and ``public`` (not a member). Shared by
+    the read path and by every write that must invalidate it — a reaction that
+    doesn't show up for 60 seconds reads as a lost comment.
     """
     if plain is None:
         plain = not is_member
-    variant = "public" if not is_member else ("partner" if plain else "team")
-    return f"opp-summary:v4:{variant}:{workspace}:{slug}:{run_id}"
+    if can_write is None:
+        can_write = is_member
+    if not is_member:
+        variant = "public"
+    elif not plain:
+        variant = "team"
+    else:
+        variant = "partner" if can_write else "partner-ro"
+    return f"opp-summary:v5:{variant}:{workspace}:{slug}:{run_id}"
 
 
 def _invalidate_summary_cache(workspace: str, slug: str, run_id: str) -> None:
     from django.core.cache import cache as _cache
 
-    for member, plain in ((True, False), (True, True), (False, True)):
+    for member, plain, can_write in _SUMMARY_VARIANTS:
         _cache.delete(
-            _summary_cache_key(workspace, slug, run_id, is_member=member, plain=plain)
+            _summary_cache_key(workspace, slug, run_id, is_member=member, plain=plain,
+                               can_write=can_write)
         )
 
 
@@ -2497,8 +2515,9 @@ def public_opp_summary(
         resp["Cache-Control"] = "no-store"
         return resp
 
-    is_member, plain = _summary_viewer(request, workspace)
-    cache_key = _summary_cache_key(workspace, slug, run_id, is_member=is_member, plain=plain)
+    is_member, plain, can_write = _summary_viewer(request, workspace)
+    cache_key = _summary_cache_key(workspace, slug, run_id, is_member=is_member, plain=plain,
+                                   can_write=can_write)
     cached = _cache.get(cache_key)
     if cached is not None:
         return JsonResponse(cached)
@@ -2522,6 +2541,7 @@ def public_opp_summary(
         client, workspace=ws, opp_slug=slug, run_id=run_id,
         viewer_is_member=is_member,
         viewer_plain=plain,
+        viewer_can_write=can_write,
         tenancy=_opp_tenancy(ws, slug),
     )
     if payload is None:
@@ -2591,7 +2611,7 @@ def public_decision_lineage(
             WorkspaceMembership.objects.filter(user=request.user)
             .values_list("workspace__slug", flat=True)
         )
-    is_member, plain = _summary_viewer(request, workspace)
+    is_member, plain, _can_write = _summary_viewer(request, workspace)
     # Run ids, per-decision history and ``scope=opp`` are the TEAM view; a
     # ``viewer``-role member is a partner reviewer and reads it in plain
     # words, like an outsider.
@@ -2758,7 +2778,10 @@ def _member_reviewer(request: HttpRequest, workspace: str):
     * signed in but the request fails Django's CSRF check → **403** — the
       endpoints are ``csrf_exempt`` at the router, so the token is what
       stops a third-party page filing a change under a member's name;
-    * signed in, not a member of this workspace → **403**.
+    * signed in, not a member of this workspace → **403**;
+    * a member whose role lacks ``decisions.write`` (a ``viewer``) → **403**
+      "Your role in this workspace can view but not change decisions." —
+      viewers are read-only, as in canopy-web (owner decision 2026-10-07).
 
     The returned ``Reviewer`` is always ``verified`` — the identity on the
     row and in the feedback ledger is the session's, never a typed name.
@@ -2766,7 +2789,7 @@ def _member_reviewer(request: HttpRequest, workspace: str):
     (``docs/learnings/public-summary-editing.md``).
     """
     from apps.opps.public_input import Reviewer, collapse, session_identity_is_trustworthy
-    from apps.workspaces.models import WorkspaceMembership
+    from apps.workspaces import permissions as perms
 
     user = getattr(request, "user", None)
     if user is None or not getattr(user, "is_authenticated", False):
@@ -2780,13 +2803,18 @@ def _member_reviewer(request: HttpRequest, workspace: str):
             403, "Request not verified", type_=TYPE_FORBIDDEN,
             detail="Reload the page and try again.",
         )
-    if not WorkspaceMembership.objects.filter(
-        workspace__slug=workspace, user=user,
-    ).exists():
+    role = perms.role_for(user, workspace)
+    if role is None:
         raise ProblemError(
             403, "Not a member of this workspace", type_=TYPE_FORBIDDEN,
             detail="Only members of this workspace can change, confirm or comment "
                    "on its decisions.",
+        )
+    if not perms.role_allows(role, perms.DECISIONS_WRITE):
+        raise ProblemError(
+            403, "Your role in this workspace can view but not change decisions.",
+            type_=TYPE_FORBIDDEN,
+            detail="Your role in this workspace can view but not change decisions.",
         )
     email = collapse(getattr(user, "email", "") or "")
     name = collapse(getattr(user, "display_name", "") or "") or email

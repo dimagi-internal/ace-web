@@ -44,3 +44,35 @@ export function SignInToEdit({
     </a>
   );
 }
+
+/** The server's 403 copy for a member whose role may not write decisions. */
+export const READ_ONLY_ROLE_COPY = "Your role in this workspace can view but not change decisions.";
+
+/**
+ * Where a write control would be, for a reader who may not write: a
+ * read-only MEMBER (a `viewer`) is told why — signing in again would not
+ * help them — and anyone else is offered sign-in.
+ */
+export function CannotWrite({
+  readOnlyMember,
+  className,
+  children,
+}: {
+  /** Signed in as a member whose role cannot write (`decisions.write`). */
+  readOnlyMember: boolean;
+  className?: string;
+  /** The sign-in link's text, for a non-member. */
+  children?: React.ReactNode;
+}) {
+  if (readOnlyMember) {
+    return (
+      <p
+        className={cn("text-[13px] text-muted-foreground", className)}
+        data-testid="read-only-role"
+      >
+        {READ_ONLY_ROLE_COPY}
+      </p>
+    );
+  }
+  return <SignInToEdit className={className}>{children}</SignInToEdit>;
+}

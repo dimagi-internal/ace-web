@@ -292,10 +292,11 @@ def test_the_audit_evidence_never_reaches_a_non_member():
 
 
 def test_the_audit_evidence_never_reaches_a_partner_view_member():
-    """A ``viewer``-role member (a partner reviewer) is drawn the partner
-    view: same as an outsider, though they may write."""
+    """A member below ``summary.team_view`` (an editor — how partner
+    reviewers are invited) is drawn the partner view: same as an outsider,
+    though they may write."""
     partner = _payload(viewer_is_member=True, viewer_plain=True)
-    assert partner["viewer"] == {"is_member": True, "plain": True}
+    assert partner["viewer"] == {"is_member": True, "plain": True, "can_write": True}
     assert all(c["evidence"] is None for c in _all_claims(partner["claims"]))
     team = _payload(viewer_is_member=True, viewer_plain=False)
     assert any(c["evidence"] for c in _all_claims(team["claims"]))

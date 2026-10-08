@@ -29,7 +29,8 @@ from ninja import Path as PathParam
 from ninja import Query, Router
 
 from apps.api.auth import session_auth
-from apps.api.deps import resolve_workspace_for_member
+from apps.api.deps import resolve_workspace_for, resolve_workspace_for_member
+from apps.workspaces import permissions as perms
 from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
 from . import drive, service, templates
@@ -211,7 +212,7 @@ def patch_video_template(
     template_id: Annotated[str, PathParam()],
     body: TemplatePatchIn,
 ) -> TemplateBundleOut:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     if not templates.is_valid_template_id(template_id):
         raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
     # 404 guard: check the template exists before attempting writes.
@@ -523,7 +524,7 @@ def create_program(
     content quality. Workspace membership is checked here, and the
     spec_yaml's ``workspace:`` field must match the URL workspace_slug.
     """
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     if not service.is_valid_slug(body.slug):
         raise ProblemError(
             400,
@@ -604,7 +605,7 @@ def copy_run(
     workspace_slug: Annotated[str, PathParam()],
     program_slug: Annotated[str, PathParam()],
 ) -> CopyRunOut:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     latest = _require_program(workspace, program_slug)
     new_run_id = service.copy_run(workspace, program_slug, latest.run_id)
     log.info("videos.copy_run: %s/%s → %s", program_slug, latest.run_id, new_run_id)
@@ -796,7 +797,7 @@ def post_feedback(
 ) -> FeedbackPostOut:
     import datetime as dt
 
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     _require_run(workspace, program_slug, run_id)
     ts = dt.datetime.now(dt.UTC).replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
     scope = f"beat:{body.beatId}" if body.scope == "beat" and body.beatId else "global"
@@ -823,7 +824,7 @@ def post_edit(
     operator batch many edits before paying the render cost; the
     "Re-render" button in the UI is the single canonical render entry.
     """
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     _require_run(workspace, program_slug, run_id)
     result = service.apply_edit(workspace, program_slug, run_id, body.model_dump(exclude_none=True))
     if not result.ok:
@@ -855,7 +856,7 @@ def post_edit_batch(
     """Atomic batch edit. All ops are validated and applied in order;
     if any fails, the spec is not saved (all-or-nothing).
     """
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     _require_run(workspace, program_slug, run_id)
     ops = [op.model_dump(exclude_none=True) for op in body.ops]
     result = service.apply_edit_batch(workspace, program_slug, run_id, ops)
@@ -885,7 +886,7 @@ def post_build(
     run_id: Annotated[str, PathParam()],
     body: BuildTriggerIn,
 ) -> BuildTriggerOut:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
     _require_run(workspace, program_slug, run_id)
     if body.mode == "build-only":
         triggered = service.trigger_build_only(workspace, program_slug, run_id)

@@ -2633,8 +2633,15 @@ def build_summary_payload(
     viewer_is_member: bool = True,
     tenancy: dict | None = None,
     viewer_plain: bool | None = None,
+    viewer_can_write: bool | None = None,
 ) -> dict | None:
     """Build the public summary JSON payload for a per-run summary page.
+
+    ``viewer_can_write`` (defaults to ``viewer_is_member``) is echoed as
+    ``viewer.can_write``: may this reader confirm, change and comment on
+    decisions (``decisions.write`` — editor and above). A ``viewer``-role
+    member is a member who may not; the page draws the decisions read-only
+    for them instead of offering a sign-in.
 
     ``tenancy`` is the opp's tenancy (``apps.opps.tenancy``); it decides
     which links a released reviewer can open. ``None`` (unknown) classifies
@@ -2667,6 +2674,8 @@ def build_summary_payload(
     """
     if viewer_plain is None:
         viewer_plain = not viewer_is_member
+    if viewer_can_write is None:
+        viewer_can_write = viewer_is_member
     team_view = bool(viewer_is_member) and not viewer_plain
     ace_root_id = getattr(workspace, "drive_root_folder_id", None)
     if not ace_root_id:
@@ -2807,5 +2816,9 @@ def build_summary_payload(
         # reversible change rather than a fait accompli.
         "decision_edits": decision_edits,
         "workbench": workbench,
-        "viewer": {"is_member": bool(viewer_is_member), "plain": bool(viewer_plain)},
+        "viewer": {
+            "is_member": bool(viewer_is_member),
+            "plain": bool(viewer_plain),
+            "can_write": bool(viewer_is_member and viewer_can_write),
+        },
     }

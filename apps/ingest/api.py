@@ -180,9 +180,10 @@ def upload(
         ).exists():
             raise ProblemError(403, "Forbidden", type_="https://ace-web.dimagi.com/problems/forbidden")
     elif workspace_slug:
-        from apps.api.deps import resolve_workspace_for_member
+        from apps.api.deps import resolve_workspace_for
+        from apps.workspaces import permissions as perms
 
-        workspace = resolve_workspace_for_member(request, workspace_slug)
+        workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
 
     raw_bytes = b"".join(file.chunks())
     result = process_ingest_upload(

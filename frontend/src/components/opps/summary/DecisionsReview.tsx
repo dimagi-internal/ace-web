@@ -21,7 +21,7 @@ import {
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionItem";
 import type { ReactionSubmit } from "@/components/opps/summary/DecisionReactions";
-import { SignInToEdit } from "@/components/opps/summary/SignInToEdit";
+import { CannotWrite } from "@/components/opps/summary/SignInToEdit";
 import type { DecisionLineage } from "@/api/lineage";
 import {
   DecisionLineageHistory,
@@ -289,6 +289,7 @@ export function DecisionsReview({
   reactions,
   edits,
   viewerIsMember,
+  viewerCanWrite = viewerIsMember,
   plain = !viewerIsMember,
   onReact,
   onEdit,
@@ -300,8 +301,14 @@ export function DecisionsReview({
   reactions: Record<string, DecisionReaction[]>;
   /** Human-set answers, keyed by decision id. */
   edits: Record<string, PublicDecisionEdit>;
-  /** A signed-in member of this workspace — the only viewer who may write. */
+  /** A signed-in member of this workspace, of any role. */
   viewerIsMember: boolean;
+  /**
+   * May confirm, change and comment (`viewer.can_write` — editor and above).
+   * A `viewer`-role member is a member who may NOT: they read the decisions
+   * and are told their role is read-only. Defaults to `viewerIsMember`.
+   */
+  viewerCanWrite?: boolean;
   /**
    * Draw the partner view (lineage in plain words, no ordinals). Separate
    * from `viewerIsMember`: a `viewer`-role member is a partner reviewer who
@@ -415,7 +422,8 @@ export function DecisionsReview({
       onToggle={() => toggleRow(d.id)}
       reactions={reactions[d.id] ?? []}
       edit={edits[d.id]}
-      canWrite={viewerIsMember}
+      canWrite={viewerCanWrite}
+      readOnlyMember={viewerIsMember && !viewerCanWrite}
       onReact={onReact}
       onEdit={onEdit}
       tags={
@@ -450,19 +458,23 @@ export function DecisionsReview({
       <p className="mt-2 max-w-3xl text-[0.975rem] leading-[1.7] text-muted-foreground">
         {total} load-bearing {total === 1 ? "call" : "calls"} in all, made while designing and building this program.
         Each one records what it picked, what else was on the table, and why.{" "}
-        {viewerIsMember ? (
+        {viewerCanWrite ? (
           <>
             <span className="text-foreground">You can confirm or change any of them here</span>
             {" "}— what you change here is what Dimagi builds the next version from.
           </>
+        ) : viewerIsMember ? (
+          <>Editors of this workspace can confirm or change them.</>
         ) : (
           <>Members of this workspace can confirm or change them.</>
         )}
       </p>
 
-      {!viewerIsMember && (
+      {!viewerCanWrite && (
         <div className="mt-3">
-          <SignInToEdit>Sign in to confirm, change or comment</SignInToEdit>
+          <CannotWrite readOnlyMember={viewerIsMember}>
+            Sign in to confirm, change or comment
+          </CannotWrite>
         </div>
       )}
 

@@ -49,7 +49,7 @@ def ensure_auto_join_memberships(user) -> list[Workspace]:
         _, created = WorkspaceMembership.objects.get_or_create(
             workspace=ws,
             user=user,
-            defaults={"role": "editor"},
+            defaults={"role": WorkspaceMembership.EDITOR},
         )
         if created:
             newly_joined.append(ws)

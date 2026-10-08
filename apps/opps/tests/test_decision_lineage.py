@@ -319,8 +319,8 @@ def test_an_outsider_gets_the_strip_and_badges_in_plain_words(client, lineage_wo
 @pytest.mark.django_db
 def test_a_clone_member_sees_the_source_as_a_label_not_a_link(client, lineage_workspaces):
     _dt, spark = lineage_workspaces
-    user = User.objects.create_user(email="spark-editor@example.org")
-    WorkspaceMembership.objects.create(workspace=spark, user=user, role="editor")
+    user = User.objects.create_user(email="spark-admin@example.org")
+    WorkspaceMembership.objects.create(workspace=spark, user=user, role="admin")
     client.force_login(user)
     body = client.get(_URL).json()
     assert body["viewer"] == {"is_member": True, "plain": False}
@@ -335,14 +335,15 @@ def test_a_clone_member_sees_the_source_as_a_label_not_a_link(client, lineage_wo
 
 
 @pytest.mark.django_db
-def test_a_viewer_role_member_gets_the_partner_shape(client, lineage_workspaces):
-    """Partner reviewers are invited with role ``viewer``. They are members
-    (they may confirm, change and comment) but are drawn the PARTNER view:
+@pytest.mark.parametrize("role", ["editor", "viewer"])
+def test_a_member_below_admin_gets_the_partner_shape(client, lineage_workspaces, role):
+    """Below ``summary.team_view`` (admin), a member — an editor (how
+    partner reviewers are invited) or a viewer — is drawn the PARTNER view:
     the same plain shape an outsider gets — no run ids, no history, no
     links, no ``scope=opp``."""
     _dt, spark = lineage_workspaces
-    user = User.objects.create_user(email="partner@example.org")
-    WorkspaceMembership.objects.create(workspace=spark, user=user, role="viewer")
+    user = User.objects.create_user(email=f"partner-{role}@example.org")
+    WorkspaceMembership.objects.create(workspace=spark, user=user, role=role)
     client.force_login(user)
     body = client.get(_URL).json()
     assert body["viewer"] == {"is_member": True, "plain": True}
@@ -375,7 +376,7 @@ def test_a_member_of_both_workspaces_gets_links_all_the_way_back(client, lineage
     dt, spark = lineage_workspaces
     user = User.objects.create_user(email="staff@dimagi.com")
     for ws in (dt, spark):
-        WorkspaceMembership.objects.create(workspace=ws, user=user, role="editor")
+        WorkspaceMembership.objects.create(workspace=ws, user=user, role="admin")
     client.force_login(user)
     body = client.get(_URL).json()
     assert all(s["workbench_url"] for s in body["chain"])
@@ -390,7 +391,7 @@ def test_scope_opp_is_members_only(client, lineage_workspaces):
     url = f"/api/opps/public/dimagi-team/{OPP}/runs/{RUN}/lineage?scope=opp"
     assert client.get(url).json()["scope"] == "lineage"
     user = User.objects.create_user(email="staff2@dimagi.com")
-    WorkspaceMembership.objects.create(workspace=dt, user=user, role="editor")
+    WorkspaceMembership.objects.create(workspace=dt, user=user, role="admin")
     client.force_login(user)
     body = client.get(url).json()
     assert body["scope"] == "opp"
@@ -616,7 +617,7 @@ def test_scope_opp_on_a_clone_reads_the_source_workspaces_runs(client, fresh_wor
                             run_id=FRESH, status="done")
     user = User.objects.create_user(email="both@dimagi.com")
     for ws in (dt, spark):
-        WorkspaceMembership.objects.create(workspace=ws, user=user, role="editor")
+        WorkspaceMembership.objects.create(workspace=ws, user=user, role="admin")
     client.force_login(user)
     body = client.get(f"/api/opps/public/spark/{OPP}/runs/{FRESH}/lineage?scope=opp").json()
     assert body["scope"] == "opp"

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { MessageSquarePlus } from "lucide-react";
 
 import type { DecisionReaction } from "@/api/oppSummary";
-import { SignInToEdit } from "@/components/opps/summary/SignInToEdit";
+import { CannotWrite } from "@/components/opps/summary/SignInToEdit";
 import { cn } from "@/lib/utils";
 
 /**
@@ -71,6 +71,7 @@ export function DecisionReactions({
   reactions,
   onSubmit,
   canWrite,
+  readOnlyMember = false,
   contested = false,
 }: {
   decisionId: string;
@@ -78,6 +79,8 @@ export function DecisionReactions({
   onSubmit: (decisionId: string, body: ReactionSubmit) => Promise<void>;
   /** A signed-in workspace member. Anyone else reads, and is offered sign-in. */
   canWrite: boolean;
+  /** Signed in as a member whose role may not write (a `viewer`). */
+  readOnlyMember?: boolean;
   /**
    * ACE's sources disagreed on this row. The box is then pitched at the
    * reviewer who is not ready to pick an answer: ask what would settle it.
@@ -150,7 +153,7 @@ export function DecisionReactions({
       )}
 
       {!canWrite ? (
-        <SignInToEdit>Sign in to comment</SignInToEdit>
+        <CannotWrite readOnlyMember={readOnlyMember}>Sign in to comment</CannotWrite>
       ) : !open ? (
         <div className="space-y-1">
           <button

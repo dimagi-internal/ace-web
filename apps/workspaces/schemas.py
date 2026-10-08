@@ -8,7 +8,8 @@ from pydantic import Field
 
 from apps.common.schemas import StrictModel, TimestampMixin, UserRefOut
 
-WorkspaceRole = Literal["owner", "editor", "viewer"]
+# The four workspace roles, highest first (`models.WorkspaceMembership`).
+WorkspaceRole = Literal["owner", "admin", "editor", "viewer"]
 
 
 class WorkspaceOut(StrictModel, TimestampMixin):
@@ -58,6 +59,16 @@ class WorkspaceInviteOut(StrictModel, TimestampMixin):
     role: WorkspaceRole
     accepted: bool
     accepted_at: dt.datetime | None = None
+
+
+class WorkspacePendingInviteOut(StrictModel):
+    """GET /api/workspaces/{slug}/invites — one invite nobody has acted on."""
+
+    email: str
+    role: WorkspaceRole
+    invited_by_email: str
+    created_at: dt.datetime
+    expires_at: dt.datetime
 
 
 class InvitePreviewOut(StrictModel):

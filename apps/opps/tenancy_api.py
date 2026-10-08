@@ -74,12 +74,12 @@ def patch_opp_tenancy(
 ) -> HttpResponse:
     from django.db import transaction
 
-    from apps.workspaces.permissions import role_for
+    from apps.workspaces import permissions as perms
 
     from .models import OppWorkspace
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
-    if role_for(request.user, workspace) != "owner":
+    if not perms.can(request.user, workspace, perms.OWN):
         raise ProblemError(403, "Owner required", type_=TYPE_FORBIDDEN)
 
     with transaction.atomic():

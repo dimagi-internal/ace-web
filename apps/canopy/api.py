@@ -29,8 +29,9 @@ from django.http import HttpRequest
 from ninja import Path, Router
 
 from apps.api.auth import session_auth
-from apps.api.deps import resolve_workspace_for_member
+from apps.api.deps import resolve_workspace_for
 from apps.api.errors import TYPE_UPSTREAM, ProblemError
+from apps.workspaces import permissions as perms
 
 from . import client
 from .schemas import (
@@ -109,7 +110,7 @@ def sessions(
 
     # 404s a non-member without leaking whether the workspace exists — the
     # same gate every other tenant-scoped router uses.
-    resolve_workspace_for_member(request, workspace_slug)
+    resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
 
     # origin_key is derived from the resolved (and membership-checked) ace
     # workspace slug ONLY, never from the request body — this is what lets

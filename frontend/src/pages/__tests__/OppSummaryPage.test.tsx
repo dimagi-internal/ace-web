@@ -1073,11 +1073,45 @@ describe("OppSummaryPage", () => {
     expect(react).not.toHaveBeenCalled();
   });
 
-  // A `viewer`-role member is a partner reviewer: drawn the partner view
-  // (server sends `plain: true`) but still a member who may write.
-  const PARTNER = { viewer: { is_member: true, plain: true } };
+  it("tells a viewer-role member their role is read-only, instead of offering sign-in", async () => {
+    // canopy-web's ACL: a viewer can view; an editor can confirm, change and
+    // comment. The server sends `can_write: false` for a viewer.
+    const edit = vi.spyOn(api, "postDecisionEdit");
+    const react = vi.spyOn(api, "postDecisionReaction");
+    renderWith({
+      ...ASKS,
+      viewer: { is_member: true, plain: true, can_write: false },
+    });
+    await openDecisionsTab();
+    const copy = "Your role in this workspace can view but not change decisions.";
+    expect((await screen.findAllByText(copy)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Sign in to confirm, change or comment/)).toBeNull();
+    expect(screen.getByText(/Editors of this workspace can confirm or change them/)).toBeTruthy();
+    await openRow("Which slice does the pilot cover?");
+    expect(screen.queryByRole("button", { name: /^Confirm:/ })).toBeNull();
+    expect(screen.queryByText("Sign in to edit")).toBeNull();
+    expect(screen.queryByText("Sign in to comment")).toBeNull();
+    expect(screen.queryByText(/Ask a question or raise a concern/)).toBeNull();
+    expect(edit).not.toHaveBeenCalled();
+    expect(react).not.toHaveBeenCalled();
+  });
 
-  it("gives a viewer-role member the partner view, with write access intact", async () => {
+  it("lets an editor write, with can_write from the server", async () => {
+    renderWith({
+      ...ASKS,
+      viewer: { is_member: true, plain: true, can_write: true },
+    });
+    await openDecisionsTab();
+    await openRow("Which slice does the pilot cover?");
+    expect(screen.getByRole("button", { name: /^Confirm: Goal Setting/ })).toBeTruthy();
+    expect(screen.queryByTestId("read-only-role")).toBeNull();
+  });
+
+  // An editor — how partner reviewers are invited — is drawn the partner view
+  // (server sends `plain: true`) and is a member who may write.
+  const PARTNER = { viewer: { is_member: true, plain: true, can_write: true } };
+
+  it("gives an editor the partner view, with write access intact", async () => {
     renderWith({
       ...CONFLICTED,
       ...PARTNER,

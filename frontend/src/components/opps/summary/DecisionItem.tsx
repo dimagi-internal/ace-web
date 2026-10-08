@@ -13,7 +13,7 @@ import {
   type ReactionSubmit,
 } from "@/components/opps/summary/DecisionReactions";
 import { AnswerChoice } from "@/components/opps/summary/AnswerChoice";
-import { SignInToEdit } from "@/components/opps/summary/SignInToEdit";
+import { CannotWrite } from "@/components/opps/summary/SignInToEdit";
 
 export interface DecisionEditSubmit {
   value: string;
@@ -49,6 +49,7 @@ export function DecisionItem({
   reactions,
   edit,
   canWrite,
+  readOnlyMember = false,
   onReact,
   onEdit,
   tags,
@@ -59,8 +60,10 @@ export function DecisionItem({
   onToggle: () => void;
   reactions: DecisionReaction[];
   edit?: PublicDecisionEdit;
-  /** A signed-in member of this workspace. */
+  /** May confirm, change and comment (`decisions.write`: editor and above). */
   canWrite: boolean;
+  /** Signed in as a member whose role may not write (a `viewer`). */
+  readOnlyMember?: boolean;
   onReact: (decisionId: string, body: ReactionSubmit) => Promise<void>;
   onEdit: (decisionId: string, body: DecisionEditSubmit) => Promise<void>;
   /** Extra header chips from the caller (e.g. "internal"). */
@@ -163,7 +166,7 @@ export function DecisionItem({
     >
       {!canWrite && (
         <div className="mt-3">
-          <SignInToEdit />
+          <CannotWrite readOnlyMember={readOnlyMember}>Sign in to edit</CannotWrite>
         </div>
       )}
 
@@ -182,6 +185,7 @@ export function DecisionItem({
         reactions={reactions}
         onSubmit={onReact}
         canWrite={canWrite}
+        readOnlyMember={readOnlyMember}
         contested={decision.evidence_basis === "conflicting"}
       />
     </DecisionRow>

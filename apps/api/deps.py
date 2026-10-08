@@ -34,6 +34,39 @@ def resolve_workspace_for_member(request: HttpRequest, slug: str) -> Workspace:
     return workspace
 
 
+#: 403 copy per capability, for a member whose role does not hold it. A
+#: capability with no entry here gets the generic line.
+_FORBIDDEN_DETAIL = {
+    "decisions.write": "Your role in this workspace can view but not change decisions.",
+    "content.write": "Your role in this workspace can view but not change its content.",
+    "members.manage": "Your role in this workspace cannot manage its members.",
+    "logs.read": "Your role in this workspace cannot read its audit log.",
+    "own": "Only an owner of this workspace can do this.",
+}
+
+
+def require_capability(request: HttpRequest, workspace: Workspace, capability: str) -> None:
+    """Raise ProblemError(403) unless request.user holds `capability` in
+    `workspace` (`apps.workspaces.permissions`). Call it after
+    `resolve_workspace_for_member`, which has already 404'd a non-member."""
+    from apps.workspaces import permissions as perms
+
+    if not perms.can(request.user, workspace, capability):
+        raise ProblemError(
+            403, "Forbidden", type_=TYPE_FORBIDDEN,
+            detail=_FORBIDDEN_DETAIL.get(
+                capability, "Your role in this workspace does not allow this."),
+        )
+
+
+def resolve_workspace_for(request: HttpRequest, slug: str, capability: str) -> Workspace:
+    """`resolve_workspace_for_member` + `require_capability`: 404 for a
+    non-member (existence hidden), 403 for a member whose role falls short."""
+    workspace = resolve_workspace_for_member(request, slug)
+    require_capability(request, workspace, capability)
+    return workspace
+
+
 def require_write_global(request: HttpRequest) -> None:
     """Raise ProblemError(403) if the user cannot perform global write operations.
 

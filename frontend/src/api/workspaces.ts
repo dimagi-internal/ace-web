@@ -11,7 +11,10 @@ export type WorkspaceSummary = components["schemas"]["WorkspaceOut"];
 export type WorkspaceDetail = components["schemas"]["WorkspaceOut"];
 /** v2 WorkspaceMemberOut shape. Note: member has nested `user: UserRefOut`. */
 export type WorkspaceMember = components["schemas"]["WorkspaceMemberOut"];
-export type WorkspaceRole = "owner" | "editor" | "viewer";
+/** canopy-web's four roles, highest first. Labels/descriptions: `lib/workspaceRoles`. */
+export type WorkspaceRole = "owner" | "admin" | "editor" | "viewer";
+/** One invite nobody has accepted, revoked or let expire (admin and above). */
+export type PendingInvite = components["schemas"]["WorkspacePendingInviteOut"];
 
 // ---------------------------------------------------------------------------
 // Types for endpoints not yet in the generated schema
@@ -143,6 +146,14 @@ export async function inviteMember(
     // to "" here, which made "copy invite link" yield a tokenless, dead URL.
     accept_url: `/invite/${out.token}`,
   };
+}
+
+export async function listPendingInvites(slug: string): Promise<PendingInvite[]> {
+  const { data, error } = await apiClient.GET("/api/workspaces/{slug}/invites", {
+    params: { path: { slug } },
+  });
+  if (error) throw new Error((error as { title?: string }).title || "Failed to list invites");
+  return (data ?? []) as PendingInvite[];
 }
 
 export async function removeMember(slug: string, userId: number): Promise<void> {
