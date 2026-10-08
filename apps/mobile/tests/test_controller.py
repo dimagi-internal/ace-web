@@ -1534,3 +1534,20 @@ def test_install_result_is_a_dataclass():
 
     r = InstallResult(package_name="x", version="1")
     assert r.package_name == "x"
+
+
+def test_wait_for_ec2_ok_requires_system_status_ok(controller_factory, monkeypatch):
+    """Instance status ok but system status impaired is NOT ready."""
+    monkeypatch.setattr(time, "sleep", lambda *_: None)
+    fake_clock = {"t": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: fake_clock["t"])
+    monkeypatch.setattr(
+        time, "sleep", lambda s: fake_clock.__setitem__("t", fake_clock["t"] + s)
+    )
+    c = controller_factory()
+    for _ in range(10):
+        controller_factory.ec2_stub.add_response(
+            "describe_instance_status", _instance_status_resp(sys_status="impaired")
+        )
+    with pytest.raises(EmulatorBootTimeout):
+        c._wait_for_ec2_ok(20)

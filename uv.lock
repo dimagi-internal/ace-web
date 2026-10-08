@@ -20,7 +20,7 @@ dependencies = [
     { name = "channels" },
     { name = "channels-redis" },
     { name = "cryptography" },
-    { name = "dimagi-canopy", extra = ["django"] },
+    { name = "dimagi-canopy", extra = ["django", "ondemand"] },
     { name = "django" },
     { name = "django-cryptography-django5" },
     { name = "django-environ" },
@@ -67,7 +67,7 @@ requires-dist = [
     { name = "channels", specifier = ">=4.1" },
     { name = "channels-redis", specifier = ">=4.2" },
     { name = "cryptography", specifier = ">=42" },
-    { name = "dimagi-canopy", extras = ["django"], git = "https://github.com/dimagi-internal/canopy-web.git?subdirectory=sdk%2Fpython&tag=dimagi-canopy-v0.4.1" },
+    { name = "dimagi-canopy", extras = ["django", "ondemand"], git = "https://github.com/dimagi-internal/canopy-web.git?subdirectory=sdk%2Fpython&tag=dimagi-canopy-v0.7.0" },
     { name = "django", specifier = ">=5.0,<6.0" },
     { name = "django-cryptography-django5", specifier = ">=2.2" },
     { name = "django-environ", specifier = ">=0.11" },
@@ -661,8 +661,8 @@ wheels = [
 
 [[package]]
 name = "dimagi-canopy"
-version = "0.4.1"
-source = { git = "https://github.com/dimagi-internal/canopy-web.git?subdirectory=sdk%2Fpython&tag=dimagi-canopy-v0.4.1#f639cb2cad7e0f5158197194be927e6bfe447672" }
+version = "0.7.0"
+source = { git = "https://github.com/dimagi-internal/canopy-web.git?subdirectory=sdk%2Fpython&tag=dimagi-canopy-v0.7.0#04a54f7fafb4c8b976b255467ef0c9a0d5af52fd" }
 dependencies = [
     { name = "pyjwt", extra = ["crypto"] },
 ]
@@ -670,6 +670,10 @@ dependencies = [
 [package.optional-dependencies]
 django = [
     { name = "django" },
+]
+ondemand = [
+    { name = "boto3" },
+    { name = "redis" },
 ]
 
 [[package]]

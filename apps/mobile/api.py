@@ -359,10 +359,14 @@ def submit_run_recipe(body: RunRecipeIn) -> dict:
             daemon=True,
         ).start()
     except Exception as e:  # noqa: BLE001
-        singleton.release(owner)
-        jobs.mark_failed(
-            job_id, error=f"failed to start worker: {e}", error_code="thread-start-failed"
-        )
+        try:
+            jobs.mark_failed(
+                job_id,
+                error=f"failed to start worker: {e}",
+                error_code="thread-start-failed",
+            )
+        finally:
+            singleton.release(owner)
         raise ProblemError(
             500, f"Could not start worker thread: {e}", type_=TYPE_VALIDATION
         ) from e
@@ -608,10 +612,14 @@ def submit_register_test_user(body: RegisterTestUserIn) -> dict:
             daemon=True,
         ).start()
     except Exception as e:  # noqa: BLE001
-        singleton.release(owner)
-        jobs.mark_failed(
-            job_id, error=f"failed to start worker: {e}", error_code="thread-start-failed"
-        )
+        try:
+            jobs.mark_failed(
+                job_id,
+                error=f"failed to start worker: {e}",
+                error_code="thread-start-failed",
+            )
+        finally:
+            singleton.release(owner)
         raise ProblemError(
             500, f"Could not start worker thread: {e}", type_=TYPE_VALIDATION
         ) from e

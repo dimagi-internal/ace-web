@@ -27,6 +27,7 @@ from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
+from canopy_sdk.ondemand import OnDemandError, OnDemandInstance
 from django.core.cache import cache as _cache
 
 from . import ssm
@@ -326,6 +327,7 @@ class EmulatorController:
         self._ec2: Any = None
         self._ssm: Any = None
         self._s3: Any = None
+        self._ondemand: OnDemandInstance | None = None
 
     # ── Lazy clients ─────────────────────────────────────────────
 
@@ -346,6 +348,25 @@ class EmulatorController:
         if self._s3 is None:
             self._s3 = boto3.client("s3", region_name=self.region)
         return self._s3
+
+    @property
+    def _od(self) -> OnDemandInstance:
+        """Shared on-demand instance helper (``canopy_sdk.ondemand``).
+
+        Built lazily from this controller's own (cached, injectable) boto3
+        clients so EC2 stop / status-wait behaviour lives in the SDK while
+        the Android-specific emulator logic stays here.
+        """
+        if self._ondemand is None:
+            self._ondemand = OnDemandInstance(
+                self.instance_id,
+                self.region,
+                "ace-mobile",
+                ready_file=_EMULATOR_READY_MARKER,
+                ec2=self.ec2,
+                ssm=self.ssm,
+            )
+        return self._ondemand
 
     # ── Lifecycle ───────────────────────────────────────────────
 
@@ -479,9 +500,9 @@ class EmulatorController:
 
     def stop(self) -> StoppedState:
         try:
-            self.ec2.stop_instances(InstanceIds=[self.instance_id])
-        except ClientError as e:
-            raise MobileError(f"ec2.stop_instances failed: {e}") from e
+            self._od.stop()
+        except OnDemandError as e:
+            raise MobileError(str(e)) from e
         return StoppedState(
             instance_id=self.instance_id,
             state="stopping",
@@ -1305,10 +1326,13 @@ fi
             raise MobileError(f"ec2.start_instances failed: {e}") from e
 
     def _wait_for_ec2_ok(self, timeout_sec: int) -> None:
-        """Poll ``describe_instance_status`` until ``Status == 'ok'``.
+        """Poll ``describe_instance_status`` until the instance is running
+        with BOTH instance and system status ``ok``.
 
         Means both the system reachability and instance reachability
-        checks have passed *and* SSM agent is running.
+        checks have passed *and* SSM agent is running. Kept local rather
+        than delegated to the SDK's ``instance_status_ok`` waiter, which
+        ignores system status.
         """
         deadline = time.monotonic() + timeout_sec
         while time.monotonic() < deadline:

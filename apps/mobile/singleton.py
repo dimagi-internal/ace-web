@@ -5,7 +5,10 @@ We use Redis ``SET NX EX`` with a 30 min TTL — long enough for the longest
 plausible recipe run plus S3 upload, short enough that a stuck holder
 clears within one CloudWatch alarm window.
 
-Release uses a Lua compare-and-delete so a stuck holder whose TTL expires
+The lock itself is ``canopy_sdk.ondemand.Lease`` (compare-and-act release and
+refresh, Lua with a WATCH/MULTI fallback); this module keeps the original
+function names and the original Redis key so locks held across a deploy still
+count. Release uses a Lua compare-and-delete so a stuck holder whose TTL expires
 can't accidentally delete a newer holder's lock. Pattern lifted from
 ``apps.common.nova_auth_flow``'s ``nova:refresh-lock``.
 
@@ -18,26 +21,11 @@ from __future__ import annotations
 import secrets
 
 import redis as _redis_sync
+from canopy_sdk.ondemand import Lease
 from django.conf import settings
 
 LOCK_KEY = "mobile:emulator:lock"
 LOCK_TTL_SECONDS = 1800  # 30 minutes
-
-_LOCK_RELEASE_LUA = (
-    "if redis.call('get',KEYS[1])==ARGV[1] then "
-    "return redis.call('del',KEYS[1]) else return 0 end"
-)
-
-# Atomic check-then-set-with-expiry — same pattern as release but the
-# action is "extend the TTL" instead of "delete". Used by ``refresh``
-# so a long ensure_running on a cold boot can give the actual recipe
-# a fresh full TTL window instead of inheriting the now-half-expired
-# original lease.
-_LOCK_REFRESH_LUA = (
-    "if redis.call('get',KEYS[1])==ARGV[1] then "
-    "return redis.call('expire',KEYS[1],ARGV[2]) else return 0 end"
-)
-
 
 _sync_redis: _redis_sync.Redis | None = None
 
@@ -62,6 +50,12 @@ def make_owner(task_id: str | None = None, request_uuid: str | None = None) -> s
     return f"{task_id or secrets.token_hex(4)}:{request_uuid or secrets.token_hex(4)}"
 
 
+def _lease(ttl_seconds: int = LOCK_TTL_SECONDS) -> Lease:
+    # Built per call so tests that monkeypatch ``_get_redis`` are honoured.
+    # ``key=`` pins the pre-extraction key name (the SDK default differs).
+    return Lease(_get_redis(), "mobile", ttl_s=ttl_seconds, key=LOCK_KEY)
+
+
 def try_acquire(owner: str, ttl_seconds: int = LOCK_TTL_SECONDS) -> tuple[bool, str]:
     """Attempt to claim the singleton lock.
 
@@ -71,43 +65,15 @@ def try_acquire(owner: str, ttl_seconds: int = LOCK_TTL_SECONDS) -> tuple[bool, 
     SETNX and GET, in which case the caller should treat it as contention
     and try again on the next request).
     """
-    r = _get_redis()
-    acquired = bool(r.set(LOCK_KEY, owner, nx=True, ex=ttl_seconds))
-    if acquired:
+    lease = _lease(ttl_seconds)
+    if lease.acquire(owner):
         return True, owner
-    current = r.get(LOCK_KEY) or ""
-    return False, current
+    return False, lease.holder()
 
 
 def release(owner: str) -> bool:
-    """Release the lock iff we still own it. Returns True if released.
-
-    Prefers an atomic Lua compare-and-delete; falls back to a
-    ``WATCH`` + ``MULTI`` transaction when the Redis backend does not
-    support ``EVAL`` (notably some fakeredis versions used in tests).
-    The transactional fallback is also race-safe — Redis aborts the
-    EXEC if another client modified the watched key between WATCH and
-    EXEC, so we never delete a key whose value we didn't observe.
-    """
-    r = _get_redis()
-    try:
-        result = r.eval(_LOCK_RELEASE_LUA, 1, LOCK_KEY, owner)
-        return bool(result)
-    except Exception:
-        # Fallback: WATCH + transactional GET / DEL.
-        try:
-            with r.pipeline() as pipe:
-                pipe.watch(LOCK_KEY)
-                current = pipe.get(LOCK_KEY)
-                if current != owner:
-                    pipe.unwatch()
-                    return False
-                pipe.multi()
-                pipe.delete(LOCK_KEY)
-                result = pipe.execute()
-                return bool(result and result[0])
-        except Exception:
-            return False
+    """Release the lock iff we still own it. Returns True if released."""
+    return _lease().release(owner)
 
 
 def refresh(owner: str, ttl_seconds: int = LOCK_TTL_SECONDS) -> bool:
@@ -118,40 +84,17 @@ def refresh(owner: str, ttl_seconds: int = LOCK_TTL_SECONDS) -> bool:
     actual recipe even starts. Refreshing after the cold boot returns
     gives the recipe its own fresh window so the lock doesn't
     silently expire mid-run and let a concurrent caller race in.
-
-    Same atomic check-then-act shape as ``release``: prefer Lua
-    EVAL; fall back to a WATCH+MULTI transaction for backends that
-    don't support EVAL (some fakeredis versions in tests).
     """
-    r = _get_redis()
-    try:
-        result = r.eval(_LOCK_REFRESH_LUA, 1, LOCK_KEY, owner, ttl_seconds)
-        return bool(result)
-    except Exception:
-        try:
-            with r.pipeline() as pipe:
-                pipe.watch(LOCK_KEY)
-                current = pipe.get(LOCK_KEY)
-                if current != owner:
-                    pipe.unwatch()
-                    return False
-                pipe.multi()
-                pipe.expire(LOCK_KEY, ttl_seconds)
-                result = pipe.execute()
-                return bool(result and result[0])
-        except Exception:
-            return False
+    return _lease(ttl_seconds).refresh(owner)
 
 
 def current_owner() -> str:
     """Return the current lock holder, or ``""`` if unlocked. Test helper."""
-    r = _get_redis()
-    return r.get(LOCK_KEY) or ""
+    return _lease().holder()
 
 
 def ttl_seconds() -> int:
     """Return remaining TTL on the lock in seconds. ``-2`` if no key exists,
     ``-1`` if no TTL set. Test helper.
     """
-    r = _get_redis()
-    return int(r.ttl(LOCK_KEY))
+    return int(_get_redis().ttl(LOCK_KEY))
