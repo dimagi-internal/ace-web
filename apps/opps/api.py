@@ -2433,6 +2433,13 @@ def _summary_cache_key(
     (viewer — partner view, read-only) and ``public`` (not a member). Shared by
     the read path and by every write that must invalidate it — a reaction that
     doesn't show up for 60 seconds reads as a lost comment.
+
+    The variants differ in payload, not just in ``viewer``: ``team`` alone
+    carries claim ``evidence``; every MEMBER variant (team, partner,
+    partner-ro) carries private review ledgers and ``public`` does not
+    (``summary._read_feedback`` — membership, owner decision 2026-10-08). So
+    ``is_member`` must stay in the key. v6: v5 member-partner payloads were
+    built without private ledgers.
     """
     if plain is None:
         plain = not is_member
@@ -2444,7 +2451,7 @@ def _summary_cache_key(
         variant = "team"
     else:
         variant = "partner" if can_write else "partner-ro"
-    return f"opp-summary:v5:{variant}:{workspace}:{slug}:{run_id}"
+    return f"opp-summary:v6:{variant}:{workspace}:{slug}:{run_id}"
 
 
 def _invalidate_summary_cache(workspace: str, slug: str, run_id: str) -> None:
@@ -2563,7 +2570,7 @@ LINEAGE_CACHE_SECONDS = 120
 
 
 def _lineage_cache_key(workspace: str, slug: str, run_id: str, scope: str) -> str:
-    return f"opp-lineage:v2:{scope}:{workspace}:{slug}:{run_id}"
+    return f"opp-lineage:v3:{scope}:{workspace}:{slug}:{run_id}"
 
 
 @public_summary_router.get(

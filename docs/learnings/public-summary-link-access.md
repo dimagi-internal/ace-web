@@ -44,16 +44,31 @@ into:
 
 `viewer.plain` rides along on the payload and decides whether the page *draws*
 the tag — Dimagi's team already knows which links are internal, so tagging them
-there is noise. Since 2026-10-07 the payload carries two separate facts about
-the reader (`apps/opps/api.py::_summary_viewer`): `viewer.is_member` is ACCESS
-(any member, of any role, may confirm/change/comment) and `viewer.plain` is
-PRESENTATION — owners and editors get the team view, while a `viewer`-role
-member (how partner reviewers are invited) and a non-member get the partner
-view. The three variants are cached under separate keys
-(`opp-summary:v4:{team|partner|public}:…`).
+there is noise. Since the canopy ACL (2026-10-07) the payload carries three
+separate facts about the reader (`apps/opps/api.py::_summary_viewer`):
+`viewer.is_member` (a member of any role), `viewer.can_write` (ACCESS —
+`decisions.write`, editor and above, may confirm/change/comment; a `viewer` is
+read-only) and `viewer.plain` (PRESENTATION — `summary.team_view`, admin and
+owner, get the team view; editors — how `/ace:release` invites reviewers —
+viewers and non-members get the partner view). The four variants are cached
+under separate keys (`opp-summary:v6:{team|partner|partner-ro|public}:…`).
+
+What a plain reader gets differs by who they are:
+
+| | owner / admin | editor | viewer | non-member |
+|---|---|---|---|---|
+| private review ledgers (`feedback`) | yes | yes | yes | **omitted** |
+| claim audit `evidence` | yes | no | no | no |
+
+Private ledgers follow MEMBERSHIP, not the team view (owner decision
+2026-10-08: "reviewers can see the feedback"). Claim `evidence` follows the
+team view. Because the ledger differs between the member variants and
+`public`, `is_member` must stay in the cache key.
 
 Do not reintroduce an `include_internal_links`-style flag that changes *which*
-links are served. Membership changes the tag, not the content.
+links are served. Membership changes the tag, not the content — the one
+exception is a private review's ledger, removed for a non-member on
+confidentiality grounds (`summary._read_feedback`).
 
 ### Current classification
 

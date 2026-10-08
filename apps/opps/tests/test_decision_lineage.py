@@ -199,6 +199,70 @@ def test_scope_opp_adds_runs_outside_the_chain():
     assert core["origins"]["working-language"]["kind"] == "carried"
 
 
+def _opp_run(run_id: str, rows: list[dict], *, in_lineage: bool = False,
+             via: str = "") -> ChainRun:
+    return ChainRun("ws", OPP, run_id, via=via, rows=rows, in_lineage=in_lineage,
+                    date=f"{run_id[:4]}-{run_id[4:6]}-{run_id[6:8]}")
+
+
+_OTHER = {"id": "unrelated", "ai-default": "x", "status": "ai-default"}
+
+
+def test_scope_opp_drops_runs_from_before_the_decision_existed():
+    """Runs older than the first one with the decision are noise (the
+    spark-facilitator `gps-per-meeting-capture` case: 14 leading misses)."""
+    head = _opp_run("20260110-0900", [{"id": "rate", "ai-default": "6"}],
+                    in_lineage=True, via="forked")
+    parent = _opp_run("20260109-0900", [{"id": "rate", "ai-default": "5"}], in_lineage=True)
+    before = [_opp_run(f"2026010{d}-0900", [_OTHER]) for d in range(1, 9)]
+    core = build_lineage([head, parent], before)
+    hist = core["histories"]["rate"]
+    assert [e["run_id"] for e in hist] == ["20260109-0900", "20260110-0900"]
+    assert all(e["found"] for e in hist)
+
+
+def test_a_run_missing_between_two_that_have_it_is_kept():
+    head = _opp_run("20260105-0900", [{"id": "rate", "ai-default": "6"}],
+                    in_lineage=True, via="forked")
+    others = [
+        _opp_run("20260104-0900", [_OTHER]),                       # the gap
+        _opp_run("20260103-0900", [{"id": "rate", "ai-default": "5"}]),
+        _opp_run("20260102-0900", [_OTHER]),                       # leading
+        _opp_run("20260101-0900", [_OTHER]),                       # leading
+    ]
+    hist = build_lineage([head], others)["histories"]["rate"]
+    assert [(e["run_id"], e["found"]) for e in hist] == [
+        ("20260103-0900", True),
+        ("20260104-0900", False),
+        ("20260105-0900", True),
+    ]
+
+
+def test_no_earlier_match_keeps_every_run_that_was_searched():
+    head = _opp_run("20260104-0900", [{"id": "rate", "ai-default": "6"}],
+                    in_lineage=True, via="forked")
+    parent = _opp_run("20260103-0900", [_OTHER], in_lineage=True)
+    others = [_opp_run("20260102-0900", [_OTHER]), _opp_run("20260101-0900", [_OTHER])]
+    core = build_lineage([head, parent], others)
+    hist = core["histories"]["rate"]
+    assert [e["found"] for e in hist] == [False, False, False, True]
+    assert core["origins"]["rate"]["kind"] == "new"
+
+
+def test_a_decision_only_newer_runs_share_keeps_this_runs_entry():
+    head = _opp_run("20260102-0900", [{"id": "rate", "ai-default": "6"}], in_lineage=True)
+    others = [
+        _opp_run("20260103-0900", [{"id": "rate", "ai-default": "7"}]),
+        _opp_run("20260101-0900", [_OTHER]),
+    ]
+    hist = build_lineage([head], others)["histories"]["rate"]
+    assert [(e["run_id"], e["found"]) for e in hist] == [
+        ("20260102-0900", True),
+        ("20260103-0900", True),
+    ]
+    assert hist[0]["current"] is True
+
+
 def test_a_run_with_no_lineage_has_only_new_and_human_rows():
     core = build_lineage([_run("dimagi-team", "20260925-1536")])
     assert set(core["counts"]) >= {"new", "human"}
