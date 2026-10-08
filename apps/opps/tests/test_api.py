@@ -2367,6 +2367,105 @@ def test_public_summary_cache_does_not_leak_the_member_variant(
 
 
 # ---------------------------------------------------------------------------
+# Private review ledgers follow MEMBERSHIP; claim evidence follows the TEAM view
+#
+# Owner decision 2026-10-08: "reviewers can see the feedback". Reviewers are
+# invited as editors (/ace:release), which sit below `summary.team_view`, so
+# the ledger gate cannot ride on the team view the way claim `evidence` does.
+# ---------------------------------------------------------------------------
+
+_PRIVATE_LEDGER = "2026-07-27 · Sophie Feintuch"
+
+
+@pytest.fixture
+def ledger_workspace(db, monkeypatch):
+    """A summary workspace whose opp holds a PRIVATE review ledger, a public
+    one, and a run with a claims file (so `evidence` can be checked too)."""
+    from django.core.cache import cache
+
+    from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+    from apps.opps.tests.test_summary import _tree_with_ledgers
+    from apps.opps.tests.test_summary_claims import CLAIMS_YAML
+
+    cache.clear()
+    drive = FakeDriveClient.from_tree(_tree_with_ledgers())
+    drive.upload_file(
+        drive.folder_id("ACE/turmeric/runs/20260503-0835"),
+        "claims.yaml", CLAIMS_YAML, "text/yaml",
+    )
+    creator = User.objects.create_user(email="ledger-creator@example.com")
+    workspace = Workspace.objects.create(
+        slug="summary-ws", display_name="Summary WS",
+        drive_root_folder_id=drive.folder_id("ACE"), created_by=creator,
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client", lambda workspace=None: drive,
+    )
+    return workspace
+
+
+def _ledger_titles(body: dict) -> set[str]:
+    return {d["title"] for d in body["feedback"]}
+
+
+def _has_evidence(body: dict) -> bool:
+    claims = [c for g in body["claims"]["people"] for c in g["claims"]]
+    assert claims, "fixture must carry claims or the evidence check is vacuous"
+    return any(c["evidence"] for c in claims)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("role,sees_ledger,sees_evidence", [
+    ("owner", True, True),
+    ("admin", True, True),
+    ("editor", True, False),
+    ("viewer", True, False),
+    (None, False, False),  # signed in, not a member of this workspace
+    ("anonymous", False, False),
+])
+def test_private_ledger_follows_membership_and_evidence_follows_team_view(
+    client, ledger_workspace, role, sees_ledger, sees_evidence,
+):
+    if role != "anonymous":
+        user = User.objects.create_user(email=f"ledger-{role}@example.com")
+        if role is not None:
+            WorkspaceMembership.objects.create(
+                workspace=ledger_workspace, user=user, role=role,
+            )
+        client.force_login(user)
+    body = client.get(_SUMMARY_URL).json()
+    titles = _ledger_titles(body)
+    # The public review's ledger reaches everyone; only the private one varies.
+    assert "2026-08-14 · Public Anne Kuhlmann" in titles
+    assert (_PRIVATE_LEDGER in titles) is sees_ledger
+    if not sees_ledger:
+        assert "Sophie" not in json.dumps(body["feedback"])
+    assert _has_evidence(body) is sees_evidence
+
+
+@pytest.mark.django_db
+def test_summary_cache_never_serves_a_members_ledger_to_a_non_member(
+    client, ledger_workspace,
+):
+    """The member-partner variant (editor) carries the private ledger and the
+    public variant does not. Both are cached for 60s; interleaving them must
+    never hand one reader the other's payload."""
+    editor = User.objects.create_user(email="ledger-cache-editor@example.com")
+    outsider = User.objects.create_user(email="ledger-cache-outsider@example.com")
+    WorkspaceMembership.objects.create(
+        workspace=ledger_workspace, user=editor, role="editor",
+    )
+    for _ in range(2):
+        client.force_login(editor)
+        assert _PRIVATE_LEDGER in _ledger_titles(client.get(_SUMMARY_URL).json())
+        client.logout()
+        assert _PRIVATE_LEDGER not in _ledger_titles(client.get(_SUMMARY_URL).json())
+        client.force_login(outsider)
+        assert _PRIVATE_LEDGER not in _ledger_titles(client.get(_SUMMARY_URL).json())
+        client.logout()
+
+
+# ---------------------------------------------------------------------------
 # Public decision reactions — the write half of the review surface
 #
 # #708 shipped 42 decision rows on the public summary with no way to say

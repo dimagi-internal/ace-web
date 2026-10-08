@@ -1726,8 +1726,11 @@ def _read_feedback(
     So: default-deny by the same predicate the reactions reader uses
     (``reactions.is_public_record`` — the ``public-summary`` channel, or
     the legacy ``-public-`` slug marker). A ledger whose record is
-    missing or unparseable counts as private. Members see everything,
-    with the private ones tagged ``admin`` so the page can say why.
+    missing or unparseable counts as private. Members — ANY role, viewer
+    and up, not just the team view — see everything (owner decision
+    2026-10-08: "reviewers can see the feedback"; reviewers are invited
+    as editors). The caller passes plain membership here, never
+    ``summary.team_view``.
     """
     folder = _find_folder(drive, opp_folder_id, "feedback")
     if folder is None:
@@ -2654,16 +2657,19 @@ def build_summary_payload(
     ``viewer_plain`` asks for the PARTNER view (defaults to ``not
     viewer_is_member``): the API passes ``True`` for a ``viewer``-role
     member, a partner reviewer who may still write but is shown what an
-    outsider is shown. It is echoed as ``viewer.plain``, and the
-    member-only payload details below (claim ``evidence``, a private
-    review's ledger) follow the TEAM view, ``viewer_is_member and not
-    viewer_plain`` — the page draws one version per reader, not a hybrid.
+    outsider is shown. It is echoed as ``viewer.plain``, and claim
+    ``evidence`` follows the TEAM view, ``viewer_is_member and not
+    viewer_plain`` (``summary.team_view`` — admin and owner) — the page
+    draws one version per reader, not a hybrid.
 
     ``viewer_is_member`` is echoed back as ``viewer.is_member``. It does
     NOT change which links are served — with ONE exception: a privately
-    captured review's feedback ledger is omitted for a non-member, on
+    captured review's feedback ledger is omitted for a NON-MEMBER, on
     confidentiality rather than usability grounds (see
-    ``_read_feedback``). Every other link is always present and always
+    ``_read_feedback``). That gate follows MEMBERSHIP, not the team view:
+    every member — viewer, editor, admin, owner — sees private ledgers
+    (owner decision 2026-10-08: "reviewers can see the feedback";
+    ``/ace:release`` invites reviewers as editors). Every other link is always present and always
     declares its ``access`` (see the classification block above).
     Membership only decides whether the page draws the ``admin only``
     tag — a member already knows, and the tag would be noise. This
@@ -2797,8 +2803,13 @@ def build_summary_payload(
         "claims": _read_claims(
             drive, run_folder.id, viewer_is_member=team_view,
         ),
+        # Private review ledgers follow MEMBERSHIP, not the team view: any
+        # signed-in workspace member (viewer and up) sees them — reviewers
+        # are invited as editors and should see the feedback (owner
+        # decision 2026-10-08). Only a non-member has them omitted.
         "feedback": _read_feedback(
-            drive, opp_folder.id, viewer_is_member=team_view, access=access,
+            drive, opp_folder.id, viewer_is_member=bool(viewer_is_member),
+            access=access,
         ),
         "decisions": decisions,
         # Partner reactions collected on this page, keyed by decision id.
