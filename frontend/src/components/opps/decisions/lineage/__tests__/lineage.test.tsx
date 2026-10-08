@@ -133,16 +133,75 @@ describe("lineage filter", () => {
 
 describe("decision history", () => {
   it("lists the value across the runs, oldest first, following renamed ids", () => {
-    render(
-      <DecisionLineageHistory lineage={MEMBER_LINEAGE} id="connect-latitude-payment-amount-spark" />,
-    );
+    // The fixture's payment amount never changed (7500 in every run); move
+    // this run's value so there is a history to tell.
+    const id = "connect-latitude-payment-amount-spark";
+    const entries = MEMBER_LINEAGE.histories[id];
+    const lineage = {
+      ...MEMBER_LINEAGE,
+      histories: {
+        ...MEMBER_LINEAGE.histories,
+        [id]: [...entries.slice(0, -1), { ...entries[entries.length - 1], value: "8000" }],
+      },
+    };
+    render(<DecisionLineageHistory lineage={lineage} id={id} />);
     fireEvent.click(screen.getByText("How this decision evolved"));
     const items = screen.getAllByRole("listitem");
     expect(items).toHaveLength(4);
     expect(items[0].textContent).toMatch(/25 Sep 2026/);
     expect(items[0].textContent).toMatch(/recorded as connect-latitude-payment-amount/);
     expect(items[3].textContent).toMatch(/\(this run\)/);
-    expect(screen.getAllByText("(unchanged)")).toHaveLength(3);
+    expect(screen.getAllByText("(unchanged)")).toHaveLength(2);
+  });
+
+  it("draws nothing for a decision carried over verbatim — a clone did not evolve it", () => {
+    // Every run of the real fixture holds 7500: the history would be four
+    // identical entries, three marked "(unchanged)".
+    const { container } = render(
+      <DecisionLineageHistory lineage={MEMBER_LINEAGE} id="connect-latitude-payment-amount-spark" />,
+    );
+    expect(container.textContent).toBe("");
+  });
+
+  describe("two found entries (the clone shape)", () => {
+    const [source] = MEMBER_LINEAGE.histories["working-language"];
+    const sourceValue = source.value ?? "";
+    const twoEntries = (current: string) => ({
+      ...MEMBER_LINEAGE,
+      histories: {
+        "working-language": [
+          source,
+          { ...source, workspace: "spark", run_id: "20261004-1706", date: "2026-10-04", value: current },
+        ],
+      },
+    });
+
+    it("same value → nothing rendered", () => {
+      const { container } = render(
+        <DecisionLineageHistory lineage={twoEntries(sourceValue)} id="working-language" />,
+      );
+      expect(container.textContent).toBe("");
+      expect(screen.queryByText("How this decision evolved")).toBeNull();
+    });
+
+    it("same value up to case and spacing → nothing rendered (the '(unchanged)' rule)", () => {
+      const { container } = render(
+        <DecisionLineageHistory
+          lineage={twoEntries(`  ${sourceValue.toUpperCase()} `)}
+          id="working-language"
+        />,
+      );
+      expect(container.textContent).toBe("");
+    });
+
+    it("different value → the disclosure is rendered", () => {
+      render(<DecisionLineageHistory lineage={twoEntries("English only")} id="working-language" />);
+      expect(screen.getByText("How this decision evolved")).toBeTruthy();
+      expect(screen.getByText("(2 runs)")).toBeTruthy();
+      fireEvent.click(screen.getByText("How this decision evolved"));
+      expect(screen.getByText("English only")).toBeTruthy();
+      expect(screen.queryByText("(unchanged)")).toBeNull();
+    });
   });
 
   it("says who set an overridden value", () => {

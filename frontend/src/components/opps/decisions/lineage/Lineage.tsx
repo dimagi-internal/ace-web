@@ -19,7 +19,9 @@ import {
   formatDay,
   hasAncestors,
   originBadge,
+  sameValue,
   stepLabel,
+  valueEverChanged,
   viaPhrase,
 } from "./lineageDisplay";
 
@@ -293,6 +295,10 @@ export function DecisionLineageHistory({
   const headWs = lineage.chain[0]?.workspace ?? null;
   const earlier = entries.slice(0, -1);
   const anyEarlier = earlier.some((e) => e.found);
+  // Carried over verbatim (a clone, or a re-run that kept its answer): no
+  // history to tell. The row's origin badge already says "unchanged". A
+  // decision with no earlier match still says so — that is information.
+  if (anyEarlier && !valueEverChanged(entries)) return null;
   return (
     <details className="mt-3 text-[12px]">
       <summary className="cursor-pointer select-none font-medium text-muted-foreground hover:text-foreground">
@@ -341,10 +347,7 @@ function HistoryItem({
   const href = isCurrent ? null : entryHref(entry);
   const label = entryLabel(entry, headWs);
   const value = entry.plain_value || entry.value || "";
-  const same =
-    prev?.value != null &&
-    entry.value != null &&
-    prev.value.trim().toLowerCase() === entry.value.trim().toLowerCase();
+  const same = sameValue(prev, entry);
   const human = entry.status === "overridden" || entry.status === "human-decided";
   return (
     <li className={cn(!entry.found && "text-muted-foreground/70")}>

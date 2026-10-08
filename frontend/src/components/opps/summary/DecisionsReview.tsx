@@ -158,6 +158,78 @@ export function askCounts(
   };
 }
 
+/**
+ * The whole log, split by what each live row asks of the reader:
+ * confirmations, questions to answer, deferred rows, and the rest — the
+ * choices ACE made and recorded for review. The four parts add up to
+ * `total` (live rows; superseded history never counts), through the same
+ * predicates the groups below use.
+ */
+export function decisionBreakdown(
+  rows: readonly ReviewDecision[],
+  edits: Record<string, PublicDecisionEdit>,
+): {
+  confirm: { total: number; outstanding: number };
+  answer: { total: number; outstanding: number };
+  deferred: number;
+  byAce: number;
+  total: number;
+} {
+  const live = rows.filter((d) => !d.superseded_by);
+  const { confirm, answer } = askCounts(live, edits);
+  const deferred = live.filter(isDeferred).length;
+  return {
+    confirm,
+    answer,
+    deferred,
+    byAce: live.length - confirm.total - answer.total - deferred,
+    total: live.length,
+  };
+}
+
+function askPhrase(t: { total: number; outstanding: number }, verb: string): string | null {
+  if (t.total === 0) return null;
+  if (t.outstanding === t.total) return `${t.total} to ${verb}`;
+  if (t.outstanding === 0) return `${t.total} to ${verb}, all answered`;
+  return `${t.outstanding} of ${t.total} still to ${verb}`;
+}
+
+/**
+ * The Decisions tab's headline, asks first: "25 to confirm · 6 deferred ·
+ * 89 decided by ACE (for review)". A bare "120 decisions" read to an
+ * outside reviewer as 120 questions; most are calls ACE already made.
+ * `lead` is the part that needs the reader (null when nothing is asked).
+ */
+export function decisionsHeadline(b: ReturnType<typeof decisionBreakdown>): {
+  lead: string | null;
+  rest: string[];
+} {
+  const asks = [askPhrase(b.confirm, "confirm"), askPhrase(b.answer, "answer")].filter(
+    (x): x is string => !!x,
+  );
+  const rest = [
+    b.deferred > 0 ? `${b.deferred} deferred` : null,
+    b.byAce > 0 ? `${b.byAce} decided by ACE (for review)` : null,
+  ].filter((x): x is string => !!x);
+  return { lead: asks.length ? asks.join(" · ") : null, rest };
+}
+
+/**
+ * The tab's trailing badge: what is still waiting on the reader, never
+ * the size of the log. Undefined when nothing is waiting.
+ */
+export function decisionsTabBadge(asks: {
+  confirm: { outstanding: number };
+  answer: { outstanding: number };
+}): string | undefined {
+  const c = asks.confirm.outstanding;
+  const a = asks.answer.outstanding;
+  if (c > 0 && a > 0) return `${c + a} for you`;
+  if (c > 0) return `${c} to confirm`;
+  if (a > 0) return `${a} to answer`;
+  return undefined;
+}
+
 interface AnswerGroup {
   key: string;
   label: string;
@@ -211,6 +283,10 @@ export function DecisionsReview({
   const [lineageFilter, setLineageFilter] = useState<LineageFilter>("all");
   const [showHistory, setShowHistory] = useState(false);
   const { counts, total } = decisions;
+  const headline = useMemo(
+    () => decisionsHeadline(decisionBreakdown(decisions.rows, edits)),
+    [decisions.rows, edits],
+  );
   // The lineage filter narrows every group at once — the asks included — so
   // "what changed since the last run" reads as one list, not five.
   const liveIds = useMemo(
@@ -320,9 +396,20 @@ export function DecisionsReview({
 
   return (
     <div>
-      <p className="max-w-3xl text-[0.975rem] leading-[1.7] text-muted-foreground">
-        ACE made <span className="text-foreground">{total}</span> load-bearing calls building
-        this run. Each one records what it picked, what else was on the table, and why.{" "}
+      <p className="text-lg leading-[1.5] text-muted-foreground" data-testid="decisions-headline">
+        {headline.lead && (
+          <span className="font-semibold text-foreground">{headline.lead}</span>
+        )}
+        {headline.rest.map((part, i) => (
+          <span key={part}>
+            {(headline.lead || i > 0) && <span aria-hidden> · </span>}
+            {part}
+          </span>
+        ))}
+      </p>
+      <p className="mt-2 max-w-3xl text-[0.975rem] leading-[1.7] text-muted-foreground">
+        {total} load-bearing {total === 1 ? "call" : "calls"} in all, made building this run.
+        Each one records what it picked, what else was on the table, and why.{" "}
         {viewerIsMember ? (
           <>
             <span className="text-foreground">You can confirm or change any of them here</span>
