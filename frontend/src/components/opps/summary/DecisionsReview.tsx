@@ -63,7 +63,7 @@ export type { DecisionEditSubmit };
  *   working answer and gate that stage (ACE spec 2026-10-04: the
  *   open-questions ledger folds into decision rows, so this tab is the only
  *   place a reviewer is asked anything).
- * - **Choices ACE made** — every other live row, by phase.
+ * - **Everything else ACE decided** — every other live row, by phase (collapsed).
  * - **Not needed for this pilot** — `status: deferred` rows, collapsed, each
  *   with its `revisit_when`. Never an ask.
  * - Hidden by default behind toggles: `audience: internal` rows and
@@ -325,7 +325,7 @@ export function DecisionsReview({
     [rows],
   );
   // One decision, one home: a row pinned in an ask group (or parked as
-  // deferred) is not repeated under "Choices ACE made".
+  // deferred) is not repeated under "Everything else ACE decided".
   const placedIds = useMemo(
     () =>
       new Set([
