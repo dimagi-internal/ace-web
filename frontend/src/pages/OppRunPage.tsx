@@ -103,7 +103,7 @@ export default function OppRunPage() {
     [state],
   );
 
-  // ?fork=<phase> — auto-open ForkOppDialog when a Slack deep-link lands here.
+  // ?fork=<phase> — auto-open ForkOppDialog when a deep-link lands here.
   const forkPhaseQuery = searchParams.get("fork");
   const [autoForkOpen, setAutoForkOpen] = useState(false);
 

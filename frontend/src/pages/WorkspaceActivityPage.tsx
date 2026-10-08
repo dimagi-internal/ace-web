@@ -1,7 +1,7 @@
 /**
  * Workspace Activity — "what's running across the workspace right now?"
  *
- * Co-equal surface with Slack's `/ace activity`. Observable facts only:
+ * Observable facts only:
  * we render timestamps as deltas and source as a fact ("ace-web" /
  * "Drive only"), never claim a plugin is alive.
  *

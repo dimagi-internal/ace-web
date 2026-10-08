@@ -14,4 +14,5 @@ specs that still cite these files by their original `docs/learnings/…`,
 | `specs/2026-04-09-phase-3-multi-player-design.md` | ace-web-hosted multi-player chat (drafts, presence, `SessionConsumer`), retired in PR #687. |
 | `plans/2026-04-09-3-multi-player.md` | Implementation plan for the above. |
 | `plans/2026-05-05-stream-reconnect-resilience.md` | Hazard-1 fix for the retired chat stream. |
+| `architecture/slack-integration.md`, `learnings/slack-integration.md` | The ace-web Slack app (`apps/slack`: `/ace` slash command, async dispatcher, run threads, phase push). Removed 2026-10-08 — Slack for the fleet is handled by canopy. Its tables were dropped by `apps/workspaces/migrations/0013`. The Slack design specs/plans under `docs/specs` and `docs/superpowers` stay where they are as history. |
 | `plans/2026-05-15-videos-structured-editor.md` | Never-built design sketch; superseded by the React beat editor (PR #391). |

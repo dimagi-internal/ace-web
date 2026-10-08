@@ -54,7 +54,6 @@ INSTALLED_APPS = [
     "apps.activity.apps.ActivityConfig",
     "apps.mobile.apps.MobileConfig",
     "apps.videos.apps.VideosConfig",
-    "apps.slack.apps.SlackConfig",
     "apps.canopy",
     # The canopy SDK's host half (app label `canopy_host`): the single-use jti
     # table and the delegated-token table behind the host grant.
@@ -336,11 +335,8 @@ ACE_WEB_BASE_URL = env("ACE_WEB_BASE_URL", default="")
 ACE_ALLOW_TEST_LOGIN = env.bool("ACE_ALLOW_TEST_LOGIN", default=False)
 ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
 
-# --- Slack integration ---
-SLACK_CLIENT_ID = env("SLACK_CLIENT_ID", default="")
-SLACK_CLIENT_SECRET = env("SLACK_CLIENT_SECRET", default="")
-SLACK_SIGNING_SECRET = env("SLACK_SIGNING_SECRET", default="")
-SLACK_DEFAULT_INSTALLATION_ID = env("SLACK_DEFAULT_INSTALLATION_ID", default="")
+# Public base URL of this deployment (script-name prefix included); the canopy
+# host grant's issuer defaults from it.
 ACE_PUBLIC_BASE_URL = env("ACE_PUBLIC_BASE_URL",
                           default="https://labs.connect.dimagi.com/ace")
 

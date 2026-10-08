@@ -20,7 +20,6 @@ import {
   type WorkspaceRole,
 } from "../api/workspaces";
 import { Button } from "canopy-ui/ui";
-import { SlackPanel } from "@/components/SlackPanel";
 import { useNavigate } from "react-router-dom";
 import { DefaultTenancyPanel, type Tenancy } from "@/components/workspaces/DefaultTenancyPanel";
 import {
@@ -378,8 +377,6 @@ export default function WorkspaceSettingsPage() {
           </ul>
         </section>
       )}
-
-      <SlackPanel workspaceSlug={workspaceSlug} />
 
       {canReadLogs && activity.length > 0 && (
         <section className="mt-8">

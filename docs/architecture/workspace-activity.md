@@ -1,14 +1,13 @@
 # Workspace Activity — operator runbook
 
 Cross-surface "what's running across the workspace right now?" view.
-Rendered identically (data-wise) on both ace-web and Slack — same
-backend primitive, two presentations.
+Rendered on ace-web. (A Slack `/ace activity` presentation existed until
+2026-10-08; Slack is handled by canopy now.)
 
 Spec: [`docs/specs/2026-05-16-workspace-activity-view-design.md`](../specs/2026-05-16-workspace-activity-view-design.md)
 
 ## What you see
 
-### ace-web
 - Top-nav item **Activity** (first in the workspace nav) →
   `/w/<slug>/activity`
 - Table view: opp, run-id, state, source, last update
@@ -18,16 +17,9 @@ Spec: [`docs/specs/2026-05-16-workspace-activity-view-design.md`](../specs/2026-
 - Row click → Phase view (`/w/<slug>/opps/<opp>?run_id=<id>`),
   the canonical opp drill-down
 
-### Slack
-- `/ace activity` — active runs from the last 24h
-- `/ace activity --all` — same, including recently-completed runs
-- Block Kit thread: header + section blocks per row + `Open ↗` accessory
-  + `Track in this channel` action button
-- Always async via `response_url` (Drive read can be 5-15s on cold cache)
-
 ## The data primitive
 
-Both surfaces consume `GET /api/w/<slug>/activity/runs`. Implementation:
+The page consumes `GET /api/w/<slug>/activity/runs`. Implementation:
 - `apps/activity/workspace_activity.py` — aggregator + `ActivityRow`
 - `apps/activity/api.py` — `workspace_activity` Ninja endpoint
 
@@ -59,21 +51,17 @@ describe what we observed, not what we suspect.
 - **Cost per request:** one Drive snapshot read (cached) + one Session
   lookup per opp. Same shape as `/api/w/<slug>/opps`.
 - **No background workers.** This is read-through, request-time only.
-- **Auto-refresh cadence** in the frontend: 30s. The Slack surface is
-  on-demand (each slash command invocation is a fresh fetch).
+- **Auto-refresh cadence** in the frontend: 30s.
 - **`server_now` field** in the API response lets the frontend compute
   "N ago" deltas without client-clock skew.
 
 ## Troubleshooting
 
-- **Activity page shows no rows but `/ace list opps` shows opps**:
+- **Activity page shows no rows but the opps list shows opps**:
   Activity drops opps with `last_run_id=None` (no runs yet). Expected.
 - **Source shows "Drive only" for a run someone clearly started in
   ace-web**: the chat Session may have been archived (`status !=
   "active"`). `detect_source` only matches active Sessions.
-- **Slack `/ace activity` times out**: shouldn't happen — we ack via
-  `response_url`. If it does, check that `verbs_activity.run_async` was
-  reached (look for "Loading workspace activity…" in the channel).
 - **"Last update" shows "—"** for a row: the opp's `run_state.yaml` has
   no `modifiedTime` (very rare). Drive sync issue; investigate at the
   Drive level.

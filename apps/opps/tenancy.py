@@ -35,24 +35,6 @@ class Tenancy(StrictModel):
     connect_pm_org: str | None = Field(default=None, max_length=64, pattern=_SLUG)
     connect_holding_org: str | None = Field(default=None, max_length=64, pattern=_SLUG)
     ocs_team: str | None = Field(default=None, max_length=64, pattern=_SLUG)
-    labs_allowed_domains: list[str] | None = None
-
-    @field_validator("labs_allowed_domains")
-    @classmethod
-    def _labs_domains(cls, value: list[str] | None) -> list[str] | None:
-        """Stored the way Labs stores them: lower-cased with a leading "@"."""
-        if value is None:
-            return None
-        out: list[str] = []
-        for raw in value:
-            domain = raw.strip().lower()
-            if not domain.startswith("@"):
-                domain = "@" + domain
-            if "." not in domain or " " in domain or len(domain) < 4:
-                raise ValueError(f"not an email domain: {raw!r}")
-            if domain not in out:
-                out.append(domain)
-        return out
 
 
 def clean(raw: dict | None) -> dict:
@@ -93,9 +75,10 @@ def record_change(*, workspace, opp_slug: str, user, before: dict, after: dict) 
 # "admin only was meant to mean you needed to be dimagi because the things
 # weren't properly isolated. That is no longer true and you should expect
 # access"). `/ace:release` invites each reviewer into the opp's OWN HQ
-# project space, Connect org and ace-web workspace, and Labs dashboards are
-# opened to `labs_allowed_domains`. So a link inside the opp's own tenancy
-# is one a reviewer should expect to open; a link into ACE's SHARED tenants
+# project space, Connect org and ace-web workspace. Labs dashboards are not
+# part of the tenancy: Labs keeps its own default (Dimagi accounts only), so
+# the run summary always tags them `admin`. So a link inside the opp's own
+# tenancy is one a reviewer should expect to open; a link into ACE's SHARED tenants
 # (the values every pre-tenancy opp was built in — migration 0006) is not.
 
 #: ACE's shared tenants. Kept in step with
@@ -104,7 +87,6 @@ def record_change(*, workspace, opp_slug: str, user, before: dict, after: dict) 
 SHARED_HQ_DOMAINS = frozenset({"connect-ace-prod"})
 SHARED_CONNECT_ORGS = frozenset({"ace-nm-org", "ace-pm-org"})
 SHARED_OCS_TEAMS = frozenset({"connect-ace"})
-DIMAGI_EMAIL_DOMAINS = frozenset({"@dimagi.com", "@dimagi-ai.com"})
 
 _HQ_DOMAIN_RE = re.compile(r"/a/([A-Za-z0-9][A-Za-z0-9_-]*)/")
 
@@ -137,7 +119,6 @@ class TenancyAccess:
             o for o in (t.get("connect_pm_org"), t.get("connect_holding_org")) if o
         }
         self.ocs_team = t.get("ocs_team")
-        self.labs_domains = list(t.get("labs_allowed_domains") or [])
 
     @property
     def has_own_tenancy(self) -> bool:
@@ -164,11 +145,6 @@ class TenancyAccess:
         even on an opp with its own OCS team (`/ace:release` invites no one
         to OCS)."""
         return False
-
-    def labs(self) -> bool:
-        """Labs is opened to `labs_allowed_domains`; Dimagi's own domains
-        alone mean only Dimagi can open it."""
-        return any(d not in DIMAGI_EMAIL_DOMAINS for d in self.labs_domains)
 
     def workbench(self) -> bool:
         """`/ace:release` invites reviewers to the ace-web workspace of an

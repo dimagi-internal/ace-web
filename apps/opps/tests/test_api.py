@@ -3170,8 +3170,7 @@ def test_the_summary_tags_links_from_the_opps_stored_tenancy(client, reaction_wo
     OppWorkspace.objects.create(
         workspace=ws, slug="turmeric", display_name="Turmeric", created_by=ws.created_by,
         tenancy={"hq_domain": "connect-ace-spark",
-                 "connect_holding_org": "spark-nm-org-test",
-                 "labs_allowed_domains": ["@sparkmicrogrants.org"]},
+                 "connect_holding_org": "spark-nm-org-test"},
     )
     from django.core.cache import cache
     cache.clear()

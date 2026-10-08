@@ -27,7 +27,7 @@ public run summary, the cloud mobile emulator, and the videos app.
   `docs/archive/README.md` says why each was archived.
 - **Architecture docs**: `docs/architecture/cli-credentials.md` (per-user
   `UserCredential` blobs, shipped PR #117, with the global `SystemConfig` row as
-  fallback), `docs/architecture/mcp-surface.md`, `docs/architecture/slack-integration.md`,
+  fallback), `docs/architecture/mcp-surface.md`,
   `docs/architecture/workspace-activity.md`
 - **QA**: `docs/qa/e2e-probe.md` — re-runnable Playwright probe of every UI
   surface; lives at `scripts/qa/labs_probe.py`. Run it after every deploy.
@@ -143,7 +143,6 @@ ace-web/
 │   │                     # ACE runs (seeded-run, drive_turn) + structure view;
 │   │                     # NOT chat — see "ace-web's own interactive chat UI
 │   │                     # is retired" below
-│   ├── slack/           # /ace activity slash command + async dispatcher + run threads
 │   ├── system/          # System Overview tab — reads bundled plugin metadata
 │   ├── videos/          # Video program editor (Drive-backed) + render orchestration
 │   └── workspaces/      # Multi-tenant workspace + invites + audit log
@@ -223,8 +222,10 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   (per-opp tenancy, opp-bound ACE sessions, clone-to-new-workspace, release).
 - **Per-opp tenancy + clone-to-new-workspace** (same spec, steps B/C). Each
   opp records where its assets live — `OppWorkspace.tenancy` (`hq_domain`,
-  `connect_pm_org`, `connect_holding_org`, `ocs_team`, `labs_allowed_domains`;
-  schema `apps/opps/tenancy.py`) — copied from `Workspace.default_tenancy` at
+  `connect_pm_org`, `connect_holding_org`, `ocs_team`; the old
+  `labs_allowed_domains` was removed 2026-10-08 (migration `opps/0008`) — Labs
+  keeps its own Dimagi-only default, so the run summary tags every Labs link
+  `admin`; schema `apps/opps/tenancy.py`) — copied from `Workspace.default_tenancy` at
   creation, owner-only PATCH, every change a `TenancyChange` row in the
   workspace activity feed. ACE's `bin/ace-bind` reads it
   (`GET /api/w/{ws}/opps/{slug}/tenancy`) to lock a session to one opp's
@@ -497,15 +498,13 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   backend selection machinery in `apps/common`) are live production
   infrastructure for **programmatic** ACE runs — the MCP-exposed
   `apps.opps.api::seeded_run`, the `drive_turn` management command,
-  Slack-triggered runs (`apps/slack/run_starter.py` creates a pending
-  assistant turn and dispatches it — see below),
   the post-deploy `resume-interrupted` self-heal, and
-  `apps.ingest`/`apps.activity`/`apps.slack` all depend on them regardless of
+  `apps.ingest`/`apps.activity` all depend on them regardless of
   whether any human is chatting interactively. See
   `apps/sessions/models.py`'s module docstring and the chat-retirement PR's
   description for the full dependency map.
 - **Programmatic runs execute on canopy, not in this container.** Every run
-  caller (`seeded_run`, Slack `/ace run`, session resume) goes through ONE seam,
+  caller (`seeded_run`, session resume) goes through ONE seam,
   `apps.canopy.run_dispatch.start_turn(assistant_message_id)`: with
   `CANOPY_RUN_EXECUTION` on (it is `true` in `deploy/aws/ace-web.cfn.yaml` since
   2026-07-28) it enqueues a **session-targeted** canopy Turn (never agent-
@@ -547,8 +546,12 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   plugin-derived registry. Aggregator: `apps/ingest/cost_aggregator.py`; pricing
   table: `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution
   gotcha: `sidechain-attribution.md`.
-- **Workspace Activity view** (page at `/w/<slug>/activity`, also
-  `/ace activity` in Slack): cross-surface "what's running across the
+- **No Slack in ace-web (removed 2026-10-08).** The `/ace` slash command, the
+  async dispatcher, run threads and the phase "Push to Slack" button are gone —
+  Slack for the fleet lives in canopy. `/api/slack/*` and `/auth/slack/*` return
+  404; migration `workspaces/0013` dropped the `slack_*` tables. Do not re-add a
+  Slack surface here.
+- **Workspace Activity view** (page at `/w/<slug>/activity`): cross-surface "what's running across the
   workspace right now?" view. One row per opp's most recent run,
   source-attributed via active Session lookup. **Observable-facts-only
   discipline** — no "is running" / "is alive" labels anywhere; only
@@ -556,8 +559,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   recency-based opacity fade. Backend aggregator at
   `apps/activity/workspace_activity.py`; consumes
   `apps.opps.api.list_opp_cards`. Endpoint:
-  `GET /api/w/<slug>/activity/runs`. Slack uses async `response_url`
-  (Drive read can be 5-15s cold). Spec:
+  `GET /api/w/<slug>/activity/runs`. Spec:
   `docs/specs/2026-05-16-workspace-activity-view-design.md`. Runbook:
   `docs/architecture/workspace-activity.md`. Phase view is the canonical
   drill-down — row clicks go to `?run_id=<id>`, not the Workbench.
@@ -953,8 +955,6 @@ Opp Workbench (`apps/opps/`):
 - [fork-run-state-first](docs/learnings/fork-run-state-first.md) — `fork_opp` writes `run_state.yaml` BEFORE the bulk copy (it's what makes a folder a run; a stalled fork must still be resumable). Also: `ForkProgress` is a StrictModel and the forker must emit exactly its field names — for months every emitted payload failed validation and `fork/status` could only ever say `unknown`, because the endpoint's only test monkeypatched `cache.get` with a hand-written payload no producer emits. The POST is BLOCKING; a timed-out caller polls (which now reports `new_run_id` from folder-creation onward) instead of retrying into a second partial fork.
 - [run-state-vs-artifact-presence](docs/learnings/run-state-vs-artifact-presence.md) — Read step status from `run_state.yaml` content (one existing file_id, Changes API reliably reports edits), not artifact-file presence in subfolders (new child files, Changes API blind spot). PR #575 switched `_build_steps` to use `phases.<phase>.steps.<skill>.status` as the primary source; artifact-presence stays as the legacy fallback. Multi-viewer falls out for free: shared `OppSnapshot` invalidates once per agent write, every viewer hits the same fresh cache.
 
-Slack:
-- [slack-integration](docs/learnings/slack-integration.md) — `SlackConfig.ready()` runs in every management command (guard with env + sys.argv); `channel_not_found` is silent (wrapper normalises to `SlackChannelGone`); `(channel_id, ts)` must be stored together; dedup lock must be `cache.add` (SETNX); `Workspace` field is `name` not `display_name`; `bot_token` is a property (no `set_bot_token`); use `asyncio.get_running_loop()` not `get_event_loop()`.
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs showing wall-clock-driven transitions need explicit `setTimeout`-driven re-renders. (The draft soft-lock it came from is retired; the lesson is general.)
