@@ -1326,15 +1326,40 @@ fi
             raise MobileError(f"ec2.start_instances failed: {e}") from e
 
     def _wait_for_ec2_ok(self, timeout_sec: int) -> None:
-        """Wait until EC2 status checks pass (system + instance reachability,
-        which also means the SSM agent is up). Delegates to the shared
-        on-demand helper; a failed or timed-out wait is a boot timeout."""
-        try:
-            self._od._wait_ec2_ok(timeout_sec)  # noqa: SLF001
-        except OnDemandError as e:
-            raise EmulatorBootTimeout(
-                f"instance {self.instance_id} did not reach 'ok' in {timeout_sec}s: {e}"
-            ) from e
+        """Poll ``describe_instance_status`` until the instance is running
+        with BOTH instance and system status ``ok``.
+
+        Means both the system reachability and instance reachability
+        checks have passed *and* SSM agent is running. Kept local rather
+        than delegated to the SDK's ``instance_status_ok`` waiter, which
+        ignores system status.
+        """
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            try:
+                resp = self.ec2.describe_instance_status(
+                    InstanceIds=[self.instance_id],
+                    IncludeAllInstances=True,
+                )
+            except ClientError as e:
+                raise MobileError(
+                    f"ec2.describe_instance_status failed: {e}"
+                ) from e
+            statuses = resp.get("InstanceStatuses") or []
+            if statuses:
+                inst_state = (statuses[0].get("InstanceState") or {}).get("Name")
+                inst_status = (statuses[0].get("InstanceStatus") or {}).get("Status")
+                sys_status = (statuses[0].get("SystemStatus") or {}).get("Status")
+                if (
+                    inst_state == "running"
+                    and inst_status == "ok"
+                    and sys_status == "ok"
+                ):
+                    return
+            time.sleep(5.0)
+        raise EmulatorBootTimeout(
+            f"instance {self.instance_id} did not reach 'ok' in {timeout_sec}s"
+        )
 
     def _wait_for_emulator(self) -> None:
         """Probe the in-VM AVD until cold-boot staging completes.
