@@ -599,9 +599,10 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   were removed (2026-09-30); the only pop-up is for a FEATURED output
   (`featured` in `run_products` — what the public summary puts in front of
   a reader: PDD, work order, build memo, apps, Connect opportunity, training
-  pack, chatbot, dashboards, walkthroughs, solicitation) as it is built, and
-  the apps again when Phase 6 photographs them; everything else stays in the
-  rail. A FORK's screenshots are read from its `forked_from` lineage (the
+  pack, chatbot, dashboards, walkthroughs, solicitation) as it is built —
+  except the apps, which pop up only when Phase 6 photographs them (at their
+  Phase 3 build they are just a wall of structure text); everything else
+  stays in the rail. A FORK's screenshots are read from its `forked_from` lineage (the
   forker copies no screenshots/), and an app's emulator frames always beat
   the capture skill's HQ form-summary fallback. Snapshot cache v14.
   **QA shows the plugin's DECISION, not "missing":** `skills/_qa-decisions.md`

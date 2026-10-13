@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchRunFlow, type DemoEvent, type DemoTimeline, type ReplayProduct } from "@/api/replay";
 import type { Decision, OppSnapshot, ProductPreview, RunProduct, Step } from "@/api/types.ws";
-import { beatAtIndex, EMPTY_REVEAL, revealAt } from "@/components/replay/cursor";
+import { beatAtIndex, EMPTY_REVEAL, productsAtBeat, revealAt } from "@/components/replay/cursor";
 import { clearViewCache } from "@/components/viewers/viewCache";
 import type { Replay } from "@/components/replay/useReplay";
 
@@ -183,7 +183,17 @@ describe("PhaseView in replay", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("pops the apps up again when Phase 6 photographs them", () => {
+  it("does not pop up an app when Phase 3 builds it", () => {
+    const timeline = TIMELINE as DemoTimeline;
+    const built = Array.from({ length: 20 }, (_, i) => i).find((i) =>
+      productsAtBeat(timeline, i).some((p) => p.kind === "commcare_app"),
+    );
+    expect(built).toBeDefined();
+    renderAt(replayAt(built!));
+    expect(screen.queryByRole("dialog", { name: /FLW Training/ })).not.toBeInTheDocument();
+  });
+
+  it("pops the apps up when Phase 6 photographs them", () => {
     renderAt(replayAt(8));
     expect(
       screen.getByRole("dialog", { name: /Just photographed: Turmeric — FLW Training/ }),
