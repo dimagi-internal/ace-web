@@ -113,7 +113,7 @@ anything else → 415 (the viewer offers Drive). `X-Artifact-Name` and
   Answers "don't bury the app and opp links".
 - **Spotlight**: when the cursor lands on a beat that reveals products, they
   pop up over the screen ("Just built · Phase 3 · by Build Learn app"). While
-  playing, each holds ~4.5s (playback waits), then closes and play resumes.
+  playing, each holds ~2.25s (playback waits; Space pauses and resumes), then closes and play resumes.
   Stepping by hand, it stays until → (next product, then next beat), ← or Esc.
   Pop-ups can be switched off (P).
 - **Flow panel** (right rail, replay only): for the current skill, what it
