@@ -25,15 +25,14 @@ def _oauth_config(settings):
 def test_login_page_public(client):
     resp = client.get("/auth/login/")
     assert resp.status_code == 200
-    assert b"Sign in with CommCare" in resp.content
+    assert b"Sign in with Connect" in resp.content
     assert b"Sign in with email" in resp.content
 
 
-def test_login_page_tells_partners_without_commcare_to_use_email_or_google(client):
+def test_login_page_is_just_the_sign_in_options(client):
     body = client.get("/auth/login/").content.decode()
-    assert "No CommCare account? You don't need one" in body
-    # ...and keeps the warning for people who DO use CommCare.
-    assert "Log in with CommCare HQ" in body
+    assert 'class="connect-mark"' in body  # the Connect logo, inlined
+    assert "CommCare" not in body
 
 
 def test_initiate_redirects_to_connect_with_pkce(client):

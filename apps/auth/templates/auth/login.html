@@ -1,6 +1,13 @@
 {% extends "auth/base.html" %}
 {% block content %}
-    <p class="center">Sign in to continue.</p>
+    <a class="btn btn-connect" href="{% url 'auth:initiate' %}?next={{ next|urlencode }}">
+      {% include "auth/_connect_mark.svg" %}Sign in with Connect
+    </a>
+    {% if google_enabled %}
+    <a class="btn btn-secondary" href="{% url 'auth:google_initiate' %}?next={{ next|urlencode }}">Sign in with Google</a>
+    {% endif %}
+
+    <div class="divider"><span>or</span></div>
 
     <form method="post" action="{% url 'auth:login' %}">
       {% csrf_token %}
@@ -16,29 +23,9 @@
         {{ form.password.errors }}
       </div>
       <input type="hidden" name="next" value="{{ next }}">
-      <button type="submit" class="btn">Sign in with email</button>
+      <button type="submit" class="btn btn-secondary">Sign in with email</button>
       {% if reset_enabled %}<p class="small center"><a href="{% url 'auth:password_reset' %}">Forgot your password?</a></p>{% endif %}
     </form>
-
-    <div class="divider"><span>or</span></div>
-
-    {% if google_enabled %}
-    <a class="btn btn-secondary" href="{% url 'auth:google_initiate' %}?next={{ next|urlencode }}">Sign in with Google</a>
-    {% endif %}
-    <a class="btn btn-secondary" href="{% url 'auth:initiate' %}?next={{ next|urlencode }}">Sign in with CommCare</a>
-
-    <p class="note">
-      <strong>No CommCare account? You don't need one.</strong> Use your email and
-      password{% if google_enabled %}, or Google{% endif %}. You must have been invited
-      to a workspace first; open your invite link to set a password.
-    </p>
-    <p class="note">
-      <strong>If you do use CommCare:</strong> on the Connect page choose
-      <strong>Log in with CommCare HQ</strong> and sign in with the email address your
-      invite was sent to. Accepting a Connect invite <em>before</em> signing in through
-      HQ creates a separate Connect password account, and HQ sign-in then stops working
-      for it.
-    </p>
 
     {% if show_test_login %}
     <div class="dev-panel">
