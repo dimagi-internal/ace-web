@@ -203,7 +203,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   partner signs in exactly once; removing someone's last membership is how an
   outsider is cut off. **No open signup:** a password is set by accepting an
   invite on the public page `/auth/invite/<token>/` (set a password, Google or
-  CommCare) or by an admin in Django admin; an invite link can create a
+  Connect) or by an admin in Django admin; an invite link can create a
   password account but never set one on an EXISTING account (takeover guard).
   A Connect-first user adds a password or Google later from `/auth/account/`
   (same `User`; Google needs a verified email equal to the account's). Brute
@@ -212,8 +212,8 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   prod has no mail backend yet; it must not answer differently for unknown
   addresses. PATs are untouched (`PersonalToken`, Bearer middleware,
   `/auth/cli/authorize/` — a password session can authorize a CLI token, which
-  is how agents get a token without an HQ account). The login page is
-  deliberately bare (2026-10-13): a "Sign in with Connect" button with the
+  is how agents get a token without an HQ account). The login and invite
+  pages are deliberately bare (2026-10-13): a "Sign in with Connect" button with the
   Connect mark, Google when configured, and the email + password form — no
   explanatory copy. Design: `docs/specs/2026-10-08-normal-login-design.md`;
   what a human still configures (Google client, mail): `docs/auth.md`.

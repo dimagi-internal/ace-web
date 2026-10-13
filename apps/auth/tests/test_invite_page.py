@@ -1,4 +1,4 @@
-"""The invite page: set a password, or use Google / CommCare."""
+"""The invite page: set a password, or use Google / Connect."""
 from datetime import timedelta
 
 import pytest
@@ -28,12 +28,12 @@ def test_signed_in_invitee_gets_the_spa_accept_page(client, workspace):
     assert client.get(f"/auth/invite/{inv.token}/").url == f"/invite/{inv.token}"
 
 
-def test_page_offers_password_google_and_commcare(client, workspace, google_cfg):
+def test_page_offers_password_google_and_connect(client, workspace, google_cfg):
     inv = invite(workspace, "anne@sparkmicrogrants.org")
     body = client.get(f"/auth/invite/{inv.token}/").content.decode()
     assert "Set password and join" in body
-    assert "Google" in body and "CommCare" in body
-    assert "You don't need a CommCare account" in body
+    assert "Sign in with Google" in body and "Sign in with Connect" in body
+    assert "CommCare" not in body
     assert "anne@sparkmicrogrants.org" in body
 
 
