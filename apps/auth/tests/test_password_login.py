@@ -70,7 +70,7 @@ def test_login_page_offers_all_three_ways(client, google_cfg):
     body = client.get("/auth/login/").content.decode()
     assert "Sign in with email" in body
     assert "Sign in with Google" in body
-    assert "Sign in with CommCare" in body
+    assert "Sign in with Connect" in body
 
 
 def test_password_sign_in(client):

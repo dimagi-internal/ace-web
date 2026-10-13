@@ -203,7 +203,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   partner signs in exactly once; removing someone's last membership is how an
   outsider is cut off. **No open signup:** a password is set by accepting an
   invite on the public page `/auth/invite/<token>/` (set a password, Google or
-  CommCare) or by an admin in Django admin; an invite link can create a
+  Connect) or by an admin in Django admin; an invite link can create a
   password account but never set one on an EXISTING account (takeover guard).
   A Connect-first user adds a password or Google later from `/auth/account/`
   (same `User`; Google needs a verified email equal to the account's). Brute
@@ -212,11 +212,10 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   prod has no mail backend yet; it must not answer differently for unknown
   addresses. PATs are untouched (`PersonalToken`, Bearer middleware,
   `/auth/cli/authorize/` — a password session can authorize a CLI token, which
-  is how agents get a token without an HQ account). Login-page copy: partners
-  with no CommCare account are told to use email or Google; the warning for
-  people who DO use CommCare (choose "Log in with CommCare HQ" at Connect — a
-  Connect invite accepted before HQ sign-in yields a password account that then
-  breaks HQ SSO) stays. Design: `docs/specs/2026-10-08-normal-login-design.md`;
+  is how agents get a token without an HQ account). The login and invite
+  pages are deliberately bare (2026-10-13): a "Sign in with Connect" button with the
+  Connect mark, Google when configured, and the email + password form — no
+  explanatory copy. Design: `docs/specs/2026-10-08-normal-login-design.md`;
   what a human still configures (Google client, mail): `docs/auth.md`.
   The admission design is step A of `docs/specs/2026-09-28-clone-and-release-design.md`
   (per-opp tenancy, opp-bound ACE sessions, clone-to-new-workspace, release).

@@ -6,7 +6,7 @@ Design: `docs/specs/2026-10-08-normal-login-design.md`. Admission rule:
 | Method | Works out of the box? | Needs |
 |---|---|---|
 | Email + password | Yes | Users get a password from an invite or from Django admin |
-| Sign in with CommCare | Yes (unchanged) | existing `CONNECT_OAUTH_*` secrets |
+| Sign in with Connect | Yes (unchanged) | existing `CONNECT_OAUTH_*` secrets |
 | Sign in with Google | **No — button hidden** | Steps 1–3 below |
 | Password reset by email | **No — routes 404** | Steps 4–5 below |
 
