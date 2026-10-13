@@ -468,16 +468,18 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
   );
 
   // The pop-up: only what the public run summary features (the PDD, the
-  // apps, the Connect opportunity, the training pack, the chatbot, the demo
-  // dashboards…), as it is built — and the apps again when Phase 6
-  // photographs them. A step's internal reports stay in the rail.
+  // Connect opportunity, the training pack, the chatbot, the demo
+  // dashboards…), as it is built. The apps pop up only when Phase 6
+  // photographs them: at their Phase 3 build there is nothing to show but
+  // their structure, a wall of text, so they just land in the rail. A step's
+  // internal reports stay in the rail too.
   const photographedIds = useMemo(
     () => new Set(photographedProducts.map((p) => p.id)),
     [photographedProducts],
   );
   const spotlightItems = useMemo<ViewerTarget[]>(
     () =>
-      [...beatProducts, ...photographedProducts]
+      [...beatProducts.filter((p) => p.kind !== "commcare_app"), ...photographedProducts]
         .filter((p) => p.featured)
         .map((p) => ({ type: "product", product: p })),
     [beatProducts, photographedProducts],
