@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import type { Replay } from "./useReplay";
 
 /** How long each featured output holds the screen while the replay plays. */
-export const SPOTLIGHT_MS = 4500;
+export const SPOTLIGHT_MS = 2250;
 
 interface Props {
   /** What this beat made: its products, then any documents the step wrote. */
@@ -43,7 +43,8 @@ export function itemKey(item: ViewerTarget): string {
  * the audience SEES the important things appear as the run makes them.
  *
  * Playing: each product holds for {@link SPOTLIGHT_MS} while playback waits,
- * then it closes and the replay carries on. Driving by hand: it stays until
+ * then it closes and the replay carries on. Space pauses here; Space again
+ * resumes. Driving by hand: it stays until
  * → (next product, then the next beat), ← (previous beat) or Esc.
  *
  * Its keys are handled on the document in the CAPTURE phase so they win over
@@ -95,16 +96,24 @@ export function Spotlight({ items, replay, onClose, photographed }: Props) {
         onClose();
         replay.prev();
       } else if (e.key === " ") {
-        // Space pauses where we are: stop the countdown, stop the replay.
+        // Space toggles, as it does on the replay bar: pause holds here (stop
+        // the countdown, stop the replay); press again to carry on.
         e.preventDefault();
         e.stopPropagation();
-        setAutoplay(false);
-        if (replay.playing) replay.toggle();
+        if (autoplay) {
+          setAutoplay(false);
+          if (replay.playing) replay.toggle();
+        } else {
+          setAutoplay(true);
+          // toggle() on the last beat starts over; there the countdown just
+          // closes the pop-up instead.
+          if (!replay.playing && replay.beat.index < replay.total - 1) replay.toggle();
+        }
       }
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [index, items.length, onClose, replay]);
+  }, [index, items.length, onClose, replay, autoplay]);
 
   if (!item || !viewer) return null;
   const isDocument = item.type === "file";
@@ -200,7 +209,7 @@ export function Spotlight({ items, replay, onClose, photographed }: Props) {
             />
           )}
           <span>
-            {autoplay ? "Space to hold here" : "→ next · ← back · Esc close"}
+            {autoplay ? "Space to hold here" : "Space to resume · → next · ← back · Esc close"}
           </span>
           <button
             type="button"
