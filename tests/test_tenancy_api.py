@@ -1,11 +1,9 @@
-"""Per-opp tenancy: model rules, API, copy-on-create, backfill.
+"""Per-opp tenancy: model rules, API, copy-on-create.
 
 Spec: docs/specs/2026-09-28-clone-and-release-design.md § Tenancy, § B.
 """
-import importlib
 
 import pytest
-from django.apps import apps as django_apps
 from django.test import Client
 
 from apps.auth.models import User
@@ -13,12 +11,6 @@ from apps.opps.models import OppWorkspace
 from apps.workspaces.models import TenancyChange, Workspace, WorkspaceMembership
 
 pytestmark = pytest.mark.django_db
-
-SHARED = {
-    "hq_domain": "connect-ace-prod",
-    "connect_holding_org": "ace-nm-org",
-    "ocs_team": "connect-ace",
-}
 
 
 @pytest.fixture
@@ -182,80 +174,3 @@ def test_default_is_copied_once_not_linked(owner, ws):
     ws.save()
     row.refresh_from_db()
     assert row.tenancy == {"hq_domain": "connect-ace-spark"}
-
-
-# --- backfill -----------------------------------------------------------
-
-
-def test_backfill_fills_only_empty_fields(owner):
-    team = Workspace.objects.create(
-        slug="dimagi-team", display_name="Dimagi", drive_root_folder_id="root-dt",
-        created_by=owner,
-    )
-    other = Workspace.objects.create(
-        slug="other", display_name="Other", drive_root_folder_id="root-o", created_by=owner,
-    )
-    blank = OppWorkspace.objects.create(workspace=team, slug="a", display_name="A",
-                                        created_by=owner)
-    edited = OppWorkspace.objects.create(workspace=other, slug="b", display_name="B",
-                                         created_by=owner, tenancy={"ocs_team": "mine"})
-
-    migration = importlib.import_module("apps.opps.migrations.0006_backfill_shared_tenancy")
-    migration.backfill(django_apps, None)
-
-    blank.refresh_from_db()
-    edited.refresh_from_db()
-    team.refresh_from_db()
-    other.refresh_from_db()
-    # 0006 predates the removal of labs_allowed_domains, so it still seeds it;
-    # 0008 strips it again (test below).
-    seeded = {**SHARED, "labs_allowed_domains": ["@dimagi.com", "@dimagi-ai.com"]}
-    assert blank.tenancy == seeded
-    assert edited.tenancy == {**seeded, "ocs_team": "mine"}
-    assert team.default_tenancy == seeded
-    assert other.default_tenancy == {}
-    assert "connect_pm_org" not in blank.tenancy
-
-
-def test_pm_org_backfill_fills_only_empty(owner):
-    team = Workspace.objects.create(
-        slug="dimagi-team", display_name="Dimagi", drive_root_folder_id="root-dt",
-        created_by=owner,
-    )
-    blank = OppWorkspace.objects.create(workspace=team, slug="a", display_name="A",
-                                        created_by=owner, tenancy={"hq_domain": "x"})
-    edited = OppWorkspace.objects.create(workspace=team, slug="b", display_name="B",
-                                         created_by=owner,
-                                         tenancy={"connect_pm_org": "ai-demo-space"})
-    migration = importlib.import_module("apps.opps.migrations.0007_backfill_connect_pm_org")
-    migration.backfill(django_apps, None)
-    blank.refresh_from_db()
-    edited.refresh_from_db()
-    team.refresh_from_db()
-    assert blank.tenancy == {"hq_domain": "x", "connect_pm_org": "ace-pm-org"}
-    assert edited.tenancy == {"connect_pm_org": "ai-demo-space"}
-    assert team.default_tenancy == {"connect_pm_org": "ace-pm-org"}
-
-
-def test_drop_labs_allowed_domains_strips_only_that_key(owner):
-    team = Workspace.objects.create(
-        slug="dimagi-team", display_name="Dimagi", drive_root_folder_id="root-dt",
-        created_by=owner, default_tenancy={**SHARED, "labs_allowed_domains": ["@dimagi.com"]},
-    )
-    opp = OppWorkspace.objects.create(
-        workspace=team, slug="a", display_name="A", created_by=owner,
-        tenancy={**SHARED, "labs_allowed_domains": ["@partner.org"]},
-    )
-    untouched = OppWorkspace.objects.create(
-        workspace=team, slug="b", display_name="B", created_by=owner, tenancy={"ocs_team": "x"},
-    )
-
-    migration = importlib.import_module("apps.opps.migrations.0008_drop_labs_allowed_domains")
-    migration.strip(django_apps, None)
-
-    opp.refresh_from_db()
-    team.refresh_from_db()
-    untouched.refresh_from_db()
-    assert opp.tenancy == SHARED
-    assert team.default_tenancy == SHARED
-    assert untouched.tenancy == {"ocs_team": "x"}

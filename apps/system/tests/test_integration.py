@@ -1,15 +1,19 @@
 """Integration smoke test against the real ACE plugin repo.
 
-Skipped when the ACE plugin is not available (CI without the sibling repo).
+Skipped when the ACE plugin is not on disk. CI clones it to ../ace, which is
+where settings.ACE_PLUGIN_PATH resolves by default, so these run there. (They
+used a hardcoded laptop path until 2026-10-14 and so were skipped in every CI
+run.)
 """
 import os
 
 import pytest
+from django.conf import settings
 from django.test import Client, override_settings
 
 from apps.auth.models import User
 
-ACE_PLUGIN_PATH = "/Users/jjackson/emdash-projects/ace"
+ACE_PLUGIN_PATH = str(settings.ACE_PLUGIN_PATH)
 
 
 @pytest.fixture

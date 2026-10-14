@@ -1,6 +1,16 @@
 """Tests for pure parsing functions — frontmatter and artifact manifest."""
 
+from pathlib import Path
+
+from django.conf import settings
+
 from apps.system.parsers import parse_artifact_manifest, parse_frontmatter, parse_mcp_tools
+
+# The REAL ACE plugin (CI clones it to ../ace, the settings default). Read at
+# import time on purpose: apps/opps/tests/conftest.py repoints
+# settings.ACE_PLUGIN_PATH at a stub plugin for the rest of the session once any
+# opps test runs, so reading it inside the test would parse the stub.
+_REAL_PLUGIN = Path(settings.ACE_PLUGIN_PATH)
 
 # ---------------------------------------------------------------------------
 # parse_frontmatter
@@ -336,7 +346,7 @@ export const ARTIFACT_MANIFEST: readonly ArtifactEntry[] = [
     def test_real_ace_plugin_manifest_parses(self):
         """Regression: the real artifact-manifest.ts from the ACE plugin must parse."""
         import os
-        real_path = "/Users/jjackson/emdash-projects/ace/lib/artifact-manifest.ts"
+        real_path = str(_REAL_PLUGIN / "lib" / "artifact-manifest.ts")
         if not os.path.exists(real_path):
             import pytest
             pytest.skip("ACE plugin not available in this environment")
@@ -457,8 +467,7 @@ server.tool('two', { b: z.string() }, async () => null);
 
     def test_real_mcp_servers_parse(self):
         """Regression: the four real MCP server files must parse without errors."""
-        from pathlib import Path
-        mcp_dir = Path("/Users/jjackson/emdash-projects/ace/mcp")
+        mcp_dir = _REAL_PLUGIN / "mcp"
         if not mcp_dir.is_dir():
             import pytest
             pytest.skip("ACE plugin not available in this environment")
