@@ -81,8 +81,8 @@ fork**. So:
 documents forks as async-with-a-poll. The poll now works, and the
 endpoint's OpenAPI description states plainly that the POST blocks and
 that a timed-out caller must poll rather than retry. If the blocking
-POST ever becomes a real ceiling, the async precedent is
-`apps/mobile/`'s `run-recipe` (202 + `job_id` + worker thread), but
+POST ever becomes a real ceiling, the async precedent was the retired
+cloud emulator's `run-recipe` (202 + `job_id` + worker thread), but
 that's an API break for both the SPA dialog and the plugin skill.
 
 ## 5. A run folder with no `run_state.yaml` gets a 404, not a 200

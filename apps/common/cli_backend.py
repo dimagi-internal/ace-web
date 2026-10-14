@@ -1369,37 +1369,12 @@ class CLIBackend:
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
 
-        # Force the ACE mobile MCP onto the cloud backend. The plugin's
-        # local backend tries to spawn the ``emulator`` binary (Android SDK),
-        # which doesn't exist in this container — leading to a
-        # ``spawn emulator ENOENT`` failure during ``mobile_ensure_avd_running``.
-        # The plugin's session-file toggle (``~/.ace/mobile-backend.<PPID>``)
-        # doesn't line up across the bash-skill → MCP process tree in a way
-        # we can rely on from a chat session, so set the env var directly:
-        # ``backend-toggle.ts`` reads ``ACE_MOBILE_BACKEND`` before the
-        # session file. Surfaced live in malaria-itn-app chat 2026-05-21.
-        env.setdefault("ACE_MOBILE_BACKEND", "cloud")
-
-        # Phase E of the local↔cloud register-parity convergence:
-        # enable live registration for cloud dispatches by default. Pre-
-        # 2026-05-21 the cloud branch of ``MobileClient.registerTestUser``
-        # no-op'd on the assumption that the AMI's cold-boot path
-        # pre-registered the +7426 demo user from AWS Secrets Manager.
-        # Phase D dropped that pre-bake from the AMI, so without this
-        # flag the cloud heal would surface as "Connect not registered"
-        # at every dispatch. ``setdefault`` so a session-level explicit
-        # override (e.g. for testing the legacy no-op path) still wins.
-        env.setdefault("ACE_MOBILE_CLOUD_LIVE_REGISTER", "true")
-
         env[NOVA_BEARER_TOKEN_ENV] = self._resolve_nova_bearer()
 
         # Stage ace-web back-channel auth so the bundled ACE plugin can POST
-        # back to /api/ingest/upload (upload-transcript) and call /api/mobile/*
-        # (cloud-emulator-driven flows like app-screenshot-capture). Without
-        # these the plugin's smart defaults skip both — observed live in the
-        # bednet-spot-check 20260524-2354 run where Phase 6's
-        # app-screenshot-capture failed pre-flight with
-        # "CLOUD_NOT_CONFIGURED — Set ACE_WEB_BASE_URL and ACE_WEB_PAT_TOKEN".
+        # back to /api/ingest/upload (upload-transcript). Without these the
+        # plugin's smart default skips it. (The mobile emulator is no longer an
+        # ace-web concern: ACE claims one as a canopy-web capability lease.)
         # The token is a per-session PersonalToken minted for the session
         # owner; we revoke any prior token for the same session before
         # minting so at most one is active per session at a time.

@@ -23,7 +23,6 @@ The following checks are intentionally skipped (schema is not yet fully annotate
 
 Tags excluded from this run (require external services):
 - ``opps`` — reads through to Google Drive (no SA key in test env)
-- ``mobile`` — orchestrates EC2 / SSM (no AWS in test env)
 - ``system`` — reads the bundled ACE plugin from disk (present in CI but not reliably
   populated in unit test runs; system-level unit tests handle this surface)
 - ``ingest`` — requires multipart JSONL upload; covered by dedicated unit tests
@@ -117,11 +116,10 @@ def _build_schema():
     return (
         schemathesis.openapi.from_wsgi("/api/openapi.json", app)
         # --- Skip tags that require unavailable external services ---
-        # opps: Google Drive (no SA key), mobile: EC2/SSM (no AWS),
+        # opps: Google Drive (no SA key),
         # system: bundled plugin on disk (not in unit-test env),
         # ingest: multipart JSONL upload (dedicated unit tests)
         .exclude(tag="opps")
-        .exclude(tag="mobile")
         .exclude(tag="system")
         .exclude(tag="ingest")
         # Exclude the internal smoke route (not a real endpoint)

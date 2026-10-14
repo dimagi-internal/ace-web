@@ -114,11 +114,10 @@ def test_staged_env_reconstructs_blob_from_env_source(monkeypatch):
 def test_staged_env_stages_ace_web_back_channel(settings):
     """ACE_WEB_BASE_URL set + session owner → subprocess gets URL + fresh PAT.
 
-    The bundled ACE plugin's cloud mobile backend + upload-transcript skill
-    both require ``ACE_WEB_PAT_TOKEN`` + ``ACE_WEB_BASE_URL`` in the
-    subprocess env. We mint a per-session ``PersonalToken`` labeled
-    ``chat-subprocess:<slug>``; the raw token only exists at mint time so
-    each spawn refreshes it.
+    The bundled ACE plugin's upload-transcript skill requires
+    ``ACE_WEB_PAT_TOKEN`` + ``ACE_WEB_BASE_URL`` in the subprocess env. We
+    mint a per-session ``PersonalToken`` labeled ``chat-subprocess:<slug>``;
+    the raw token only exists at mint time so each spawn refreshes it.
     """
     from apps.auth.models import PersonalToken
 

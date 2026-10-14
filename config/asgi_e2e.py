@@ -21,8 +21,8 @@ Two jobs:
 
 2. Monkey-patches ``apps.common.redis_client.get_redis`` to return a
    process-local ``fakeredis.aioredis.FakeRedis`` instance so Redis-backed
-   code (e.g. ``apps.common.nova_auth_flow``, ``apps.videos.service``,
-   ``apps.mobile``) works without a real Redis during the E2E suite.
+   code (e.g. ``apps.common.nova_auth_flow``, ``apps.videos.service``)
+   works without a real Redis during the E2E suite.
    Channels' channel layer already uses ``InMemoryChannelLayer`` via
    ``config/settings/e2e.py``.
 

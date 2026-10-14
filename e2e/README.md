@@ -71,8 +71,8 @@ The ASGI entry point is `config.asgi_e2e:application`, which:
   `docs/learnings/channels-ws-proxy-path.md`.
 - patches `apps.common.redis_client.get_redis` to return a
   `fakeredis.aioredis.FakeRedis` instance so Redis-backed code
-  (`apps.common.nova_auth_flow`, `apps.videos.service`,
-  `apps.mobile`) works without a real Redis during the suite.
+  (`apps.common.nova_auth_flow`, `apps.videos.service`)
+  works without a real Redis during the suite.
 
 The `globalSetup` hook runs migrations and builds the frontend if
 `frontend/dist/index.html` is missing. Delete the dist directory

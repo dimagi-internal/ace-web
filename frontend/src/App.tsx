@@ -11,8 +11,8 @@ export function App() {
         <TopNav />
         {/* Default scroll region for pages: any page that overflows
             the remaining viewport gets a scrollbar for free. Pages
-            that need their own scroll layout (chat, structure tree,
-            mobile emulator) can still wrap themselves in `h-full` +
+            that need their own scroll layout (chat, structure tree)
+            can still wrap themselves in `h-full` +
             a custom overflow region — `h-full` resolves against this
             fixed flex-1 box. Historically this was `overflow-hidden`,
             which silently clipped content and forced every new page
