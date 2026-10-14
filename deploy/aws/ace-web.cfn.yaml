@@ -70,8 +70,17 @@ Resources:
       HealthCheckProtocol: HTTP
       HealthCheckPath: /ace/api/health
       HealthCheckPort: traffic-port
-      HealthCheckIntervalSeconds: 30
-      HealthCheckTimeoutSeconds: 10
+      # 5s/4s, as canopy-web (its deploy/aws/canopy-web.cfn.yaml, 2026-09-08). At
+      # 30s x 2 checks a healthy new task waited up to a minute to be admitted
+      # before the old one could start draining. /api/health is a DB + redis
+      # ping that a task that is up answers at once. Unhealthy stays 3 checks.
+      #
+      # The deploy role can apply this: it holds ModifyTargetGroup on this TG,
+      # and canopy-web's role (same shape) changed its health check through the
+      # pipeline on 2026-10-06. DescribeTargetGroupAttributes is denied to both
+      # (it takes no resource-level ARN) and CloudFormation tolerates that.
+      HealthCheckIntervalSeconds: 5
+      HealthCheckTimeoutSeconds: 4
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
       Matcher:
@@ -82,9 +91,11 @@ Resources:
       TargetGroupAttributes:
         # Default 300s drain is the long pole in a rolling cutover. Labs has no
         # long-poll requests beyond SSE/WebSocket, which the app handles by
-        # reconnecting.
+        # reconnecting — and a draining task is about to be stopped anyway, so
+        # its WebSockets reconnect either way; waiting longer only delays the
+        # deploy. 5s (canopy-web's value) lets in-flight HTTP requests land.
         - Key: deregistration_delay.timeout_seconds
-          Value: "30"
+          Value: "5"
         # LOAD-BEARING, not a preference: pins each browser to one ECS task via
         # the AWSALB cookie so a Session's long-lived `claude` subprocess pool is
         # reused across turns. Without it a 2-task service re-rolls task affinity
@@ -147,6 +158,17 @@ Resources:
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
+    # Every deploy registers a new revision and replaces this resource. Without
+    # Retain, CloudFormation then tries to DELETE the old revision, but the deploy
+    # role (github-actions-ace-web-deploy) has no ecs:DeregisterTaskDefinition, so
+    # the delete fails, CloudFormation retries it twice three minutes apart, and
+    # gives up: ~6 of every deploy's ~11 CloudFormation minutes went to a cleanup
+    # that never happened (stack events, 2026-10-13: Service UPDATE_COMPLETE
+    # ~4.5 min in, then three DELETE_FAILEDs, then stack UPDATE_COMPLETE "could
+    # not be deleted"). Retain says what was already true — old revisions stay —
+    # and skips the wait. Same fix as canopy-web #1030/#1076.
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Properties:
       Family: labs-jj-ace-web
       Cpu: "1024"
@@ -163,11 +185,17 @@ Resources:
           PortMappings:
             - ContainerPort: 8000
               Protocol: tcp
+          # The `web` container starts only once this reports HEALTHY, and the
+          # first probe runs one Interval after start — so at 30s every rollout
+          # waited ~30s for a probe even when the api was already up. 5s probes
+          # admit it as soon as it answers. Retries 6 keeps the old tolerance
+          # for a transient DB/redis blip at roughly the same order (30s of
+          # consecutive failures before ECS replaces the task, was 90s).
           HealthCheck:
             Command: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
-            Interval: 30
-            Timeout: 5
-            Retries: 3
+            Interval: 5
+            Timeout: 4
+            Retries: 6
             StartPeriod: 30
           Environment:
             - Name: ACE_ALLOWED_EMAIL_DOMAINS
@@ -309,6 +337,12 @@ Resources:
         - TargetGroupArn: !Ref TargetGroup
           ContainerName: web
           ContainerPort: 3000
+      # Deliberately NOT cut to canopy-web's 60. The grace period only tells ECS
+      # to ignore failing ALB checks on a young task; it never delays admitting
+      # a healthy one, so it costs a deploy nothing. And ace-web starts slower
+      # than canopy-web: the image pull alone was ~80s on 2026-10-13, then the
+      # entrypoint refreshes the ACE plugin and runs `op inject` before the api
+      # boots. A shorter grace buys no speed and risks killing a slow start.
       HealthCheckGracePeriodSeconds: 120
       DeploymentConfiguration:
         MinimumHealthyPercent: 100

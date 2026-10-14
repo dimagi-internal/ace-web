@@ -5,12 +5,19 @@ on:
   push:
     branches: [main]
 
+# Only the newest push per ref matters — cancel a superseded run.
+concurrency:
+  group: typecheck-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   basedpyright:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: uv run basedpyright apps/ config/
