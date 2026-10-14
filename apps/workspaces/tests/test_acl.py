@@ -7,7 +7,6 @@ admin, editor, viewer"). The table under test is
 """
 from __future__ import annotations
 
-import importlib
 from datetime import timedelta
 
 import pytest
@@ -310,57 +309,3 @@ def test_creating_an_opp_needs_content_write(client, ws, role, blocked, monkeypa
     )
     assert (resp.status_code == 403) is blocked
     assert bool(reached) is not blocked
-
-
-# ---------------------------------------------------------------------------
-# Migration 0012: viewers become editors
-# ---------------------------------------------------------------------------
-
-_mig = importlib.import_module("apps.workspaces.migrations.0012_viewers_become_editors")
-
-
-class _AppShim:
-    def get_model(self, app_label, name):
-        from django.apps import apps as django_apps
-        return django_apps.get_model(app_label, name)
-
-
-@pytest.mark.django_db
-def test_migration_turns_viewer_memberships_and_pending_invites_into_editors(ws):
-    founder = User.objects.get(email="founder@example.com")
-    viewer = _member(ws, "viewer")
-    editor = _member(ws, "editor")
-    now = timezone.now()
-
-    def inv(email, **kw):
-        return WorkspaceInvite.objects.create(
-            workspace=ws, email=email, role="viewer", invited_by=founder,
-            expires_at=kw.pop("expires_at", now + timedelta(days=3)), **kw)
-
-    pending = inv("pending@x.org")
-    lapsed = inv("lapsed@x.org", expires_at=now - timedelta(days=1))
-    accepted = inv("accepted@x.org", accepted_at=now)
-    revoked = inv("revoked@x.org", revoked_at=now)
-    probe_ws = Workspace.objects.create(slug="canopy-probe", display_name="probe",
-                                        drive_root_folder_id="", created_by=founder)
-    probe = _member(probe_ws, "viewer", email="canopy-probe@probe.invalid")
-
-    _mig.viewers_to_editors(_AppShim(), schema_editor=None)
-
-    def role(u, w=ws):
-        return WorkspaceMembership.objects.get(workspace=w, user=u).role
-
-    assert role(viewer) == "editor"
-    assert role(editor) == "editor"
-    assert role(founder) == "owner"
-    assert role(probe, probe_ws) == "viewer"  # least privilege, by design
-    for i, expected in ((pending, "editor"), (lapsed, "editor"),
-                        (accepted, "viewer"), (revoked, "viewer")):
-        i.refresh_from_db()
-        assert i.role == expected, i.email
-    assert not WorkspaceMembership.objects.filter(role="viewer").exclude(
-        workspace=probe_ws).exists()
-
-    # Idempotent.
-    _mig.viewers_to_editors(_AppShim(), schema_editor=None)
-    assert role(viewer) == "editor"

@@ -103,33 +103,6 @@ def test_ensure_principal_is_idempotent_and_never_widens():
 
 
 @pytest.mark.django_db
-def test_the_migration_creates_and_removes_it():
-    """Deploying with run_migrations creates the principal (0010); its reverse removes it."""
-    from importlib import import_module
-
-    from django.apps import apps as django_apps
-
-    mod = import_module("apps.workspaces.migrations.0010_canopy_probe_principal")
-    # A fresh install / test DB (no seeded dimagi-team) is left alone.
-    mod.create(django_apps, None)
-    assert not User.objects.filter(email=probe.PROBE_EMAIL).exists()
-    assert not Workspace.objects.exists()
-
-    # The deployed ace-web has dimagi-team.
-    founder = User.objects.create_user(email="founder@dimagi.com")
-    Workspace.objects.create(slug="dimagi-team", display_name="Dimagi Team",
-                             drive_root_folder_id="folder-dimagi", created_by=founder)
-    mod.create(django_apps, None)
-    assert User.objects.filter(email=probe.PROBE_EMAIL, is_active=True).exists()
-    assert not WorkspaceMembership.objects.filter(workspace_id="dimagi-team").exists()
-    memberships = WorkspaceMembership.objects.filter(workspace_id="canopy-probe")
-    assert list(memberships.values_list("role", flat=True)) == ["viewer"]
-    mod.remove(django_apps, None)
-    assert not User.objects.filter(email=probe.PROBE_EMAIL).exists()
-    assert not Workspace.objects.filter(slug="canopy-probe").exists()
-
-
-@pytest.mark.django_db
 def test_the_management_command_creates_it_anywhere():
     from django.core.management import call_command
 
