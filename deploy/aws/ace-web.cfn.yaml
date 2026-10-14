@@ -200,14 +200,6 @@ Resources:
           Environment:
             - Name: ACE_ALLOWED_EMAIL_DOMAINS
               Value: "dimagi.com,dimagi-ai.com,dimagi-associate.com"
-            - Name: ACE_MOBILE_AMI_VERSION
-              Value: "2026-05-25-1857"
-            - Name: ACE_MOBILE_AWS_REGION
-              Value: "us-east-1"
-            - Name: ACE_MOBILE_INSTANCE_ID
-              Value: "i-0c447ed51374a4871"
-            - Name: ACE_MOBILE_S3_BUCKET
-              Value: "ace-mobile-artifacts-labs"
             - Name: ACE_WEB_BASE_URL
               Value: "https://labs.connect.dimagi.com/ace"
             - Name: AWS_REGION

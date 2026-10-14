@@ -6,8 +6,8 @@ name: Contract tests
 # the unit-test job) to keep it fast and infra-free.
 #
 # Scope: 36 operations covering auth / workspaces / sessions / tokens.
-# External-dep tags (opps/mobile/system/ingest) are excluded — they
-# require Drive SA key / EC2 / ACE plugin which aren't available here.
+# External-dep tags (opps/system/ingest) are excluded — they require a
+# Drive SA key / the ACE plugin / multipart uploads not available here.
 #
 # Run locally:
 #   uv run pytest tests/contract/ -v -m contract

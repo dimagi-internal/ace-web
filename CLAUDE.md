@@ -10,14 +10,14 @@ multi-player, library/ingest); Phase 5 (Polish) is deferred indefinitely. Intera
 chat moved out to canopy-hosted chat (canopy-web) — ace-web's own multi-player
 WebSocket chat UI was retired; see "Chat is canopy-hosted, full stop" below. Active
 surfaces in 2026-09 are the opp run page (Phases + Runs tabs, step drill-down, run replay), the
-public run summary, the cloud mobile emulator, and the videos app.
+public run summary, and the videos app.
 
 ## Where things live
 
 - **Design spec** (original whole vision — historical; its GCP/IAP and
   ace-web-hosted-chat parts were superseded): `docs/specs/2026-04-08-ace-web-design.md`
 - **Other specs**: `docs/specs/` (per-feature design docs — workspaces, opp summary,
-  videos editor, mobile cloud, opp-cache redesign, products contract, …)
+  videos editor, opp-cache redesign, products contract, …)
 - **Implementation plans**: `docs/plans/` (historical for shipped phases; check
   the file header for status)
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before
@@ -135,7 +135,7 @@ ace-web/
 │   │                     # session create, run_dispatch (runs → canopy Turns)
 │   ├── common/          # CLI backend, channels auth, Nova auth flow, problem+json
 │   ├── ingest/          # JSONL upload + cost/timing + structure aggregators + pricing
-│   ├── mobile/          # Cloud emulator controller + jobs
+│   ├── mobile/          # Migration stub only (drops the retired emulator's table)
 │   ├── opps/            # ACE opp Workbench (Drive-backed) + summary page + cache
 │   ├── presence/        # Cross-app viewer presence (ws/presence/ + Redis HASH store)
 │   ├── service_accounts/ # Personal tokens
@@ -154,9 +154,7 @@ ace-web/
 ├── video-production/    # connect-videos/ — Remotion renderer the videos app shells out to
 ├── docs/                # specs/, plans/, learnings/, architecture/, qa/, deploy.md
 ├── scripts/qa/          # Re-runnable Playwright probe of the deployed UI
-├── infra/mobile-ami/    # Packer bake for the mobile EC2 AMI + rebake.sh
-├── deploy/aws/          # ace-web.cfn.yaml (task def + service) + ace-mobile.cfn.yaml
-│                        # (the mobile emulator's EC2/S3/IAM, imported 2026-09)
+├── deploy/aws/          # ace-web.cfn.yaml (task def + service)
 ├── .github/workflows/   # build-backend, build-frontend, deploy-ace-web-labs, ci,
 │                        # contract-tests, regen-openapi, typecheck, frontend,
 │                        # videos, sync-video-library-labs, canopy-contract-drift
@@ -776,30 +774,13 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   on-demand or at container start via the `videos_seed_templates` management
   command (lazy auto-seed fires on the first `GET /templates` call against an
   empty Drive folder).
-- **Cloud mobile emulator (`apps/mobile/`)**: ace-web orchestrates a single EC2
-  instance (`m8i.xlarge` with nested virtualization) running an Android AVD via
-  SSM. Packer bake in `infra/mobile-ami/`; runtime API at `/api/mobile/*`
-  (status, ensure-running, run-recipe, diagnose, …). Settings:
-  `ACE_MOBILE_INSTANCE_ID`, `ACE_MOBILE_S3_BUCKET`, `ACE_MOBILE_AWS_REGION`,
-  `ACE_MOBILE_AMI_VERSION`. The orchestrator is `apps/mobile/controller.EmulatorController`
-  (boto3, lazy clients, framed-stdout SSM probes). **`run-recipe` is async
-  (202+job_id)** to dodge ALB's 60s idle timeout; the worker thread holds the
-  `mobile:emulator:lock` singleton lock through completion and writes results to
-  `mobile:job:<id>` in Redis. The `/api/mobile/admin/patch-launch-script`
-  endpoint is the hot-fix path; gated on `_can_write_global` and every patch
-  writes a `MobileLaunchScriptPatch` audit row. **AMI rolls are one command:
-  `AWS_PROFILE=labs ./infra/mobile-ami/rebake.sh`** — bakes, updates the
-  launch-template, terminates+recreates the EC2 instance (AMIs are pinned at
-  launch), enables nested virt, updates task-def, opens+merges PR, triggers
-  deploy. The emulator's AWS resources (instance, launch template, SG, IAM,
-  `ace-mobile-artifacts-labs` bucket — `DeletionPolicy: Retain`, never replace)
-  are owned by the `ace-mobile` CloudFormation stack
-  (`deploy/aws/ace-mobile.cfn.yaml`, adopted by resource import 2026-09; the old
-  laptop-state Terraform is deleted). `rebake.sh` still rolls the AMI via the AWS
-  CLI directly — **after a rebake, update the stack's `AmiId` parameter** or the
-  next drift check flags it. `status()` caches the in-VM idle marker probe for 10s. See
-  `squash-merge-stale-branch-orphans-commits.md` for the merge-method gotcha
-  that lost the stop busy-guard PR.
+- **No mobile emulator here.** The cloud Android emulator ace-web used to run
+  (`apps/mobile/`, `/api/mobile/*`, `infra/mobile-ami/`) was retired 2026-10-14.
+  Android emulators are now canopy-web capability leases the agent claims itself
+  (ACE's `lease` mobile backend) — see canopy-web's capabilities and ACE's
+  `infra/capabilities/android-emulator/README.md`. ace-web carries no mobile code;
+  `apps/mobile/` is only a migration stub whose 0002 drops the old audit table,
+  deletable once that has run in prod.
 
 ## ACE opportunity Workbench (apps/opps)
 
@@ -957,7 +938,6 @@ Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`; every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`.
 - [mcp-bootstrap-container-traps](docs/learnings/mcp-bootstrap-container-traps.md) — (1) `op inject` parses `{{ }}` and `op://` literals inside `.env.tpl` comments and aborts; (2) `npx tsx` from a cwd without `node_modules` triggers a registry install that races Claude Code's 30s MCP connection timeout.
 - [long-running-turns-vs-deploys](docs/learnings/long-running-turns-vs-deploys.md) — ECS task replacement kills in-flight `claude -p` subprocesses; Drive state is the durable source of truth. **Mostly moot in prod since 2026-07-28:** with `CANOPY_RUN_EXECUTION=true` runs execute on canopy's cloud runner, so an ace-web deploy doesn't kill them. It still applies to the flag-off / local `claude -p` path: don't avoid the deploy; resume the run from Drive once it lands. For `/ace:run`, that's the `<opp>/<run-id>` form (e.g. `/ace:run bednet-spot-check/20260524-2354`) which reads the existing `run_state.yaml` and continues at the first non-`complete` phase.
-- [cloud-emulator-snapshot-persistence](docs/learnings/cloud-emulator-snapshot-persistence.md) — mobile AVD snapshot/restore semantics on the EC2 host; read before touching the rebake or in-VM launcher.
 
 QA / probe:
 - [e2e-probe](docs/qa/e2e-probe.md) — `scripts/qa/labs_probe.py` walks every UI surface + cross-checks the OpenAPI schema for orphan endpoints. Re-run after every deploy: `LABS_TOKEN=... uv run --extra walkthrough python scripts/qa/labs_probe.py`. Caught three Phase-5 regressions (public summary endpoint deleted, cross-opp compare deleted, empty-runs-folder 404) that nothing else surfaced.

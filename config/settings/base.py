@@ -295,29 +295,14 @@ ACE_VIDEOS_ROOT = env.str(
 # Empty default: opps views return a 500 with code="drive-not-configured".
 ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
 
-# --- Mobile cloud runner (POC) ---
-# Single EC2 instance + S3 bucket provisioned by infra/mobile/ Terraform.
-# The EmulatorController in apps.mobile.controller drives them via boto3
-# (SSM Session Manager for in-VM exec, no SSH). Empty defaults so a
-# deploy without these env vars 503s with a clear "not-configured" error
-# rather than failing mid-call.
-#
-# Set in deploy/aws/ace-web.cfn.yaml after `terraform apply` emits
-# the values from infra/mobile/outputs.tf.
-ACE_MOBILE_AWS_REGION = env("ACE_MOBILE_AWS_REGION", default="us-east-1")
-ACE_MOBILE_INSTANCE_ID = env("ACE_MOBILE_INSTANCE_ID", default="")
-ACE_MOBILE_S3_BUCKET = env("ACE_MOBILE_S3_BUCKET", default="")
-ACE_MOBILE_AMI_VERSION = env("ACE_MOBILE_AMI_VERSION", default="")
-
 # --- Chat subprocess back-channel ---
 # Public-facing base URL of this ace-web deployment, including the
 # /ace path prefix when one is in use. The chat subprocess gets this
 # in its env (alongside a per-session PersonalToken) so the bundled
-# ACE plugin can POST back for upload-transcript and call /api/mobile/
-# for cloud-emulator-driven flows. Empty disables the staging — the
-# plugin's smart-default then silently skips back-channel calls. Set
-# in deploy/aws/ace-web.cfn.yaml for labs; defaults to the local
-# docker-compose port for dev.
+# ACE plugin can POST back for upload-transcript. Empty disables the
+# staging — the plugin's smart-default then silently skips back-channel
+# calls. Set in deploy/aws/ace-web.cfn.yaml for labs; defaults to the
+# local docker-compose port for dev.
 ACE_WEB_BASE_URL = env("ACE_WEB_BASE_URL", default="")
 
 # --- Phase 3 dev-only test hooks ---

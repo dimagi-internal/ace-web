@@ -140,7 +140,6 @@ from apps.canopy.api import router as canopy_router  # noqa: E402
 from apps.canopy.api import workspace_router as canopy_workspace_router  # noqa: E402, I001
 from apps.common.api import router as common_router  # noqa: E402
 from apps.ingest.api import router as ingest_router  # noqa: E402
-from apps.mobile.api import router as mobile_router  # noqa: E402
 from apps.opps.api import public_summary_router as opps_public_router  # noqa: E402, I001
 from apps.opps.api import router as opps_router  # noqa: E402
 from apps.opps.clone_api import router as opp_clone_router  # noqa: E402
@@ -168,7 +167,6 @@ api.add_router("/opps", opps_public_router)  # public per-run summary share link
 api.add_router("/workspaces", workspaces_router)
 api.add_router("/invites", invites_router)
 api.add_router("/ingest", ingest_router)
-api.add_router("/mobile", mobile_router)
 api.add_router("/system", system_router)
 api.add_router("/tokens", tokens_router)
 api.add_router("/auth", auth_router)

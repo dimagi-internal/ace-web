@@ -3,8 +3,8 @@
 Reuses ``django.core.cache`` (already wired to Redis in
 ``config/settings/base.py``) — DRY with the rest of ace-web. No bespoke
 Redis client, no custom JSON serialisation; Django's cache pickles
-values for us. Apps/opps + apps/activity + apps/mobile all use the
-same primitive.
+values for us. Apps/opps + apps/activity both use the same
+primitive.
 
 Cache keys live under one ``videos:`` namespace so a workspace flush
 or test reset is one ``delete_many`` call.

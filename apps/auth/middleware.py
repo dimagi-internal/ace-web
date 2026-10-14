@@ -36,10 +36,10 @@ def _db_unavailable_response() -> HttpResponse:
 
     A saturated shared RDS ("FATAL: remaining connection slots are reserved
     …") was surfacing as an unhandled 500 from the PersonalToken lookup below
-    — hard-failing every authenticated request, including the whole ACE run
-    driving through /api/mobile/*. OperationalError is transient, so map it to
-    a 503 + Retry-After that the ace-mobile MCP's retry envelope (and any
-    sane caller) can recover from instead of dying. See the run 20260603-2126
+    — hard-failing every authenticated request, including an ACE run calling
+    back into ace-web. OperationalError is transient, so map it to a 503 +
+    Retry-After that a client's retry envelope (and any sane caller) can
+    recover from instead of dying. See the run 20260603-2126
     incident.
     """
     resp = HttpResponse(
