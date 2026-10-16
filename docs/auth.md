@@ -8,7 +8,7 @@ Design: `docs/specs/2026-10-08-normal-login-design.md`. Admission rule:
 | Email + password | Yes | Users get a password from an invite or from Django admin |
 | Sign in with Connect | Yes (unchanged) | existing `CONNECT_OAUTH_*` secrets |
 | Sign in with Google | **No — button hidden** | Steps 1–3 below |
-| Password reset by email | **No — routes 404** | Steps 4–5 below |
+| Password reset by email | **No — routes 404** | See "Password reset email" below |
 
 ## Google sign-in (one console step, then secrets)
 
@@ -36,20 +36,31 @@ Design: `docs/specs/2026-10-08-normal-login-design.md`. Admission rule:
    Then deploy through the standard pipeline. The Google button appears
    automatically once both values are set.
 
+## Outbound email
+
+Labs sends mail through SES's API as the ECS task role — no SMTP credentials.
+`ACE_EMAIL_ENABLED=true` (set in `deploy/aws/ace-web.cfn.yaml`) selects
+django-anymail's SES backend. The task role `labs-jj-ecs-task-role` already
+holds `ses:SendEmail` on the `labs.connect.dimagi.com` identity and the
+`labs-jj-email` configuration set (connect-labs `infra/labs-email.yml`, policy
+`labs-ses-send`), so the sender must be on that domain:
+`DEFAULT_FROM_EMAIL=ACE <noreply@labs.connect.dimagi.com>`. Any other From is
+refused by SES. Bounces and complaints reach the `labs-jj-email-events` SNS
+topic through the configuration set.
+
+What sends today: **workspace invites**. Creating an invite emails its accept
+link (Reply-To: the inviter), and **Resend** on a pending invite emails the
+same link again with a fresh 14-day expiry. A failed send never fails the
+invite — the settings page then shows the link to copy instead.
+
 ## Password reset email
 
-Production has no mail backend. Until one exists, `ACE_PASSWORD_RESET_ENABLED`
-stays false and reset is unavailable (an admin can set a password in Django
-admin; users who are signed in can change theirs at `/auth/password/`).
-
-4. Pick a sender. SES is the obvious choice on this AWS account: verify the
-   sending identity (`dimagi-ai.com` or `ace@dimagi-ai.com`), get out of the SES
-   sandbox if recipients are external, create SMTP credentials.
-5. Add to the container: secret `EMAIL_URL`
-   (`smtp+tls://<user>:<pass>@email-smtp.us-east-1.amazonaws.com:587`, URL-encode
-   the password), env `DEFAULT_FROM_EMAIL` (e.g. `ace-web <ace@dimagi-ai.com>`),
-   env `ACE_PASSWORD_RESET_ENABLED=True`. Deploy. Test with one reset to a
-   mailbox you own before telling anyone.
+Reset is still behind `ACE_PASSWORD_RESET_ENABLED` (default false; an admin can
+set a password in Django admin, and signed-in users can change theirs at
+`/auth/password/`). Outbound email now exists, so turning it on is: set
+`ACE_PASSWORD_RESET_ENABLED=True` in the task definition, deploy, and test one
+reset to a mailbox you own before telling anyone. (The older `EMAIL_URL` SMTP
+path still works for local setups but is not used on labs.)
 
 ## Giving an agent (hal@, ada@) a token without HQ
 

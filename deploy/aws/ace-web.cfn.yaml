@@ -204,6 +204,18 @@ Resources:
               Value: "https://labs.connect.dimagi.com/ace"
             - Name: AWS_REGION
               Value: "us-east-1"
+            # Outbound email (invite links) through SES's API as the task role.
+            # labs-jj-ecs-task-role already holds ses:SendEmail on the
+            # labs.connect.dimagi.com identity + labs-jj-email configuration set
+            # (connect-labs infra/labs-email.yml, policy labs-ses-send), so the
+            # sender MUST be on that domain. Bounces/complaints go to the
+            # labs-jj-email-events SNS topic via the configuration set.
+            - Name: ACE_EMAIL_ENABLED
+              Value: "true"
+            - Name: ACE_SES_CONFIGURATION_SET
+              Value: "labs-jj-email"
+            - Name: DEFAULT_FROM_EMAIL
+              Value: "ACE <noreply@labs.connect.dimagi.com>"
             - Name: CANOPY_AGENT_SLUG
               Value: "ace"
             - Name: CANOPY_APP_NAME

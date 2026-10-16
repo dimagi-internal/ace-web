@@ -59,11 +59,16 @@ class WorkspaceInviteOut(StrictModel, TimestampMixin):
     role: WorkspaceRole
     accepted: bool
     accepted_at: dt.datetime | None = None
+    expires_at: dt.datetime | None = None
+    # True when the accept link was emailed to `email`. False when outbound
+    # email is off or the send failed — share the link by hand then.
+    email_sent: bool = False
 
 
 class WorkspacePendingInviteOut(StrictModel):
     """GET /api/workspaces/{slug}/invites — one invite nobody has acted on."""
 
+    id: int
     email: str
     role: WorkspaceRole
     invited_by_email: str

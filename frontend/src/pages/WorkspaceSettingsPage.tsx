@@ -11,6 +11,7 @@ import {
   listMembers,
   listPendingInvites,
   removeMember,
+  resendInvite,
   updateWorkspace,
   verifyDriveAccess,
   type ActivityRow,
@@ -76,8 +77,13 @@ export default function WorkspaceSettingsPage() {
   const [inviteRole, setInviteRole] = useState<WorkspaceRole>("editor");
   const [inviteResult, setInviteResult] = useState<{
     accept_url: string;
-    token: string;
+    email: string;
+    email_sent: boolean;
   } | null>(null);
+  // Per pending invite (by id): a resend in flight, done, or not emailed.
+  const [resendState, setResendState] = useState<
+    Record<number, { status: "sending" | "sent" | "not_sent"; accept_url?: string }>
+  >({});
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
   const [driveBroken, setDriveBroken] = useState<string | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
@@ -131,10 +137,31 @@ export default function WorkspaceSettingsPage() {
         email: inviteEmail.trim(),
         role: inviteRole,
       });
-      setInviteResult({ accept_url: r.accept_url, token: r.token });
+      setInviteResult({ accept_url: r.accept_url, email: r.email, email_sent: r.email_sent });
       setInviteEmail("");
       setReload((n) => n + 1);
     } catch (e) {
+      setError(String((e as Error).message));
+    }
+  }
+
+  async function handleResend(inviteId: number) {
+    setError(null);
+    setResendState((s) => ({ ...s, [inviteId]: { status: "sending" } }));
+    try {
+      const r = await resendInvite(workspaceSlug!, inviteId);
+      setResendState((s) => ({
+        ...s,
+        [inviteId]: r.email_sent
+          ? { status: "sent" }
+          : { status: "not_sent", accept_url: r.accept_url },
+      }));
+      setReload((n) => n + 1);
+    } catch (e) {
+      setResendState((s) => {
+        const { [inviteId]: _, ...rest } = s;
+        return rest;
+      });
       setError(String((e as Error).message));
     }
   }
@@ -353,8 +380,10 @@ export default function WorkspaceSettingsPage() {
           </p>
           {inviteResult && (
             <div className="mt-3 rounded border border-border bg-muted p-3 text-sm">
-              <p className="text-foreground">
-                Invite created. Copy this link and send it to the recipient:
+              <p className="text-foreground" data-testid="invite-result">
+                {inviteResult.email_sent
+                  ? `Invite emailed to ${inviteResult.email}. The same link, if you want to send it yourself:`
+                  : `Invite created, but no email went out. Copy this link and send it to ${inviteResult.email}:`}
               </p>
               <pre className="mt-1 select-all break-all text-xs font-mono">
                 {window.location.origin}/ace{inviteResult.accept_url}
@@ -368,12 +397,36 @@ export default function WorkspaceSettingsPage() {
         <section className="mt-8">
           <h2 className="text-lg font-medium text-foreground">Pending invites</h2>
           <ul className="mt-2 divide-y divide-border text-sm">
-            {pendingInvites.map((i) => (
-              <li key={`${i.email}-${i.created_at}`} className="flex justify-between py-2">
-                <span className="text-foreground">{i.email}</span>
-                <span className="text-muted-foreground">{ROLE_LABELS[i.role]}</span>
-              </li>
-            ))}
+            {pendingInvites.map((i) => {
+              const rs = resendState[i.id];
+              return (
+                <li key={i.id} className="py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 flex-1 truncate text-foreground">{i.email}</span>
+                    <span className="text-muted-foreground">{ROLE_LABELS[i.role]}</span>
+                    <span className="hidden text-xs text-muted-foreground sm:inline">
+                      expires {new Date(i.expires_at).toLocaleDateString()}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleResend(i.id)}
+                      disabled={rs?.status === "sending"}
+                    >
+                      {rs?.status === "sending" ? "Sending…" : rs?.status === "sent" ? "Sent" : "Resend"}
+                    </Button>
+                  </div>
+                  {rs?.status === "not_sent" && rs.accept_url && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Email is not available — send this link yourself:{" "}
+                      <span className="select-all break-all font-mono text-foreground">
+                        {window.location.origin}/ace{rs.accept_url}
+                      </span>
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

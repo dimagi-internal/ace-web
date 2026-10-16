@@ -36,6 +36,8 @@ export interface InviteCreated {
   role: WorkspaceRole;
   expires_at: string;
   accept_url: string;
+  /** True when the accept link was emailed; false means share it by hand. */
+  email_sent: boolean;
 }
 
 export interface InvitePreview {
@@ -134,17 +136,31 @@ export async function inviteMember(
   );
   if (error) throw new Error((error as { title?: string }).title || "Failed to invite member");
   if (!data) throw new Error("Failed to invite member: empty response");
-  const out = data as components["schemas"]["WorkspaceInviteOut"];
+  return toInviteCreated(data as components["schemas"]["WorkspaceInviteOut"]);
+}
+
+/** Email a pending invite's link again (same link, fresh 14-day expiry). */
+export async function resendInvite(slug: string, inviteId: number): Promise<InviteCreated> {
+  const { data, error } = await apiClient.POST(
+    "/api/workspaces/{slug}/invites/{invite_id}/resend",
+    { params: { path: { slug, invite_id: inviteId } } },
+  );
+  if (error) throw new Error((error as { title?: string }).title || "Failed to resend invite");
+  if (!data) throw new Error("Failed to resend invite: empty response");
+  return toInviteCreated(data as components["schemas"]["WorkspaceInviteOut"]);
+}
+
+function toInviteCreated(out: components["schemas"]["WorkspaceInviteOut"]): InviteCreated {
   return {
     token: out.token,
     email: out.email,
     role: out.role,
-    expires_at: out.updated_at, // best available timestamp
-    // The v2 schema doesn't return accept_url, but it does return the token —
-    // build the path the router actually serves (`invite/:token` under the
-    // `/ace` basename). Callers prefix `{origin}/ace`. Previously hard-coded
-    // to "" here, which made "copy invite link" yield a tokenless, dead URL.
+    expires_at: out.expires_at ?? out.updated_at,
+    // The schema returns the token, not a URL — build the path the router
+    // actually serves (`invite/:token` under the `/ace` basename). Callers
+    // prefix `{origin}/ace`.
     accept_url: `/invite/${out.token}`,
+    email_sent: out.email_sent,
   };
 }
 
