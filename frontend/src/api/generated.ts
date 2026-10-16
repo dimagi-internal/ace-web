@@ -2584,6 +2584,11 @@ export interface components {
             readonly status: string;
             /** Files Copied */
             readonly files_copied: number;
+            /**
+             * Files Resumed
+             * @default 0
+             */
+            readonly files_resumed: number;
             /** Error */
             readonly error: string;
             /** Created By */

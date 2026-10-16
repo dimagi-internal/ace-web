@@ -174,7 +174,17 @@ class RunClone(models.Model):
     opp_slug = models.CharField(max_length=64)
     run_id = models.CharField(max_length=64)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="copying")
+    # Files present in the clone: copied by this attempt PLUS adopted from an
+    # earlier attempt (`files_resumed` of them). A resumed clone reports the
+    # whole run, not just what it added.
     files_copied = models.PositiveIntegerField(default=0)
+    # Of `files_copied`, how many an earlier errored/abandoned attempt had
+    # already copied and this one adopted instead of copying again (ace-web#864).
+    files_resumed = models.PositiveIntegerField(default=0)
+    # Source Drive id -> copy id, for every file and folder in the clone so far.
+    # Saved with progress and on error, so a re-POST over a failed clone RESUMES
+    # into the same target folder instead of trashing it and starting from 0.
+    id_map = models.JSONField(default=dict, blank=True)
     error = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -548,7 +548,7 @@ class GoogleDriveClient(DriveClient):
                 pageToken=page_token,
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
-            ).execute()
+            ).execute(http=self._thread_http())
 
             for f in response.get("files", []):
                 file_path = f"{path}/{f['name']}" if path else f["name"]
@@ -751,9 +751,10 @@ class GoogleDriveClient(DriveClient):
         body: dict = {"parents": [new_parent_id]}
         if new_name:
             body["name"] = new_name
+        # Per-thread http: the clone copies on a worker pool (ace-web#864).
         resp = self._service.files().copy(
             fileId=file_id, body=body, fields="id", supportsAllDrives=True
-        ).execute()
+        ).execute(http=self._thread_http())
         return resp["id"]
 
     @_drive_retry
