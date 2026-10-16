@@ -8,7 +8,8 @@ way; everything that follows is decided here, once:
 2. **Linking** (`resolve_user`): the same person is the same `User`, matched by
    email case-insensitively, whichever method they used first.
 3. **Session** (`start_session`): `django.contrib.auth.login` (which rotates
-   the session key), then auto-join-by-domain.
+   the session key). Workspace access comes only from invites and explicit
+   memberships — there is no join-by-domain.
 
 A method's view calls these; it never reimplements them. Adding a fourth
 method means writing its proof of identity and calling the same three.
@@ -133,7 +134,7 @@ def resolve_user(
 
 
 def start_session(request: HttpRequest, user: User, *, method: str) -> None:
-    """Log `user` in: rotate the session, then auto-join workspaces by domain.
+    """Log `user` in and rotate the session.
 
     `login()` cycles the session key (fixation defence) and, if the session
     already belonged to another user, flushes it. Refuses a deactivated user —
@@ -143,12 +144,6 @@ def start_session(request: HttpRequest, user: User, *, method: str) -> None:
         raise PermissionError("inactive user")
     login(request, user, backend=SESSION_BACKEND)
     request.session["ace_login_method"] = method
-    try:
-        from apps.workspaces.auto_join import ensure_auto_join_memberships
-
-        ensure_auto_join_memberships(user)
-    except Exception as exc:  # noqa: BLE001 — never block login on auto-join
-        logger.warning("auto_join failed for %s: %s", user.email, exc)
     logger.info("Signed in %s via %s", user.email, method)
 
 

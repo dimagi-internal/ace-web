@@ -31,7 +31,6 @@ class Workspace(models.Model):
     # Email domains (lowercased, no leading "@") whose users are auto-added as
     # Editor on first login. Stored as JSON list for portability across the
     # Postgres prod DB and the in-memory SQLite test DB.
-    auto_join_domains = models.JSONField(default=list, blank=True)
     # Tenancy a new opp in this workspace starts with (copied at creation;
     # the opp's own `OppWorkspace.tenancy` is the truth after that). Shape:
     # apps.opps.tenancy.Tenancy.

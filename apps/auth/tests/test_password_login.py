@@ -158,16 +158,6 @@ def test_invited_and_member_outsiders_are_admitted(client, restricted, workspace
     assert post_login(client, email="bob@partner.org").status_code == 302
 
 
-def test_auto_join_by_domain_applies_to_password_logins(client, workspace):
-    from apps.workspaces.models import WorkspaceMembership
-
-    workspace.auto_join_domains = ["dimagi.com"]
-    workspace.save()
-    user = make_user(email="new.hire@dimagi.com")
-    post_login(client, email="new.hire@dimagi.com")
-    assert WorkspaceMembership.objects.filter(workspace=workspace, user=user).exists()
-
-
 # --- brute-force ceiling ----------------------------------------------------------
 
 def test_repeated_failures_lock_the_email_even_for_the_right_password(client, settings):

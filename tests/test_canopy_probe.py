@@ -85,7 +85,7 @@ def test_the_probe_principal_has_no_way_in_and_one_empty_workspace():
     assert user.google_sub is None
     assert list(WorkspaceMembership.objects.filter(user=user).values_list(
         "workspace_id", "role")) == [("canopy-probe", "viewer")]
-    assert ws.drive_root_folder_id == "" and ws.auto_join_domains == []
+    assert ws.drive_root_folder_id == ""
 
 
 @pytest.mark.django_db

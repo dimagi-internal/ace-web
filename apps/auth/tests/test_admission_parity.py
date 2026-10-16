@@ -1,8 +1,8 @@
 """One gate, three doors.
 
-`login_gate.admission_rule` (invite-only, 2026-09-28) and auto-join-by-domain
-must treat a person identically whether they arrive by password, Google or
-Connect. Each test here runs once per method, through that method's real view.
+`login_gate.admission_rule` (invite-only, 2026-09-28) must treat a person
+identically whether they arrive by password, Google or Connect. Each test here
+runs once per method, through that method's real view.
 """
 from unittest.mock import patch
 
@@ -107,13 +107,12 @@ def test_domain_admits(sign_in, restricted, method):
 
 
 @pytest.mark.parametrize("method", METHODS)
-def test_auto_join_by_domain_applies(sign_in, restricted, workspace, method):
-    workspace.auto_join_domains = ["dimagi.com"]
-    workspace.save()
+def test_domain_admission_joins_no_workspace(sign_in, restricted, workspace, method):
+    """Being admitted by email domain is not workspace access: that comes only
+    from an invite or an explicit membership (join-by-domain is retired)."""
     assert sign_in(method, "new.hire@dimagi.com") is True
     user = User.objects.get(email="new.hire@dimagi.com")
-    m = WorkspaceMembership.objects.get(workspace=workspace, user=user)
-    assert m.role == "editor"
+    assert not WorkspaceMembership.objects.filter(user=user).exists()
 
 
 @pytest.mark.parametrize("method", METHODS)

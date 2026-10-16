@@ -9074,13 +9074,6 @@
             "title": "Member Count",
             "type": "integer"
           },
-          "auto_join_domains": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Auto Join Domains",
-            "type": "array"
-          },
           "default_tenancy": {
             "additionalProperties": true,
             "title": "Default Tenancy",
@@ -9156,20 +9149,6 @@
               }
             ],
             "title": "Drive Root Folder Id"
-          },
-          "auto_join_domains": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Join Domains"
           },
           "default_tenancy": {
             "anyOf": [

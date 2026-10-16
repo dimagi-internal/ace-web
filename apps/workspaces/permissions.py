@@ -40,7 +40,7 @@ capability            minimum    what it protects
 ``members.manage``    admin      invite, change and remove members — strictly
                                  BELOW your own role (`may_manage_member`)
 ``own``               owner      the keys: workspace settings (name, Drive
-                                 root, auto-join domains, default tenancy),
+                                 root, default tenancy),
                                  per-opp tenancy, cloning and releasing runs,
                                  the resume-interrupted sweep
 ====================  =========  =============================================
@@ -89,8 +89,8 @@ MEMBERS_MANAGE = "members.manage"
 
 # --- owner: the keys --------------------------------------------------------------
 
-#: The workspace's keys: its settings (name, Drive root folder, auto-join
-#: domains, default tenancy), per-opp tenancy (where ACE may write), cloning
+#: The workspace's keys: its settings (name, Drive root folder, default
+#: tenancy), per-opp tenancy (where ACE may write), cloning
 #: and releasing runs into other workspaces, and the resume-interrupted sweep.
 #: An ADMIN holds none of this: running a workspace is not holding its keys.
 OWN = "own"
@@ -110,7 +110,7 @@ MINIMUM_ROLE: dict[str, str] = {
 ROLES: tuple[str, ...] = tuple(sorted(_M.ROLE_RANK, key=_M.ROLE_RANK.__getitem__, reverse=True))
 
 #: The role a membership gets when a caller does not say (an invite with no
-#: role, an auto-join). Editor: may review and edit, holds no keys.
+#: role). Editor: may review and edit, holds no keys.
 DEFAULT_ROLE = _M.EDITOR
 
 
