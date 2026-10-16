@@ -15,6 +15,10 @@ const WORKSPACE_NAV = [
   { label: "Sessions", subPath: "sessions" },
   { label: "Chat", subPath: "chat" },
   { label: "Videos", subPath: "videos" },
+  // The workspace's settings: members, roles, invites, Drive folder,
+  // auto-join domains, audit log. Only reachable inside a workspace, so it
+  // has no bare-path fallback.
+  { label: "Settings", subPath: "workspace-settings", workspaceOnly: true },
 ];
 
 // One presence socket per tab, mounted here (TopNav persists across
@@ -78,7 +82,7 @@ export function TopNav() {
           the header — workspace switcher lives in the right cluster
           since for most users it's near-static. */}
       <div className="flex items-center gap-4">
-        {WORKSPACE_NAV.map((item) => {
+        {WORKSPACE_NAV.filter((item) => slug || !item.workspaceOnly).map((item) => {
           const target = slug ? `/w/${slug}/${item.subPath}` : `/${item.subPath}`;
           const isActive = pathname.includes(`/${item.subPath}`);
           return (
