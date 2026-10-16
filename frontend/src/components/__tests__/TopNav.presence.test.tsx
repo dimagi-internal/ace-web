@@ -97,3 +97,14 @@ describe("TopNav presence badge — never takes the app down", () => {
     expect(mocks.usePresence).toHaveBeenCalledWith(expect.objectContaining({ location: null }));
   });
 });
+
+describe("TopNav workspace links", () => {
+  it("links to the workspace's settings page", () => {
+    renderAt("/w/ws/opps");
+
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/w/ws/workspace-settings",
+    );
+  });
+});
