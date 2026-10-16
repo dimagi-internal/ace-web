@@ -203,9 +203,25 @@ PASSWORD_RESET_TIMEOUT = env.int("ACE_PASSWORD_RESET_TIMEOUT_SECONDS", default=3
 # every send), and a reset form that silently drops its email is worse than
 # no form. Turn on only together with EMAIL_URL — see docs/auth.md.
 ACE_PASSWORD_RESET_ENABLED = env.bool("ACE_PASSWORD_RESET_ENABLED", default=False)
+# Outbound mail on labs goes through SES's API as the ECS task role — no keys.
+# The shared task role already holds ses:SendEmail on the labs.connect.dimagi.com
+# identity + the labs-jj-email configuration set (connect-labs
+# infra/labs-email.yml, policy labs-ses-send), so the From address MUST be on
+# that domain: SES refuses any other sender. The configuration set routes
+# bounces/complaints to the labs-jj-email-events SNS topic.
+ACE_EMAIL_ENABLED = env.bool("ACE_EMAIL_ENABLED", default=False)
+ACE_SES_REGION = env("ACE_SES_REGION", default=env("AWS_REGION", default="us-east-1"))
+ACE_SES_CONFIGURATION_SET = env("ACE_SES_CONFIGURATION_SET", default="labs-jj-email")
 # e.g. EMAIL_URL=smtps://user:pass@email-smtp.us-east-1.amazonaws.com:465  (SES SMTP)
 _email_url = env("EMAIL_URL", default="")
-if _email_url:
+if ACE_EMAIL_ENABLED:
+    INSTALLED_APPS += ["anymail"]
+    EMAIL_BACKEND = "anymail.backends.amazon_ses.EmailBackend"
+    ANYMAIL = {
+        "AMAZON_SES_CLIENT_PARAMS": {"region_name": ACE_SES_REGION},
+        "AMAZON_SES_CONFIGURATION_SET_NAME": ACE_SES_CONFIGURATION_SET,
+    }
+elif _email_url:
     EMAIL_CONFIG = env.email_url("EMAIL_URL")
     EMAIL_BACKEND = EMAIL_CONFIG["EMAIL_BACKEND"]
     EMAIL_HOST = EMAIL_CONFIG.get("EMAIL_HOST", "")
@@ -217,7 +233,11 @@ if _email_url:
 else:
     # Nothing configured: fail LOUDLY into the log instead of trying SMTP.
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ace-web <ace@dimagi-ai.com>")
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL",
+    default="ACE <noreply@labs.connect.dimagi.com>" if ACE_EMAIL_ENABLED
+    else "ace-web <ace@dimagi-ai.com>",
+)
 
 # Brute-force ceilings on the password endpoints (apps/common/rate_limit.py:
 # fixed window on the cache, fails open). Per client address AND per target

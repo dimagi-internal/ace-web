@@ -16,6 +16,7 @@ from apps.api.errors import (
     ProblemError,
 )
 
+from .invite_email import send_invite_email
 from .schemas import (
     InviteAcceptOut,
     InvitePreviewOut,
@@ -481,14 +482,23 @@ def invite_member_to_workspace(workspace, inviter, email: str, role: str) -> dic
         email=email,
         role=role,
         invited_by=inviter,
-        expires_at=timezone.now() + timedelta(days=14),
+        expires_at=timezone.now() + timedelta(days=INVITE_TTL_DAYS),
     )
+    return _invite_out(invite, send_invite_email(invite, inviter))
+
+
+INVITE_TTL_DAYS = 14
+
+
+def _invite_out(invite, email_sent: bool) -> dict:
     return {
         "token": invite.token,
         "email": invite.email,
         "role": invite.role,
         "accepted": False,
         "accepted_at": None,
+        "expires_at": invite.expires_at,
+        "email_sent": email_sent,
         "created_at": invite.created_at,
         "updated_at": invite.created_at,
     }
@@ -533,6 +543,7 @@ def list_pending_invites(workspace, user) -> list[dict]:
     )
     return [
         {
+            "id": i.id,
             "email": i.email,
             "role": i.role,
             "invited_by_email": i.invited_by.email if i.invited_by_id else "",
@@ -552,8 +563,8 @@ def list_invites(
     request: HttpRequest,
     slug: Annotated[str, Path()],
 ) -> HttpResponse:
-    """Invites nobody has accepted, revoked or let expire. No tokens: an invite
-    link is shown once, to whoever created it."""
+    """Invites nobody has accepted, revoked or let expire. No tokens: a link is
+    shown only to whoever creates or resends that invite."""
     from django.http import JsonResponse
 
     from apps.api.deps import resolve_workspace_for_member
@@ -562,6 +573,52 @@ def list_invites(
     rows = list_pending_invites(ws, request.user)
     payload = [WorkspacePendingInviteOut.model_validate(r).model_dump(mode="json") for r in rows]
     return JsonResponse(payload, safe=False)
+
+
+# ---------------------------------------------------------------------------
+# POST /workspaces/{slug}/invites/{invite_id}/resend — email the link again
+# ---------------------------------------------------------------------------
+
+
+def resend_workspace_invite(workspace, requester, invite_id: int) -> dict:
+    """Email a pending invite's link again, with a fresh expiry. Same link:
+    the token is not rotated, so a copy already shared keeps working."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.workspaces import permissions as perms
+
+    _require(workspace, requester, perms.MEMBERS_MANAGE, "Admin or owner required")
+    invite = (
+        workspace.invites.filter(id=invite_id, accepted_at__isnull=True, revoked_at__isnull=True)
+        .first()
+    )
+    if invite is None:
+        raise ProblemError(404, "Invite not found", type_=TYPE_NOT_FOUND)
+    _require_may_manage(workspace, requester, None, invite.role)
+    invite.expires_at = timezone.now() + timedelta(days=INVITE_TTL_DAYS)
+    invite.save(update_fields=["expires_at"])
+    return _invite_out(invite, send_invite_email(invite, requester))
+
+
+@router.post(
+    "/{slug}/invites/{invite_id}/resend",
+    response={200: WorkspaceInviteOut},
+    summary="Resend an invite email (admin and above)",
+)
+def resend_invite(
+    request: HttpRequest,
+    slug: Annotated[str, Path()],
+    invite_id: Annotated[int, Path()],
+) -> HttpResponse:
+    from django.http import JsonResponse
+
+    from apps.api.deps import resolve_workspace_for_member
+
+    ws = resolve_workspace_for_member(request, slug)
+    result = resend_workspace_invite(ws, request.user, invite_id)
+    return JsonResponse(WorkspaceInviteOut.model_validate(result).model_dump(mode="json"))
 
 
 # ---------------------------------------------------------------------------

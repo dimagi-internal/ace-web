@@ -21,6 +21,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "dimagi-canopy", extra = ["django", "ondemand"] },
     { name = "django" },
+    { name = "django-anymail", extra = ["amazon-ses"] },
     { name = "django-cryptography-django5" },
     { name = "django-environ" },
     { name = "django-ninja" },
@@ -67,6 +68,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=42" },
     { name = "dimagi-canopy", extras = ["django", "ondemand"], git = "https://github.com/dimagi-internal/canopy-web.git?subdirectory=sdk%2Fpython&tag=dimagi-canopy-v0.7.2" },
     { name = "django", specifier = ">=5.0,<6.0" },
+    { name = "django-anymail", extras = ["amazon-ses"], specifier = ">=12" },
     { name = "django-cryptography-django5", specifier = ">=2.2" },
     { name = "django-environ", specifier = ">=0.11" },
     { name = "django-ninja", specifier = ">=1.3,<2.0" },
@@ -695,6 +697,26 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1f/c5/c69e338eb2959f641045802e5ea87ca4bf5ac90c5fd08953ca10742fad51/django-5.2.13.tar.gz", hash = "sha256:a31589db5188d074c63f0945c3888fad104627dfcc236fb2b97f71f89da33bc4", size = 10890368, upload-time = "2026-04-07T14:02:15.072Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/59/b1/51ab36b2eefcf8cdb9338c7188668a157e29e30306bfc98a379704c9e10d/django-5.2.13-py3-none-any.whl", hash = "sha256:5788fce61da23788a8ce6f02583765ab060d396720924789f97fa42119d37f7a", size = 8310982, upload-time = "2026-04-07T14:02:08.883Z" },
+]
+
+[[package]]
+name = "django-anymail"
+version = "15.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "idna" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/69/c4e075a39e69efc928ad63e2cad9b720c6414d9faf9b90d2342207a8feb8/django_anymail-15.1.tar.gz", hash = "sha256:299fb12a21ac4101e9706c2ade461d18deacbb6bc3750cfa6ca08aeea1fc9442", size = 107700, upload-time = "2026-07-30T22:30:27.794Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/bb/3fbac63312c87620986ac00c7b27d11ef1a7c07ffb5718ca5bd5c60e2f5f/django_anymail-15.1-py3-none-any.whl", hash = "sha256:cb482b0e2b0aea665c83d49e3f13bb0673210aa0de285b1748a3b5e6277fc826", size = 147352, upload-time = "2026-07-30T22:30:26.359Z" },
+]
+
+[package.optional-dependencies]
+amazon-ses = [
+    { name = "boto3" },
 ]
 
 [[package]]

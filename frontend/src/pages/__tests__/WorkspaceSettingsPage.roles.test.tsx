@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -44,6 +44,7 @@ function renderAs(role: WorkspaceRole) {
   vi.spyOn(wsApi, "listActivity").mockResolvedValue([]);
   const invites = vi.spyOn(wsApi, "listPendingInvites").mockResolvedValue([
     {
+      id: 7,
       email: "anne@sparkmicrogrants.org",
       role: "editor",
       invited_by_email: "ace@dimagi-ai.com",
@@ -100,5 +101,39 @@ describe("WorkspaceSettingsPage roles", () => {
     expect(screen.getByText("Viewer").getAttribute("title")).toBe("Can view.");
     expect(screen.getByText("Admin")).toBeTruthy();
     expect(invites).not.toHaveBeenCalled();
+  });
+
+  it("resends a pending invite and says it was emailed", async () => {
+    const resend = vi.spyOn(wsApi, "resendInvite").mockResolvedValue({
+      token: "t",
+      email: "anne@sparkmicrogrants.org",
+      role: "editor",
+      expires_at: "2026-10-29T00:00:00Z",
+      accept_url: "/invite/t",
+      email_sent: true,
+    });
+    renderAs("owner");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resend" }));
+
+    expect(await screen.findByRole("button", { name: "Sent" })).toBeInTheDocument();
+    expect(resend).toHaveBeenCalledWith("spark", 7);
+  });
+
+  it("shows the link to copy when a resend could not be emailed", async () => {
+    vi.spyOn(wsApi, "resendInvite").mockResolvedValue({
+      token: "t",
+      email: "anne@sparkmicrogrants.org",
+      role: "editor",
+      expires_at: "2026-10-29T00:00:00Z",
+      accept_url: "/invite/t",
+      email_sent: false,
+    });
+    renderAs("owner");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resend" }));
+
+    expect(await screen.findByText(/send this link yourself/)).toBeInTheDocument();
+    expect(screen.getByText(/\/ace\/invite\/t$/)).toBeInTheDocument();
   });
 });

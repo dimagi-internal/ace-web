@@ -4578,7 +4578,53 @@
             }
           }
         },
-        "description": "Invites nobody has accepted, revoked or let expire. No tokens: an invite\nlink is shown once, to whoever created it.",
+        "description": "Invites nobody has accepted, revoked or let expire. No tokens: a link is\nshown only to whoever creates or resends that invite.",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{slug}/invites/{invite_id}/resend": {
+      "post": {
+        "operationId": "apps_workspaces_api_resend_invite",
+        "summary": "Resend an invite email (admin and above)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "invite_id",
+            "schema": {
+              "title": "Invite Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInviteOut"
+                }
+              }
+            }
+          }
+        },
         "tags": [
           "workspaces"
         ],
@@ -9254,6 +9300,23 @@
               }
             ],
             "title": "Accepted At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "email_sent": {
+            "default": false,
+            "title": "Email Sent",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9298,6 +9361,10 @@
         "additionalProperties": false,
         "description": "GET /api/workspaces/{slug}/invites \u2014 one invite nobody has acted on.",
         "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -9328,6 +9395,7 @@
           }
         },
         "required": [
+          "id",
           "email",
           "role",
           "invited_by_email",

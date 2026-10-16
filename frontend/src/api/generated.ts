@@ -1532,12 +1532,29 @@ export interface paths {
         };
         /**
          * List pending invites (admin and above)
-         * @description Invites nobody has accepted, revoked or let expire. No tokens: an invite
-         *     link is shown once, to whoever created it.
+         * @description Invites nobody has accepted, revoked or let expire. No tokens: a link is
+         *     shown only to whoever creates or resends that invite.
          */
         readonly get: operations["apps_workspaces_api_list_invites"];
         readonly put?: never;
         readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/workspaces/{slug}/invites/{invite_id}/resend": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Resend an invite email (admin and above) */
+        readonly post: operations["apps_workspaces_api_resend_invite"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -3548,6 +3565,13 @@ export interface components {
             readonly accepted: boolean;
             /** Accepted At */
             readonly accepted_at?: string | null;
+            /** Expires At */
+            readonly expires_at?: string | null;
+            /**
+             * Email Sent
+             * @default false
+             */
+            readonly email_sent: boolean;
         };
         /** WorkspaceInviteIn */
         readonly WorkspaceInviteIn: {
@@ -3564,6 +3588,8 @@ export interface components {
          * @description GET /api/workspaces/{slug}/invites — one invite nobody has acted on.
          */
         readonly WorkspacePendingInviteOut: {
+            /** Id */
+            readonly id: number;
             /** Email */
             readonly email: string;
             /**
@@ -6689,6 +6715,29 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": readonly components["schemas"]["WorkspacePendingInviteOut"][];
+                };
+            };
+        };
+    };
+    readonly apps_workspaces_api_resend_invite: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly slug: string;
+                readonly invite_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkspaceInviteOut"];
                 };
             };
         };

@@ -206,9 +206,13 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   A Connect-first user adds a password or Google later from `/auth/account/`
   (same `User`; Google needs a verified email equal to the account's). Brute
   force: `apps/common/rate_limit.py` per address AND per email on login/reset.
+  **Outbound email** is SES via django-anymail as the ECS task role
+  (`ACE_EMAIL_ENABLED`; From must be `@labs.connect.dimagi.com`, the identity
+  connect-labs' `labs-ses-send` policy covers — see `docs/auth.md`). It sends
+  workspace invite links on invite and on **Resend**
+  (`apps/workspaces/invite_email.py`); a failed send never fails the invite.
   **Password reset is behind `ACE_PASSWORD_RESET_ENABLED` (default off)** —
-  prod has no mail backend yet; it must not answer differently for unknown
-  addresses. PATs are untouched (`PersonalToken`, Bearer middleware,
+  still off; it must not answer differently for unknown addresses. PATs are untouched (`PersonalToken`, Bearer middleware,
   `/auth/cli/authorize/` — a password session can authorize a CLI token, which
   is how agents get a token without an HQ account). The login and invite
   pages are deliberately bare (2026-10-13): a "Sign in with Connect" button with the
