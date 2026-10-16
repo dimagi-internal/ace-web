@@ -185,8 +185,8 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `oauth.py`, ported from connect-labs; NOT django-allauth, authlib not
   adopted either). All three end in **one module, `apps/auth/identity.py`**:
   `admit` → `resolve_user` (one `User` per person, matched by email
-  case-insensitively) → `start_session` (`login()`, which rotates the session,
-  then auto-join-by-domain). Never reimplement those in a method's view;
+  case-insensitively) → `start_session` (`login()`, which rotates the session).
+  Never reimplement those in a method's view;
   *enforced:* `apps/auth/tests/test_admission_parity.py` runs every admission
   rule through all three real views. Tenant-unique session cookies
   (`sessionid_ace`, `csrftoken_ace`) path-scoped (`/ace/`) to avoid collisions
@@ -255,18 +255,14 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `ACE_DRIVE_ROOT_FOLDER_ID`; after that the env var is no longer read at runtime.
   URL structure: `/w/<slug>/opps/`, `/w/<slug>/sessions/`, etc. Onboarding wizard
   at `/welcome`, invites at `/invite/<token>`, settings at
-  `/w/<slug>/workspace-settings`. **Auto-join via domain match (PR #523):**
-  `Workspace.auto_join_domains` (JSONField, lowercased) — on every OAuth callback,
-  users whose email domain matches a workspace's list are added
-  as Editor (idempotent; never downgrades). `dimagi-team` is seeded with
-  `[dimagi.com, dimagi-ai.com]` (migration 0004) plus `dimagi-associate.com`
-  (migration 0006, append-only) so Dimagi staff and associate sign-ins land
-  inside the workspace instead of the empty `/welcome` wizard. Owners can edit
-  the list via `PATCH /api/workspaces/{slug}` or the Workspace Settings page —
-  so **new auto-join migrations must APPEND, never overwrite** (0004's
-  wholesale-set style predates the editable UI and would clobber operator
-  edits). The auto-join role is hard-coded `editor` in
-  `apps/workspaces/auto_join.py`; it is not per-domain. Spec:
+  `/w/<slug>/workspace-settings` (the **Settings** item in the top nav).
+  **There is no join-by-domain:** workspace access comes ONLY from an invite
+  (emailed, resendable) or an explicit membership. Auto-join
+  (`Workspace.auto_join_domains`) was retired in migration 0013; being admitted
+  by `ACE_ALLOWED_EMAIL_DOMAINS` lets a person sign in, it never puts them in a
+  workspace — a new Dimagi sign-in with no invite lands on `/welcome`.
+  *Enforced:* `test_admission_parity.py::test_domain_admission_joins_no_workspace`.
+  Spec:
   `docs/specs/2026-04-27-multi-tenant-workspaces-design.md`.
 - **Automation auth on labs — Bearer PAT**: scripted tools authenticate with
   `Authorization: Bearer $ACE_WEB_PAT_TOKEN`. Per-human tokens are minted via

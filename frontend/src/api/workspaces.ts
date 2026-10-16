@@ -101,7 +101,6 @@ export async function updateWorkspace(
   input: {
     name?: string;
     drive_root_folder_id?: string;
-    auto_join_domains?: string[];
     // Merged into the default tenancy; null clears a key (apps/opps/tenancy.py).
     default_tenancy?: Record<string, unknown>;
   },

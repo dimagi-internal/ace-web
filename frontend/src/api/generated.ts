@@ -3480,8 +3480,6 @@ export interface components {
             readonly role: "owner" | "admin" | "editor" | "viewer";
             /** Member Count */
             readonly member_count: number;
-            /** Auto Join Domains */
-            readonly auto_join_domains?: readonly string[];
             /** Default Tenancy */
             readonly default_tenancy?: {
                 readonly [key: string]: unknown;
@@ -3502,8 +3500,6 @@ export interface components {
             readonly name?: string | null;
             /** Drive Root Folder Id */
             readonly drive_root_folder_id?: string | null;
-            /** Auto Join Domains */
-            readonly auto_join_domains?: readonly string[] | null;
             /** Default Tenancy */
             readonly default_tenancy?: {
                 readonly [key: string]: unknown;

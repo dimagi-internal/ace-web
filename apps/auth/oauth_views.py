@@ -209,8 +209,8 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     request.session.pop("oauth_state", None)
     request.session.pop("oauth_code_verifier", None)
 
-    # Admission, linking (by email, case-insensitive), session and auto-join
-    # are the SAME code for every sign-in method — apps/auth/identity.py.
+    # Admission, linking (by email, case-insensitive) and the session are
+    # the SAME code for every sign-in method — apps/auth/identity.py.
     user, refusal = identity.sign_in(
         request, email, method=identity.METHOD_CONNECT,
         display_name=display_name, update_display_name=True,

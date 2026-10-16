@@ -73,50 +73,10 @@ def _workspace_to_dict(ws, requesting_user) -> dict:
         "drive_root_folder_id": ws.drive_root_folder_id,
         "role": role_for(requesting_user, ws) or "viewer",
         "member_count": ws.memberships.count(),
-        "auto_join_domains": list(ws.auto_join_domains or []),
         "default_tenancy": dict(ws.default_tenancy or {}),
         "created_at": ws.created_at,
         "updated_at": ws.updated_at,
     }
-
-
-_DOMAIN_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$")
-
-
-def _normalize_auto_join_domains(raw) -> list[str]:
-    """Lowercase, strip leading '@', dedupe, validate as DNS-ish domains.
-
-    Raises ProblemError(400) on any entry that doesn't look like a domain.
-    """
-    if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raise ProblemError(
-            400, "auto_join_domains must be a list of strings", type_=TYPE_VALIDATION
-        )
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in raw:
-        if not isinstance(item, str):
-            raise ProblemError(
-                400,
-                "auto_join_domains entries must be strings",
-                type_=TYPE_VALIDATION,
-            )
-        d = item.strip().lower().lstrip("@")
-        if not d:
-            continue
-        if not _DOMAIN_RE.match(d):
-            raise ProblemError(
-                400,
-                f"{item!r} is not a valid domain",
-                type_=TYPE_VALIDATION,
-            )
-        if d in seen:
-            continue
-        seen.add(d)
-        out.append(d)
-    return out
 
 
 def _membership_to_dict(membership) -> dict:
@@ -378,9 +338,6 @@ def patch_workspace(user, slug: str, updates: dict) -> dict:
         if folder_id:
             ws.drive_root_folder_id = folder_id
             changed.append("drive_root_folder_id")
-    if "auto_join_domains" in updates:
-        ws.auto_join_domains = _normalize_auto_join_domains(updates["auto_join_domains"])
-        changed.append("auto_join_domains")
     if updates.get("default_tenancy") is not None:
         _set_default_tenancy(ws, user, updates["default_tenancy"])
         changed.append("default_tenancy")
@@ -411,9 +368,6 @@ def update_workspace(
         if folder_id:
             ws.drive_root_folder_id = folder_id
             changed.append("drive_root_folder_id")
-    if "auto_join_domains" in updates:
-        ws.auto_join_domains = _normalize_auto_join_domains(updates["auto_join_domains"])
-        changed.append("auto_join_domains")
     if updates.get("default_tenancy") is not None:
         _set_default_tenancy(ws, request.user, updates["default_tenancy"])
         changed.append("default_tenancy")

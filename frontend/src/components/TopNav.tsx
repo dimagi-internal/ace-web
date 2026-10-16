@@ -16,7 +16,7 @@ const WORKSPACE_NAV = [
   { label: "Chat", subPath: "chat" },
   { label: "Videos", subPath: "videos" },
   // The workspace's settings: members, roles, invites, Drive folder,
-  // auto-join domains, audit log. Only reachable inside a workspace, so it
+  // default tenancy, audit log. Only reachable inside a workspace, so it
   // has no bare-path fallback.
   { label: "Settings", subPath: "workspace-settings", workspaceOnly: true },
 ];
