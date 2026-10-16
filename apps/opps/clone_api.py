@@ -54,6 +54,8 @@ class RunCloneOut(StrictModel):
     run_id: str
     status: str
     files_copied: int
+    # Of files_copied, how many were adopted from the errored attempt this resumed.
+    files_resumed: int = 0
     error: str
     created_by: str | None
     created_at: dt.datetime
@@ -71,6 +73,7 @@ def _out(c) -> dict:
             "run_id": c.run_id,
             "status": c.status,
             "files_copied": c.files_copied,
+            "files_resumed": c.files_resumed,
             "error": c.error,
             "created_by": c.created_by.email if c.created_by else None,
             "created_at": c.created_at,

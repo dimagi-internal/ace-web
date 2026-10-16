@@ -584,3 +584,272 @@ def test_binaries_and_other_google_types_are_not_read(drive, source_ws, target_w
               opp_slug="spark-facilitator", run_id=RUN, owner=owner)
     assert "shot.png" not in read and "Training Deck" not in read
     assert "guide.md" in read
+
+
+# --- resumable, look-then-retry, pooled copies (ace-web#864) -----------------
+#
+# Clone record 3 died at files_copied 851 (~25 min in) on ONE Drive 500, and
+# the re-POST trashed the partial target and restarted from file 0.
+
+ALL_FILES = [  # every file a clone of RUN brings, in traversal order
+    "DT/spark-facilitator/opp.yaml", "DT/spark-facilitator/pdd.md",
+    "DT/spark-facilitator/inputs/brief.md",
+    f"{SRC_RUN}/run_state.yaml", f"{SRC_RUN}/decisions.yaml",
+    f"{SRC_RUN}/6-qa-and-training/screenshots/s1.png",
+    f"{SRC_RUN}/6-qa-and-training/videos/v1.mp4",
+    f"{SRC_RUN}/6-qa-and-training/guide.md",
+    f"{SRC_RUN}/notes-unrecognised/x.md",
+    f"{SRC_RUN}/8-solicitation-management/solicitation.md",
+]
+GUIDE_PATH = f"{SRC_RUN}/6-qa-and-training/guide.md"
+
+
+def _http_error(status):
+    from unittest.mock import MagicMock
+
+    from googleapiclient.errors import HttpError
+
+    resp = MagicMock()
+    resp.status = status
+    resp.reason = "backendError"
+    return HttpError(resp, b'{"error": {"errors": [{"reason": "backendError"}]}}')
+
+
+@pytest.fixture
+def no_backoff(monkeypatch):
+    monkeypatch.setattr("apps.opps.run_cloner._sleep", lambda s: None)
+
+
+class _Spy:
+    """Wraps the fake's copy_file: records every call by source id, and lets a
+    test fail chosen sources. ``fail[src_id]`` is a list of outcomes consumed
+    per call (the last one sticks): a status raises that HttpError, ``None``
+    copies, ``"landed"`` applies the copy THEN raises a 500."""
+
+    def __init__(self, drive):
+        self.real = drive.copy_file
+        self.calls: list[str] = []
+        self.ok: list[str] = []
+        self.fail: dict[str, list] = {}
+        drive.copy_file = self
+
+    def __call__(self, file_id, parent, name=None):
+        self.calls.append(file_id)
+        plan = self.fail.get(file_id)
+        if plan:
+            what = plan.pop(0) if len(plan) > 1 else plan[0]
+            if what == "landed":
+                self.fail[file_id] = [None]
+                self.real(file_id, parent, name)
+                raise _http_error(500)
+            if what is not None:
+                raise _http_error(what)
+        new = self.real(file_id, parent, name)
+        self.ok.append(file_id)
+        return new
+
+
+def _clone(drive, source_ws, target_ws, owner):
+    return clone_run(drive=drive, source=source_ws, target=target_ws,
+                     opp_slug="spark-facilitator", run_id=RUN, owner=owner)
+
+
+def _dst_tree(drive, root="SPARK/spark-facilitator"):
+    return sorted(f.path for f in drive.list_files(drive.folder_id(root), recursive=True))
+
+
+@pytest.mark.parametrize("workers", [1, 8])
+def test_a_failed_clone_resumes_and_copies_only_what_is_missing(
+    monkeypatch, no_backoff, drive, source_ws, target_ws, owner, workers,
+):
+    from googleapiclient.errors import HttpError
+
+    from apps.opps import run_cloner
+
+    monkeypatch.setattr(run_cloner, "_COPY_WORKERS", workers)
+    src = _state_naming(drive, "6-qa-and-training/guide.md", "decisions.yaml",
+                        "8-solicitation-management/solicitation.md")
+    ids = [drive.file_id(p) for p in ALL_FILES]
+    guide = drive.file_id(GUIDE_PATH)
+    spy = _Spy(drive)
+    spy.fail[guide] = [500]  # permanent on the first clone
+
+    with pytest.raises(HttpError):
+        _clone(drive, source_ws, target_ws, owner)
+    first = RunClone.objects.get()
+    assert first.status == "error" and "500" in first.error
+    # Looked, then retried, a bounded number of times — never forever.
+    assert spy.calls.count(guide) == run_cloner._COPY_ATTEMPTS
+    done_first = list(spy.ok)
+    assert guide not in done_first
+    # The map of what landed is persisted for the next attempt.
+    assert set(done_first) <= set(first.id_map)
+    assert first.files_copied == len(done_first)
+    if workers == 1:  # serial: everything before the failure, nothing after
+        assert done_first == ids[:ids.index(guide)]
+
+    # Re-POST: resumes into the KEPT partial target.
+    spy.fail.clear()
+    spy.calls.clear()
+    spy.ok.clear()
+    folders = []
+    real_folder = drive.create_folder
+    drive.create_folder = lambda parent, name: folders.append(name) or real_folder(parent, name)
+    result = _clone(drive, source_ws, target_ws, owner)
+
+    # Only what was missing is copied — nothing the first attempt landed.
+    assert sorted(spy.calls) == sorted(set(ids) - set(done_first))
+    if workers == 1:
+        assert spy.calls == ids[ids.index(guide):]
+    assert folders == [], "every folder is reused, none duplicated"
+    second = RunClone.objects.order_by("pk").last()
+    assert second.status == "done"
+    assert result.files_copied == second.files_copied == len(ids)
+    assert result.files_resumed == second.files_resumed == len(done_first)
+    # Same tree a fresh clone makes — no duplicates, nothing missing.
+    assert _names(drive, DST_RUN) == [
+        "6-qa-and-training", "8-solicitation-management", "decisions.yaml",
+        "notes-unrecognised", "run_state.yaml",
+    ]
+    assert len([p for p in _dst_tree(drive)]) == len(ids)
+    # The rewrite ran over the FULL map: resumed (decisions) and new (guide,
+    # solicitation) copies alike.
+    text = drive.get_content(drive.file_id(f"{DST_RUN}/run_state.yaml"), "text/yaml").content
+    for rel in ("6-qa-and-training/guide.md", "decisions.yaml",
+                "8-solicitation-management/solicitation.md"):
+        assert _names_id(text, drive.file_id(f"{DST_RUN}/{rel}"))
+        assert not _names_id(text, src[rel])
+    assert set(second.id_map) >= set(ids)
+
+
+def test_resume_adopts_by_name_when_the_map_was_never_saved(
+    monkeypatch, no_backoff, drive, source_ws, target_ws, owner,
+):
+    # The worker died (stale `copying`) before its last progress save: the map
+    # knows nothing, but the copies are in the target folder.
+    from googleapiclient.errors import HttpError
+
+    from apps.opps import run_cloner
+
+    monkeypatch.setattr(run_cloner, "_COPY_WORKERS", 1)
+    ids = [drive.file_id(p) for p in ALL_FILES]
+    guide = drive.file_id(GUIDE_PATH)
+    spy = _Spy(drive)
+    spy.fail[guide] = [500]
+    with pytest.raises(HttpError):
+        _clone(drive, source_ws, target_ws, owner)
+    first = RunClone.objects.get()
+    RunClone.objects.filter(pk=first.pk).update(status="copying", id_map={})
+    _age(first, 30)
+
+    spy.fail.clear()
+    spy.calls.clear()
+    result = _clone(drive, source_ws, target_ws, owner)
+    first.refresh_from_db()
+    assert first.status == "error" and "abandoned" in first.error
+    assert spy.calls == ids[ids.index(guide):]
+    assert result.files_resumed == ids.index(guide)
+    assert len(_dst_tree(drive)) == len(ids)
+
+
+def test_a_transient_500_that_did_not_land_is_retried_in_the_same_clone(
+    no_backoff, drive, source_ws, target_ws, owner,
+):
+    guide = drive.file_id(GUIDE_PATH)
+    spy = _Spy(drive)
+    spy.fail[guide] = [503, None]
+    result = _clone(drive, source_ws, target_ws, owner)
+    assert RunClone.objects.get().status == "done"
+    assert spy.calls.count(guide) == 2
+    assert result.files_copied == len(ALL_FILES)
+    assert "guide.md" in _names(drive, f"{DST_RUN}/6-qa-and-training")
+
+
+def test_a_500_whose_copy_landed_is_adopted_not_duplicated(
+    no_backoff, drive, source_ws, target_ws, owner,
+):
+    src = _state_naming(drive, "6-qa-and-training/guide.md")
+    guide = drive.file_id(GUIDE_PATH)
+    spy = _Spy(drive)
+    spy.fail[guide] = ["landed"]
+    _clone(drive, source_ws, target_ws, owner)
+    # Looked first, found it, never copied again — no duplicate.
+    assert spy.calls.count(guide) == 1
+    landed = drive.file_id(f"{DST_RUN}/6-qa-and-training/guide.md")
+    clone = RunClone.objects.get()
+    assert clone.status == "done"
+    assert clone.id_map[guide] == landed
+    text = drive.get_content(drive.file_id(f"{DST_RUN}/run_state.yaml"), "text/yaml").content
+    assert _names_id(text, landed) and not _names_id(text, src["6-qa-and-training/guide.md"])
+
+
+def test_a_definite_error_is_not_retried(no_backoff, drive, source_ws, target_ws, owner):
+    from googleapiclient.errors import HttpError
+
+    guide = drive.file_id(GUIDE_PATH)
+    spy = _Spy(drive)
+    spy.fail[guide] = [403]
+    with pytest.raises(HttpError):
+        _clone(drive, source_ws, target_ws, owner)
+    assert spy.calls.count(guide) == 1
+
+
+def test_copies_run_concurrently_with_the_same_result_as_serial(
+    monkeypatch, drive, source_ws, target_ws, owner,
+):
+    import threading
+    import time
+
+    from apps.opps import run_cloner
+
+    # Serial baseline, on an identical drive (padded so its folder ids differ).
+    serial = FakeDriveClient.from_tree({"pad": {}, **_tree()})
+    monkeypatch.setattr(run_cloner, "_COPY_WORKERS", 1)
+    src2 = Workspace.objects.create(slug="dt-2", display_name="DT 2", created_by=owner,
+                                    drive_root_folder_id=serial.folder_id("DT"))
+    dst2 = Workspace.objects.create(slug="spark-2", display_name="Spark 2", created_by=owner,
+                                    drive_root_folder_id=serial.folder_id("SPARK"))
+    clone_run(drive=serial, source=src2, target=dst2, opp_slug="spark-facilitator",
+              run_id=RUN, owner=owner)
+
+    monkeypatch.setattr(run_cloner, "_COPY_WORKERS", 8)
+    lock = threading.Lock()
+    active = [0, 0]  # in flight now, most at once
+    real = drive.copy_file
+
+    def slow(file_id, parent, name=None):
+        with lock:
+            active[0] += 1
+            active[1] = max(active[1], active[0])
+        time.sleep(0.05)
+        try:
+            return real(file_id, parent, name)
+        finally:
+            with lock:
+                active[0] -= 1
+
+    drive.copy_file = slow
+    result = _clone(drive, source_ws, target_ws, owner)
+    assert active[1] > 1, "the pool copied more than one file at a time"
+    assert result.files_copied == len(ALL_FILES)
+    assert _dst_tree(drive) == _dst_tree(serial)
+
+
+def test_endpoint_reports_files_resumed(
+    monkeypatch, no_backoff, patched_drive, source_ws, target_ws, owner,
+):
+    from apps.opps import run_cloner
+
+    monkeypatch.setattr(run_cloner, "_COPY_WORKERS", 1)
+    spy = _Spy(patched_drive)
+    spy.fail[patched_drive.file_id(GUIDE_PATH)] = [500]
+    first = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    assert first.status_code == 500  # the copy runs inline here; live, it is a thread
+    assert RunClone.objects.get().status == "error"
+    spy.fail.clear()
+    again = _client(owner).post(URL, {"to_workspace": "spark"}, content_type="application/json")
+    assert again.status_code == 202
+    body = again.json()
+    assert body["status"] == "done"
+    assert body["files_copied"] == len(ALL_FILES)
+    assert body["files_resumed"] == ALL_FILES.index(GUIDE_PATH)

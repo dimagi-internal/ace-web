@@ -6732,6 +6732,11 @@
             "title": "Files Copied",
             "type": "integer"
           },
+          "files_resumed": {
+            "default": 0,
+            "title": "Files Resumed",
+            "type": "integer"
+          },
           "error": {
             "title": "Error",
             "type": "string"
