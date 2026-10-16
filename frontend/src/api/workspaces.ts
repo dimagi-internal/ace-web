@@ -15,6 +15,8 @@ export type WorkspaceMember = components["schemas"]["WorkspaceMemberOut"];
 export type WorkspaceRole = "owner" | "admin" | "editor" | "viewer";
 /** One invite nobody has accepted, revoked or let expire (admin and above). */
 export type PendingInvite = components["schemas"]["WorkspacePendingInviteOut"];
+/** An invite waiting for the signed-in user (`GET /api/invites/mine`). */
+export type MyPendingInvite = components["schemas"]["MyPendingInviteOut"];
 
 // ---------------------------------------------------------------------------
 // Types for endpoints not yet in the generated schema
@@ -203,6 +205,19 @@ export async function leaveWorkspace(slug: string): Promise<void> {
   if (!response.ok && response.status !== 204) {
     throw new Error(`Leave workspace failed: ${response.status}`);
   }
+}
+
+/**
+ * The signed-in user's own pending invites, optionally for one workspace.
+ * Only ever invites addressed to the caller, so it leaks nothing about
+ * workspaces they were not invited to.
+ */
+export async function listMyPendingInvites(workspaceSlug?: string): Promise<MyPendingInvite[]> {
+  const { data, error } = await apiClient.GET("/api/invites/mine", {
+    params: { query: workspaceSlug ? { workspace: workspaceSlug } : {} },
+  });
+  if (error) throw new Error((error as { title?: string }).title || "Failed to list your invites");
+  return data as MyPendingInvite[];
 }
 
 export async function getInvitePreview(token: string): Promise<InvitePreview> {

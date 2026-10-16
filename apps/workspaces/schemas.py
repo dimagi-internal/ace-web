@@ -83,6 +83,22 @@ class InvitePreviewOut(StrictModel):
     expires_at: dt.datetime
 
 
+class MyPendingInviteOut(StrictModel):
+    """GET /api/invites/mine — one pending invite addressed to the signed-in user.
+
+    Only ever the caller's own invites (matched on their email), so it reveals
+    nothing about workspaces they were not invited to."""
+
+    workspace_slug: str
+    workspace_display_name: str
+    role: WorkspaceRole
+    invited_by_email: str
+    expires_at: dt.datetime
+    # SPA path that redeems the invite (the same `/invite/<token>` the invite
+    # email links to), relative to the app's base path.
+    accept_url: str
+
+
 class InviteAcceptOut(StrictModel):
     """POST /api/invites/{token}/accept — accept an invite."""
 
