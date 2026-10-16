@@ -4808,6 +4808,55 @@
         ]
       }
     },
+    "/api/invites/mine": {
+      "get": {
+        "operationId": "apps_workspaces_api_my_pending_invites",
+        "summary": "My pending invites",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workspace",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyPendingInviteOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "description": "The signed-in user's own pending invites, optionally for one workspace.\n\nFeeds the no-access page (#911): a visitor who lands on a workspace they\nare not in sees an \"Accept invitation\" button when one is waiting for them.\nMatching on the caller's own email means this never confirms that a\nworkspace exists unless the caller was invited to it \u2014 workspace routes\nstill answer non-members with a plain 404 (`resolve_workspace_for_member`).",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/invites/{token}": {
       "get": {
         "operationId": "apps_workspaces_api_invite_preview",
@@ -9382,6 +9431,53 @@
           "expires_at"
         ],
         "title": "WorkspacePendingInviteOut",
+        "type": "object"
+      },
+      "MyPendingInviteOut": {
+        "additionalProperties": false,
+        "description": "GET /api/invites/mine \u2014 one pending invite addressed to the signed-in user.\n\nOnly ever the caller's own invites (matched on their email), so it reveals\nnothing about workspaces they were not invited to.",
+        "properties": {
+          "workspace_slug": {
+            "title": "Workspace Slug",
+            "type": "string"
+          },
+          "workspace_display_name": {
+            "title": "Workspace Display Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "invited_by_email": {
+            "title": "Invited By Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "accept_url": {
+            "title": "Accept Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_slug",
+          "workspace_display_name",
+          "role",
+          "invited_by_email",
+          "expires_at",
+          "accept_url"
+        ],
+        "title": "MyPendingInviteOut",
         "type": "object"
       },
       "InvitePreviewOut": {

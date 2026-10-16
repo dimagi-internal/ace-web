@@ -5,7 +5,7 @@ import re
 from typing import Annotated
 
 from django.http import HttpRequest, HttpResponse
-from ninja import Path, Router
+from ninja import Path, Query, Router
 
 from apps.api.auth import session_auth
 from apps.api.errors import (
@@ -20,6 +20,7 @@ from .invite_email import send_invite_email
 from .schemas import (
     InviteAcceptOut,
     InvitePreviewOut,
+    MyPendingInviteOut,
     WorkspaceCreateIn,
     WorkspaceInviteIn,
     WorkspaceInviteOut,
@@ -810,6 +811,61 @@ def change_member_role(
 # GET /invites/{token} — public invite preview (no auth required)
 # POST /invites/{token}/accept — accept invite (auth required)
 # ---------------------------------------------------------------------------
+
+
+# Declared before `/{token}` so "mine" never resolves as a token (tokens are
+# 48 random characters, so a real one cannot be "mine" either).
+@invites_router.get(
+    "/mine",
+    auth=session_auth,
+    response={200: list[MyPendingInviteOut]},
+    summary="My pending invites",
+)
+def my_pending_invites(
+    request: HttpRequest, workspace: Annotated[str | None, Query()] = None
+) -> HttpResponse:
+    """The signed-in user's own pending invites, optionally for one workspace.
+
+    Feeds the no-access page (#911): a visitor who lands on a workspace they
+    are not in sees an "Accept invitation" button when one is waiting for them.
+    Matching on the caller's own email means this never confirms that a
+    workspace exists unless the caller was invited to it — workspace routes
+    still answer non-members with a plain 404 (`resolve_workspace_for_member`).
+    """
+    from django.http import JsonResponse
+    from django.utils import timezone
+
+    from apps.workspaces.models import WorkspaceInvite
+
+    email = (request.user.email or "").strip()
+    if not email:
+        return JsonResponse([], safe=False)
+    invites = (
+        WorkspaceInvite.objects.select_related("workspace", "invited_by")
+        .filter(
+            email__iexact=email,
+            accepted_at__isnull=True,
+            revoked_at__isnull=True,
+            expires_at__gt=timezone.now(),
+        )
+        .order_by("-created_at")
+    )
+    if workspace:
+        invites = invites.filter(workspace__slug=workspace)
+    payload = [
+        MyPendingInviteOut.model_validate(
+            {
+                "workspace_slug": invite.workspace.slug,
+                "workspace_display_name": invite.workspace.display_name,
+                "role": invite.role,
+                "invited_by_email": invite.invited_by.email if invite.invited_by_id else "",
+                "expires_at": invite.expires_at,
+                "accept_url": f"/invite/{invite.token}",
+            }
+        ).model_dump(mode="json")
+        for invite in invites
+    ]
+    return JsonResponse(payload, safe=False)
 
 
 @invites_router.get(

@@ -1630,6 +1630,32 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/invites/mine": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * My pending invites
+         * @description The signed-in user's own pending invites, optionally for one workspace.
+         *
+         *     Feeds the no-access page (#911): a visitor who lands on a workspace they
+         *     are not in sees an "Accept invitation" button when one is waiting for them.
+         *     Matching on the caller's own email means this never confirms that a
+         *     workspace exists unless the caller was invited to it — workspace routes
+         *     still answer non-members with a plain 404 (`resolve_workspace_for_member`).
+         */
+        readonly get: operations["apps_workspaces_api_my_pending_invites"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/invites/{token}": {
         readonly parameters: {
             readonly query?: never;
@@ -3605,6 +3631,33 @@ export interface components {
              * Format: date-time
              */
             readonly expires_at: string;
+        };
+        /**
+         * MyPendingInviteOut
+         * @description GET /api/invites/mine — one pending invite addressed to the signed-in user.
+         *
+         *     Only ever the caller's own invites (matched on their email), so it reveals
+         *     nothing about workspaces they were not invited to.
+         */
+        readonly MyPendingInviteOut: {
+            /** Workspace Slug */
+            readonly workspace_slug: string;
+            /** Workspace Display Name */
+            readonly workspace_display_name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            readonly role: "owner" | "admin" | "editor" | "viewer";
+            /** Invited By Email */
+            readonly invited_by_email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            readonly expires_at: string;
+            /** Accept Url */
+            readonly accept_url: string;
         };
         /**
          * InvitePreviewOut
@@ -6839,6 +6892,28 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_workspaces_api_my_pending_invites: {
+        readonly parameters: {
+            readonly query?: {
+                readonly workspace?: string | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": readonly components["schemas"]["MyPendingInviteOut"][];
+                };
             };
         };
     };

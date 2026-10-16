@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
 import { PublicLayout } from "./components/PublicLayout";
+import { WorkspaceAccessGate } from "./components/workspaces/WorkspaceAccessGate";
 import { AuthCliPage } from "./pages/AuthCliPage";
 import { CanopyChatRoutePage } from "./pages/ChatPage";
 import { ChatRedirectPage, LegacyChatSlugRedirect } from "./pages/ChatRedirectPage";
@@ -46,6 +47,9 @@ export const router = createBrowserRouter(
         // Workspace-scoped surface
         {
           path: "w/:workspaceSlug",
+          // Non-members get the no-access page (with their pending invite,
+          // if any) instead of each page's not-found copy — #911.
+          element: <WorkspaceAccessGate />,
           children: [
             { index: true, element: <Navigate to="opps" replace /> },
             { path: "activity", element: <WorkspaceActivityPage /> },
