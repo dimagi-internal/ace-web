@@ -202,6 +202,12 @@ Resources:
               Value: "dimagi.com,dimagi-ai.com,dimagi-associate.com"
             - Name: ACE_WEB_BASE_URL
               Value: "https://labs.connect.dimagi.com/ace"
+            # The 1Password vault ACE's .env.tpl reads (`op://${AGENT_VAULT}/…`
+            # since ace@7e683db6). canopy-web records it as ACE's op_vault; the
+            # entrypoint's `op inject` fails without it (#917). It must match
+            # what OP_SERVICE_ACCOUNT_TOKEN can see.
+            - Name: AGENT_VAULT
+              Value: "Agent-Ace"
             - Name: AWS_REGION
               Value: "us-east-1"
             # Outbound email (invite links) through SES's API as the task role.
