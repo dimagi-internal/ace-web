@@ -77,6 +77,7 @@ hq_domain: connect-ace-prod
 connect_pm_org: <slug>                # program-manager org (ACE is admin)
 connect_holding_org: <slug>           # org that holds the opportunity
 ocs_team: <slug>
+connect_program_ids: [<int>, ...]     # Connect programs this opp's runs act in (ace-web#914)
 # labs_allowed_domains was removed 2026-10-08: Labs keeps its own Dimagi-only default.
 ```
 
@@ -90,6 +91,16 @@ ocs_team: <slug>
   It must not live in a Drive file that ACE itself edits on every run.
 - **Reviewers are not part of tenancy.** Who may *see* the opp is the
   workspace member list, which ace-web already has.
+- **`connect_program_ids` is per opp only** (ace-web#914). It holds Connect's
+  integer program ids (= labs `program_id`), so ACE's guard can check
+  program-scoped labs writes — solicitations and supply-chain records, most of
+  which labs cannot delete. A workspace default may not carry it (every new opp
+  would inherit another opp's programs). Unset is ABSENT, never `[]`; a PATCH
+  replaces the list and `[]` clears it. It is filled two ways, both audited:
+  `manage.py backfill_connect_program_ids` copies each opp's
+  `opp.yaml.connect.program.connect_int_id` (fill-empty-only, dry run by
+  default), and ACE adds a program it has just created in the opp's PM org
+  (`bin/ace-bind --add-program`, an owner PATCH).
 - **A backfill gives existing opps their tenancy.** A data migration sets
   `dimagi-team`'s default, and every existing opp's tenancy, to today's `.env`
   values. ACE then stops reading those values from `.env`.

@@ -174,3 +174,165 @@ def test_default_is_copied_once_not_linked(owner, ws):
     ws.save()
     row.refresh_from_db()
     assert row.tenancy == {"hq_domain": "connect-ace-spark"}
+
+
+# --- connect_program_ids (ace-web#914) ------------------------------------
+#
+# ACE's tenancy guard checks every program-scoped labs write (solicitations,
+# supply chain) against this list, and labs keeps no delete for most
+# supply-chain records — so the shape is pinned here.
+
+
+def test_owner_sets_connect_program_ids_and_read_serves_them(owner, viewer, opp):
+    resp = _client(owner).patch(URL, {"connect_program_ids": [355, 308, 355]},
+                                content_type="application/json")
+    assert resp.status_code == 200, resp.content
+    # Deduped and sorted: one representation per set of programs.
+    assert resp.json()["tenancy"]["connect_program_ids"] == [308, 355]
+    assert _client(viewer).get(URL).json()["tenancy"]["connect_program_ids"] == [308, 355]
+    change = TenancyChange.objects.get()
+    assert change.after["connect_program_ids"] == [308, 355]
+
+
+def test_unset_connect_program_ids_is_absent_not_empty(viewer, opp):
+    """ACE reads an ABSENT key as "not set up"; the read must not invent []."""
+    assert "connect_program_ids" not in _client(viewer).get(URL).json()["tenancy"]
+
+
+@pytest.mark.parametrize("clear", [None, []])
+def test_null_or_empty_list_clears_connect_program_ids(owner, opp, clear):
+    _client(owner).patch(URL, {"connect_program_ids": [308]}, content_type="application/json")
+    resp = _client(owner).patch(URL, {"connect_program_ids": clear},
+                                content_type="application/json")
+    assert resp.status_code == 200, resp.content
+    assert "connect_program_ids" not in resp.json()["tenancy"]
+    opp.refresh_from_db()
+    assert "connect_program_ids" not in opp.tenancy
+
+
+def test_patch_replaces_the_program_list(owner, opp):
+    _client(owner).patch(URL, {"connect_program_ids": [308]}, content_type="application/json")
+    resp = _client(owner).patch(URL, {"connect_program_ids": [412]},
+                                content_type="application/json")
+    assert resp.json()["tenancy"]["connect_program_ids"] == [412]
+
+
+def test_unchanged_program_list_is_not_audited(owner, opp):
+    _client(owner).patch(URL, {"connect_program_ids": [308, 355]},
+                         content_type="application/json")
+    _client(owner).patch(URL, {"connect_program_ids": [355, 308]},
+                         content_type="application/json")
+    assert TenancyChange.objects.count() == 1
+
+
+@pytest.mark.parametrize("ids", [
+    [0], [-4], ["308"], [True], [1.5], "308", [{"id": 308}], list(range(1, 52)),
+])
+def test_patch_rejects_bad_program_ids(owner, opp, ids):
+    resp = _client(owner).patch(URL, {"connect_program_ids": ids},
+                                content_type="application/json")
+    assert resp.status_code in (400, 422), resp.content
+    assert not TenancyChange.objects.exists()
+
+
+def test_workspace_default_cannot_carry_program_ids(owner, ws):
+    """A program belongs to ONE opp; every new opp copies the default."""
+    resp = _client(owner).patch(
+        "/api/workspaces/spark", {"default_tenancy": {"connect_program_ids": [308]}},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    ws.refresh_from_db()
+    assert "connect_program_ids" not in ws.default_tenancy
+    assert not TenancyChange.objects.exists()
+
+
+# --- backfill from opp.yaml ---------------------------------------------
+
+
+def _drive(tree):
+    from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+
+    return FakeDriveClient.from_tree({"root": tree})
+
+
+def _ws_on(drive, ws):
+    ws.drive_root_folder_id = drive.folder_id("root")
+    ws.save(update_fields=["drive_root_folder_id"])
+    return ws
+
+
+PROGRAM_YAML = "slug: {slug}\nconnect:\n  program:\n    id: 7c1e\n    connect_int_id: {pid}\n"
+
+
+def test_backfill_dry_run_reports_and_writes_nothing(owner, ws, opp):
+    from apps.opps.tenancy_backfill import backfill_workspace
+
+    drive = _drive({
+        "spark-facilitator": {"opp.yaml": PROGRAM_YAML.format(slug="spark", pid=308)},
+        "pre-phase-4": {"opp.yaml": "slug: pre-phase-4\n"},
+        "_archive": {"opp.yaml": PROGRAM_YAML.format(slug="old", pid=9)},
+        "Projects": {"notes.md": "x"},
+    })
+    results = backfill_workspace(_ws_on(drive, ws), drive, apply=False)
+    assert {(r.slug, r.action) for r in results} == {
+        ("spark-facilitator", "would-set"), ("pre-phase-4", "no-program"),
+    }
+    opp.refresh_from_db()
+    assert "connect_program_ids" not in opp.tenancy
+    assert not TenancyChange.objects.exists()
+
+
+def test_backfill_apply_fills_empty_only_and_audits(owner, ws, opp):
+    from apps.opps.tenancy_backfill import backfill_workspace
+
+    OppWorkspace.objects.create(
+        workspace=ws, slug="owner-set", display_name="x", created_by=owner,
+        tenancy={"hq_domain": "h", "connect_program_ids": [500]},
+    )
+    drive = _drive({
+        "spark-facilitator": {"opp.yaml": PROGRAM_YAML.format(slug="spark", pid=308)},
+        "owner-set": {"opp.yaml": PROGRAM_YAML.format(slug="owner-set", pid=999)},
+        "drive-only": {"opp.yaml": PROGRAM_YAML.format(slug="drive-only", pid="'412'")},
+    })
+    results = {r.slug: r.action for r in
+               backfill_workspace(_ws_on(drive, ws), drive, apply=True, user=owner)}
+    assert results == {"spark-facilitator": "set", "owner-set": "already-set",
+                       "drive-only": "set"}
+    opp.refresh_from_db()
+    assert opp.tenancy == {"hq_domain": "connect-ace-spark", "ocs_team": "spark",
+                           "connect_program_ids": [308]}
+    # An owner's edit wins.
+    assert OppWorkspace.objects.get(slug="owner-set").tenancy["connect_program_ids"] == [500]
+    # A Drive-only opp gets a row seeded from the workspace default, like a PATCH.
+    assert OppWorkspace.objects.get(slug="drive-only").tenancy == {
+        "hq_domain": "connect-ace-spark", "connect_program_ids": [412],
+    }
+    assert TenancyChange.objects.filter(changed_by=owner).count() == 2
+    # Re-running is a no-op.
+    again = backfill_workspace(ws, drive, apply=True, user=owner)
+    assert {r.action for r in again} == {"already-set"}
+    assert TenancyChange.objects.count() == 2
+
+
+def test_backfill_apply_requires_an_attributed_user(ws):
+    from apps.opps.tenancy_backfill import backfill_workspace
+
+    drive = _drive({})
+    with pytest.raises(ValueError):
+        backfill_workspace(_ws_on(drive, ws), drive, apply=True)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ({"connect": {"program": {"connect_int_id": 308}}}, 308),
+    ({"connect": {"program": {"connect_int_id": "308"}}}, 308),
+    ({"connect": {"program": {"connect_int_id": 0}}}, None),
+    ({"connect": {"program": {"connect_int_id": True}}}, None),
+    ({"connect": {"program": {"id": "uuid-only"}}}, None),
+    ({"connect": {"program": "not-a-dict"}}, None),
+    ({}, None),
+])
+def test_program_id_from_opp_yaml(raw, expected):
+    from apps.opps.tenancy_backfill import program_id_from_opp_yaml
+
+    assert program_id_from_opp_yaml(raw) == expected

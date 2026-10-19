@@ -6696,6 +6696,22 @@
               }
             ],
             "title": "Ocs Team"
+          },
+          "connect_program_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connect Program Ids"
           }
         },
         "title": "Tenancy",

@@ -19,12 +19,20 @@ Spec: docs/specs/2026-09-28-clone-and-release-design.md § Tenancy, § B.
 from __future__ import annotations
 
 import re
+from typing import Annotated
 
-from pydantic import Field
+from pydantic import Field, StrictInt, field_validator
 
 from apps.common.schemas import StrictModel
 
 _SLUG = r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
+
+#: Tenancy fields that name ONE opp's own things, so a workspace default (which
+#: every new opp copies) may not carry them: copying would hand a new opp
+#: another opp's Connect programs.
+OPP_ONLY_FIELDS = frozenset({"connect_program_ids"})
+
+_ProgramId = Annotated[StrictInt, Field(gt=0)]
 
 
 class Tenancy(StrictModel):
@@ -35,6 +43,23 @@ class Tenancy(StrictModel):
     connect_pm_org: str | None = Field(default=None, max_length=64, pattern=_SLUG)
     connect_holding_org: str | None = Field(default=None, max_length=64, pattern=_SLUG)
     ocs_team: str | None = Field(default=None, max_length=64, pattern=_SLUG)
+    # The Connect programs this opp's runs act in, by Connect's INTEGER program
+    # id (= the labs `program_id`; ACE records it as
+    # `opp.yaml.connect.program.connect_int_id`). ACE's tenancy guard checks
+    # every program-scoped labs write (solicitations, supply chain) against it
+    # — labs keeps no delete for most supply-chain records, so a write into the
+    # wrong program cannot be undone (ace-web#914). A PATCH replaces the whole
+    # list; an empty list clears it, like null.
+    connect_program_ids: list[_ProgramId] | None = Field(default=None, max_length=50)
+
+    @field_validator("connect_program_ids")
+    @classmethod
+    def _dedupe_program_ids(cls, value: list[int] | None) -> list[int] | None:
+        # One representation per set of programs (so an unchanged list is not
+        # audited as a change), and [] means "not set up" — the same as absent.
+        if not value:
+            return None
+        return sorted(set(value))
 
 
 def clean(raw: dict | None) -> dict:

@@ -2567,6 +2567,8 @@ export interface components {
             readonly connect_holding_org?: string | null;
             /** Ocs Team */
             readonly ocs_team?: string | null;
+            /** Connect Program Ids */
+            readonly connect_program_ids?: readonly number[] | null;
         };
         /** RunCloneOut */
         readonly RunCloneOut: {
