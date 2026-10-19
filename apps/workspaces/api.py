@@ -100,6 +100,14 @@ def _set_default_tenancy(ws, user, raw: dict) -> None:
 
     from apps.opps import tenancy as tenancy_mod
 
+    opp_only = sorted(tenancy_mod.OPP_ONLY_FIELDS & set(raw))
+    if opp_only:
+        raise ProblemError(
+            400, "Invalid default_tenancy", type_=TYPE_VALIDATION,
+            detail=f"{', '.join(opp_only)} belongs to one opp, not a workspace default "
+            "(every new opp copies the default). Set it per opp with "
+            "PATCH /api/w/{ws}/opps/{slug}/tenancy.",
+        )
     before = tenancy_mod.clean(ws.default_tenancy)
     try:
         after = tenancy_mod.merge(before, raw)
