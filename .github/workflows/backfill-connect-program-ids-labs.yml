@@ -1,0 +1,130 @@
+name: Backfill connect_program_ids on Labs
+
+# Runs `python manage.py backfill_connect_program_ids` (ace-web#914) as a
+# one-off ECS task: fills each opp tenancy's `connect_program_ids` from its
+# opp.yaml `connect.program.connect_int_id`. Fill-empty-only and audited, so
+# it is safe to re-run. Dry run by default — the output (one line per opp
+# plus a summary) is printed from the task's logs either way.
+#
+# Same run-task pattern as sync-video-library-labs.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      workspace:
+        description: 'Workspace slug (blank = every workspace)'
+        type: string
+        required: false
+        default: 'dimagi-team'
+      apply:
+        description: 'Write the changes (unchecked = dry run)'
+        type: boolean
+        required: true
+        default: false
+      as_email:
+        description: 'ace-web user the changes are attributed to (required with apply)'
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  group: backfill-connect-program-ids-labs
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: labs-jj-cluster
+  TASK_FAMILY: labs-jj-ace-web
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  backfill:
+    name: Backfill connect_program_ids (${{ inputs.apply && 'apply' || 'dry run' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Build command
+        id: cmd
+        env:
+          WORKSPACE: ${{ inputs.workspace }}
+          APPLY: ${{ inputs.apply }}
+          AS_EMAIL: ${{ inputs.as_email }}
+        run: |
+          CMD='["python","manage.py","backfill_connect_program_ids"'
+          if [ -n "$WORKSPACE" ]; then
+            CMD="$CMD,\"--workspace\",\"$WORKSPACE\""
+          fi
+          if [ "$APPLY" = "true" ]; then
+            if [ -z "$AS_EMAIL" ]; then
+              echo "::error::apply needs as_email: every tenancy change is audited."
+              exit 1
+            fi
+            CMD="$CMD,\"--apply\",\"--as\",\"$AS_EMAIL\""
+          fi
+          CMD="$CMD]"
+          echo "command=$CMD" >> "$GITHUB_OUTPUT"
+          echo "::notice::Command: $CMD"
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve latest task definition
+        id: task-def
+        run: |
+          ARN=$(aws ecs describe-task-definition \
+            --task-definition "${{ env.TASK_FAMILY }}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "::notice::Using task definition $ARN"
+
+      - name: Run backfill_connect_program_ids
+        env:
+          COMMAND: ${{ steps.cmd.outputs.command }}
+        run: |
+          OVERRIDES=$(jq -nc --argjson cmd "$COMMAND" \
+            '{containerOverrides:[{name:"api",command:$cmd}]}')
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition "${{ steps.task-def.outputs.arn }}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.LABS_SUBNET }}],securityGroups=[${{ secrets.LABS_SECURITY_GROUP }}],assignPublicIp=ENABLED}" \
+            --overrides "$OVERRIDES" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Backfill task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[?name==`api`].exitCode | [0]' \
+            --output text)
+
+          # The command's per-opp lines are the point of a dry run, so print
+          # the task's logs on success too, not only on failure. The stream is
+          # <awslogs-stream-prefix>/<container>/<task-id> (deploy/aws/ace-web.cfn.yaml).
+          TASK_ID=$(basename "$TASK_ARN")
+          aws logs get-log-events \
+            --log-group-name "/ecs/${{ env.TASK_FAMILY }}" \
+            --log-stream-name "api/api/$TASK_ID" \
+            --start-from-head \
+            --query 'events[].message' \
+            --output text | tr '\t' '\n' | tail -300 || true
+
+          if [ "$EXIT_CODE" = "0" ]; then
+            echo "Backfill completed successfully."
+          else
+            echo "::error::Backfill failed (exit code $EXIT_CODE)."
+            exit 1
+          fi
