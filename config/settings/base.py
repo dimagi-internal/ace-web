@@ -1,5 +1,6 @@
 """Shared Django settings for ace-web."""
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import environ
 
@@ -120,18 +121,30 @@ CHANNEL_LAYERS = {
 }
 
 # --- Cache ---
-# Use the same Redis the Channel layer uses, namespaced under db=1 so a
-# cache flush doesn't blow away pub/sub state. Backing the Drive cache
+# Use the same Redis the Channel layer uses, on the NEXT db index so a
+# cache flush doesn't blow away pub/sub state: /0 -> /1 in dev, and in labs
+# (REDIS_URL ends /2 on the shared ElastiCache, where connect-labs owns /0
+# and canopy-web /1) the cache is /3. Backing the Drive cache
 # (apps/opps/drive_cache.py) with Redis (vs Django's default LocMem)
 # means consecutive page loads survive uvicorn `--reload` in dev and
 # any future multi-worker prod deploy.
 #
 # Falls back to LocMem when REDIS_URL is empty (test envs override this
 # in config/settings/test.py anyway).
+
+
+def _next_db_url(url: str) -> str:
+    """`url` with its db index + 1 (no index means 0). A `?db=` query wins
+    over the path in redis-py, so such a URL is left alone."""
+    parts = urlsplit(url)
+    if "db=" in parts.query:
+        return url
+    db = int(parts.path.strip("/") or 0)
+    return urlunsplit(parts._replace(path=f"/{db + 1}"))
+
+
 if REDIS_URL:
-    _cache_url = REDIS_URL
-    if "?db=" not in _cache_url and "/0" in _cache_url:  # pyright: ignore[reportOperatorIssue]
-        _cache_url = _cache_url.replace("/0", "/1", 1)
+    _cache_url = _next_db_url(REDIS_URL)  # pyright: ignore[reportArgumentType]
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",

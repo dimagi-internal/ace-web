@@ -52,7 +52,7 @@ You will be prompted for:
 |---|---|
 | Django secret key | `python -c 'import secrets; print(secrets.token_urlsafe(50))'` |
 | `DATABASE_URL` | Shared RDS endpoint + the new `ace_web` database name |
-| `REDIS_URL` | Shared ElastiCache primary endpoint: `redis://<endpoint>:6379/0` (see "Phase 3 Redis setup" below) |
+| `REDIS_URL` | Shared ElastiCache primary endpoint: `redis://<endpoint>:6379/2` (see "Phase 3 Redis setup" below) |
 | Connect OAuth client id + secret | Register at https://connect.dimagi.com/admin/oauth2_provider/application/ with callback `https://labs.connect.dimagi.com/ace/auth/callback/` |
 | VPC ID | `aws ec2 describe-vpcs --region us-east-1` |
 | ALB listener ARN | `aws elbv2 describe-listeners --load-balancer-arn <labs-alb-arn>` |
@@ -250,9 +250,11 @@ sourced from AWS Secrets Manager alongside `DATABASE_URL`.
   for presence HASH read/write (`apps/sessions/presence.py`) and draft
   state machine bookkeeping
 
-**Value shape:** `redis://<elasticache-primary-endpoint>:6379/0` — the
-shared labs ElastiCache cluster, DB index 0. If another labs tenant starts
-using the same cluster, move ace-web to a distinct DB index.
+**Value shape:** `redis://<elasticache-primary-endpoint>:6379/2` — the
+shared labs ElastiCache cluster (`labs-jj-redis`), DB index 2. The Django
+cache takes the next index, /3 (`config/settings/base.py`). The other
+indexes belong to other tenants: connect-labs uses /0 (Celery + its
+cache) and canopy-web /1. A new tenant takes the next free pair.
 
 **Create the secret** (first time only):
 
@@ -260,7 +262,7 @@ using the same cluster, move ace-web to a distinct DB index.
 aws secretsmanager create-secret \
   --region us-east-1 \
   --name labs-jj-ace-web-redis-url \
-  --secret-string "redis://<elasticache-primary-endpoint>:6379/0"
+  --secret-string "redis://<elasticache-primary-endpoint>:6379/2"
 ```
 
 Then update `deploy/aws/ace-web.cfn.yaml` — the `REDIS_URL` entry in
