@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -134,5 +134,34 @@ describe("WorkspaceSettingsPage roles", () => {
 
     expect(await screen.findByText(/send this link yourself/)).toBeInTheDocument();
     expect(screen.getByText(/\/ace\/invite\/t$/)).toBeInTheDocument();
+  });
+
+  it("revokes a pending invite after confirming", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const revoke = vi.spyOn(wsApi, "revokeInvite").mockResolvedValue();
+    renderAs("owner");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith("spark", 7));
+  });
+
+  it("shows membership changes in the activity feed as sentences", async () => {
+    renderAs("owner");
+    // After renderAs (which stubs an empty feed): the page asks for the feed
+    // only once the workspace has loaded.
+    vi.spyOn(wsApi, "listActivity").mockResolvedValue([
+      {
+        action: "member.role_changed",
+        subject: "viewer@x.org",
+        scopes_used: [],
+        context: { changed_by: "owner@x.org", before: "viewer", after: "editor" },
+        created_at: "2026-10-20T00:00:00Z",
+      },
+    ]);
+
+    expect(
+      await screen.findByText("owner@x.org changed the role of viewer@x.org (Viewer → Editor)"),
+    ).toBeInTheDocument();
   });
 });

@@ -4635,6 +4635,45 @@
         ]
       }
     },
+    "/api/workspaces/{slug}/invites/{invite_id}": {
+      "delete": {
+        "operationId": "apps_workspaces_api_revoke_invite",
+        "summary": "Revoke a pending invite (admin and above)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "invite_id",
+            "schema": {
+              "title": "Invite Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{slug}/members/{user_id}": {
       "delete": {
         "operationId": "apps_workspaces_api_remove_member",

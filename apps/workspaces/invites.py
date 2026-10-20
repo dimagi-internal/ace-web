@@ -11,7 +11,8 @@ def grant_invite(invite, user):
     pending and addressed to this user. Returns the membership.
     """
     from apps.workspaces import permissions as perms
-    from apps.workspaces.models import WorkspaceMembership
+    from apps.workspaces.audit import record_membership_change
+    from apps.workspaces.models import MembershipChange, WorkspaceMembership
 
     membership, created = WorkspaceMembership.objects.get_or_create(
         workspace=invite.workspace,
@@ -21,6 +22,7 @@ def grant_invite(invite, user):
     # UPGRADE-ONLY (canopy-web's rule): an existing member moves to the
     # HIGHER of their role and the invite's, never lower — a stray invite
     # must not strip access. Demotion is the explicit role-change PATCH.
+    before_role = "" if created else membership.role
     if not created:
         higher = perms.higher_role(membership.role, invite.role)
         if higher != membership.role:
@@ -28,4 +30,7 @@ def grant_invite(invite, user):
             membership.save(update_fields=["role"])
     invite.accepted_at = timezone.now()
     invite.save(update_fields=["accepted_at"])
+    record_membership_change(invite.workspace, MembershipChange.INVITE_ACCEPTED,
+                             email=user.email, actor=user,
+                             before_role=before_role, after_role=membership.role)
     return membership

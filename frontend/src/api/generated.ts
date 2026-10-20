@@ -1561,6 +1561,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/workspaces/{slug}/invites/{invite_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** Revoke a pending invite (admin and above) */
+        readonly delete: operations["apps_workspaces_api_revoke_invite"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/workspaces/{slug}/members/{user_id}": {
         readonly parameters: {
             readonly query?: never;
@@ -6795,6 +6812,27 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["WorkspaceInviteOut"];
                 };
+            };
+        };
+    };
+    readonly apps_workspaces_api_revoke_invite: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly slug: string;
+                readonly invite_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
