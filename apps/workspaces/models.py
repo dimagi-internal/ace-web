@@ -154,6 +154,41 @@ class TenancyChange(models.Model):
         indexes = [models.Index(fields=["workspace", "-created_at"])]
 
 
+class MembershipChange(models.Model):
+    """Audit row for a change to who is in a workspace: an invite sent,
+    resent, revoked or accepted, a role changed, a member removed or leaving.
+    Membership decides what a person may see and do, so every change records
+    who made it (`actor`; null once that account is deleted) and the role
+    before and after. Written only by `apps.workspaces.audit`."""
+
+    INVITE_SENT = "invite.sent"
+    INVITE_RESENT = "invite.resent"
+    INVITE_REVOKED = "invite.revoked"
+    INVITE_ACCEPTED = "invite.accepted"
+    ROLE_CHANGED = "member.role_changed"
+    REMOVED = "member.removed"
+    LEFT = "member.left"
+
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="membership_changes"
+    )
+    action = models.CharField(max_length=32)
+    email = models.CharField(max_length=200)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="+",
+    )
+    before_role = models.CharField(max_length=16, blank=True, default="")
+    after_role = models.CharField(max_length=16, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "workspace_membership_changes"
+        indexes = [models.Index(fields=["workspace", "-created_at"])]
+
+
 class RunClone(models.Model):
     """One run copied into another workspace (clone-to-new-workspace).
 

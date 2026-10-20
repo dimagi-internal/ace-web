@@ -16,6 +16,7 @@ from apps.api.errors import (
     ProblemError,
 )
 
+from .audit import record_membership_change
 from .invite_email import send_invite_email
 from .schemas import (
     InviteAcceptOut,
@@ -425,9 +426,10 @@ def list_members(
 def invite_member_to_workspace(workspace, inviter, email: str, role: str) -> dict:
     from datetime import timedelta
 
+    from django.db import transaction
     from django.utils import timezone
 
-    from apps.workspaces.models import WorkspaceInvite
+    from apps.workspaces.models import MembershipChange, WorkspaceInvite
 
     role = _parse_role(role)
     _require_may_manage(workspace, inviter, None, role)
@@ -440,13 +442,16 @@ def invite_member_to_workspace(workspace, inviter, email: str, role: str) -> dic
             f"{email} is already a {existing.role} of this workspace",
             type_=TYPE_CONFLICT,
         )
-    invite = WorkspaceInvite.objects.create(
-        workspace=workspace,
-        email=email,
-        role=role,
-        invited_by=inviter,
-        expires_at=timezone.now() + timedelta(days=INVITE_TTL_DAYS),
-    )
+    with transaction.atomic():
+        invite = WorkspaceInvite.objects.create(
+            workspace=workspace,
+            email=email,
+            role=role,
+            invited_by=inviter,
+            expires_at=timezone.now() + timedelta(days=INVITE_TTL_DAYS),
+        )
+        record_membership_change(workspace, MembershipChange.INVITE_SENT, email=email,
+                                 actor=inviter, after_role=role)
     return _invite_out(invite, send_invite_email(invite, inviter))
 
 
@@ -548,9 +553,11 @@ def resend_workspace_invite(workspace, requester, invite_id: int) -> dict:
     the token is not rotated, so a copy already shared keeps working."""
     from datetime import timedelta
 
+    from django.db import transaction
     from django.utils import timezone
 
     from apps.workspaces import permissions as perms
+    from apps.workspaces.models import MembershipChange
 
     _require(workspace, requester, perms.MEMBERS_MANAGE, "Admin or owner required")
     invite = (
@@ -560,8 +567,11 @@ def resend_workspace_invite(workspace, requester, invite_id: int) -> dict:
     if invite is None:
         raise ProblemError(404, "Invite not found", type_=TYPE_NOT_FOUND)
     _require_may_manage(workspace, requester, None, invite.role)
-    invite.expires_at = timezone.now() + timedelta(days=INVITE_TTL_DAYS)
-    invite.save(update_fields=["expires_at"])
+    with transaction.atomic():
+        invite.expires_at = timezone.now() + timedelta(days=INVITE_TTL_DAYS)
+        invite.save(update_fields=["expires_at"])
+        record_membership_change(workspace, MembershipChange.INVITE_RESENT,
+                                 email=invite.email, actor=requester, after_role=invite.role)
     return _invite_out(invite, send_invite_email(invite, requester))
 
 
@@ -585,13 +595,62 @@ def resend_invite(
 
 
 # ---------------------------------------------------------------------------
+# DELETE /workspaces/{slug}/invites/{invite_id} — revoke a pending invite
+# ---------------------------------------------------------------------------
+
+
+def revoke_workspace_invite(workspace, requester, invite_id: int) -> None:
+    """Withdraw a pending invite: its link stops working at once. The row is
+    kept (marked revoked) so the activity feed still says who was invited."""
+    from django.db import transaction
+    from django.utils import timezone
+
+    from apps.workspaces import permissions as perms
+    from apps.workspaces.models import MembershipChange
+
+    _require(workspace, requester, perms.MEMBERS_MANAGE, "Admin or owner required")
+    with transaction.atomic():
+        invite = (
+            workspace.invites.select_for_update()
+            .filter(id=invite_id, accepted_at__isnull=True, revoked_at__isnull=True)
+            .first()
+        )
+        if invite is None:
+            raise ProblemError(404, "Invite not found", type_=TYPE_NOT_FOUND)
+        _require_may_manage(workspace, requester, None, invite.role)
+        invite.revoked_at = timezone.now()
+        invite.save(update_fields=["revoked_at"])
+        record_membership_change(workspace, MembershipChange.INVITE_REVOKED,
+                                 email=invite.email, actor=requester,
+                                 before_role=invite.role)
+
+
+@router.delete(
+    "/{slug}/invites/{invite_id}",
+    summary="Revoke a pending invite (admin and above)",
+)
+def revoke_invite(
+    request: HttpRequest,
+    slug: Annotated[str, Path()],
+    invite_id: Annotated[int, Path()],
+) -> HttpResponse:
+    from apps.api.deps import resolve_workspace_for_member
+
+    ws = resolve_workspace_for_member(request, slug)
+    revoke_workspace_invite(ws, request.user, invite_id)
+    return HttpResponse(status=204)
+
+
+# ---------------------------------------------------------------------------
 # DELETE /workspaces/{slug}/members/{user_id} — remove member
 # ---------------------------------------------------------------------------
 
 
 def remove_member_from_workspace(workspace, requester, user_id: int) -> None:
+    from django.db import transaction
+
     from apps.workspaces import permissions as perms
-    from apps.workspaces.models import WorkspaceMembership
+    from apps.workspaces.models import MembershipChange, WorkspaceMembership
 
     _require(workspace, requester, perms.MEMBERS_MANAGE, "Admin or owner required")
     try:
@@ -606,7 +665,11 @@ def remove_member_from_workspace(workspace, requester, user_id: int) -> None:
             "Cannot remove the last owner; promote another member first",
             type_=TYPE_VALIDATION,
         )
-    membership.delete()
+    with transaction.atomic():
+        membership.delete()
+        record_membership_change(workspace, MembershipChange.REMOVED,
+                                 email=membership.user.email, actor=requester,
+                                 before_role=membership.role)
 
 
 @router.delete("/{slug}/members/{user_id}", summary="Remove member")
@@ -628,6 +691,9 @@ def remove_member(
 
 
 def leave_workspace_op(workspace, user) -> None:
+    from django.db import transaction
+
+    from apps.workspaces.models import MembershipChange
 
     membership = workspace.memberships.filter(user=user).first()
     if membership is None:
@@ -638,7 +704,10 @@ def leave_workspace_op(workspace, user) -> None:
             "You are the last owner; promote someone else first",
             type_=TYPE_VALIDATION,
         )
-    membership.delete()
+    with transaction.atomic():
+        membership.delete()
+        record_membership_change(workspace, MembershipChange.LEFT, email=user.email,
+                                 actor=user, before_role=membership.role)
 
 
 @router.post("/{slug}/leave", summary="Leave workspace")
@@ -697,6 +766,26 @@ def get_workspace_activity(workspace, user) -> list[dict]:
             "created_at": c.created_at.isoformat(),
         }
         for c in changes
+    ]
+    # Membership changes: who was invited, re-invited, revoked, admitted,
+    # re-roled, removed or left (apps/workspaces/audit.py).
+    member_changes = workspace.membership_changes.select_related("actor").order_by(
+        "-created_at"
+    )[:100]
+    items += [
+        {
+            "action": m.action,
+            "subject": m.email,
+            "scopes_used": [],
+            "context": {
+                "workspace_slug": workspace.slug,
+                "changed_by": m.actor.email if m.actor else None,
+                "before": m.before_role,
+                "after": m.after_role,
+            },
+            "created_at": m.created_at.isoformat(),
+        }
+        for m in member_changes
     ]
     items.sort(key=lambda i: i["created_at"], reverse=True)
     return items[:100]
@@ -777,11 +866,12 @@ def change_member_role(
     slug: Annotated[str, Path()],
     user_id: Annotated[int, Path()],
 ) -> HttpResponse:
+    from django.db import transaction
     from django.http import JsonResponse
 
     from apps.api.deps import resolve_workspace_for_member
     from apps.workspaces import permissions as perms
-    from apps.workspaces.models import WorkspaceMembership
+    from apps.workspaces.models import MembershipChange, WorkspaceMembership
 
     ws = resolve_workspace_for_member(request, slug)
     _require(ws, request.user, perms.MEMBERS_MANAGE, "Admin or owner required")
@@ -807,8 +897,14 @@ def change_member_role(
             "Cannot demote the last owner; promote another member first",
             type_=TYPE_VALIDATION,
         )
-    membership.role = new_role
-    membership.save(update_fields=["role"])
+    before_role = membership.role
+    with transaction.atomic():
+        membership.role = new_role
+        membership.save(update_fields=["role"])
+        if new_role != before_role:
+            record_membership_change(ws, MembershipChange.ROLE_CHANGED,
+                                     email=membership.user.email, actor=request.user,
+                                     before_role=before_role, after_role=new_role)
     payload = WorkspaceMemberOut.model_validate(_membership_to_dict(membership)).model_dump(
         mode="json"
     )

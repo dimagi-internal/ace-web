@@ -151,6 +151,17 @@ export async function resendInvite(slug: string, inviteId: number): Promise<Invi
   return toInviteCreated(data as components["schemas"]["WorkspaceInviteOut"]);
 }
 
+/** Withdraw a pending invite: its link stops working at once. */
+export async function revokeInvite(slug: string, inviteId: number): Promise<void> {
+  const { error, response } = await apiClient.DELETE(
+    "/api/workspaces/{slug}/invites/{invite_id}",
+    { params: { path: { slug, invite_id: inviteId } } },
+  );
+  if (error || !response.ok) {
+    throw new Error((error as { title?: string } | undefined)?.title || "Failed to revoke invite");
+  }
+}
+
 function toInviteCreated(out: components["schemas"]["WorkspaceInviteOut"]): InviteCreated {
   return {
     token: out.token,

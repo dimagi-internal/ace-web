@@ -12,6 +12,7 @@ import {
   listPendingInvites,
   removeMember,
   resendInvite,
+  revokeInvite,
   updateWorkspace,
   verifyDriveAccess,
   type ActivityRow,
@@ -154,6 +155,17 @@ export default function WorkspaceSettingsPage() {
         const { [inviteId]: _, ...rest } = s;
         return rest;
       });
+      setError(String((e as Error).message));
+    }
+  }
+
+  async function handleRevoke(inviteId: number, email: string) {
+    if (!confirm(`Revoke the invite to ${email}? Its link stops working.`)) return;
+    setError(null);
+    try {
+      await revokeInvite(workspaceSlug!, inviteId);
+      setReload((n) => n + 1);
+    } catch (e) {
       setError(String((e as Error).message));
     }
   }
@@ -357,6 +369,13 @@ export default function WorkspaceSettingsPage() {
                     >
                       {rs?.status === "sending" ? "Sending…" : rs?.status === "sent" ? "Sent" : "Resend"}
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRevoke(i.id, i.email)}
+                    >
+                      Revoke
+                    </Button>
                   </div>
                   {rs?.status === "not_sent" && rs.accept_url && (
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -378,17 +397,12 @@ export default function WorkspaceSettingsPage() {
         <section className="mt-8">
           <h2 className="text-lg font-medium text-foreground">Recent activity</h2>
           <p className="text-xs text-muted-foreground">
-            Last {activity.length} Drive accesses against this workspace.
+            Drive accesses, tenancy changes and membership changes, newest first.
           </p>
           <ul className="mt-2 divide-y divide-border text-sm">
             {activity.slice(0, 25).map((a, i) => (
               <li key={i} className="flex justify-between py-2">
-                <span className="text-foreground">
-                  {a.action}
-                  {a.subject && (
-                    <span className="text-muted-foreground"> as {a.subject}</span>
-                  )}
-                </span>
+                <span className="text-foreground">{describeActivity(a)}</span>
                 <span className="text-xs text-muted-foreground">
                   {new Date(a.created_at).toLocaleString()}
                 </span>
@@ -410,4 +424,34 @@ export default function WorkspaceSettingsPage() {
       </section>
     </div>
   );
+}
+
+const MEMBERSHIP_VERBS: Record<string, string> = {
+  "invite.sent": "invited",
+  "invite.resent": "re-sent the invite to",
+  "invite.revoked": "revoked the invite to",
+  "member.role_changed": "changed the role of",
+  "member.removed": "removed",
+};
+
+/** One feed row as a sentence. Membership rows (apps/workspaces/audit.py)
+ * name who did it and the roles; anything else keeps its raw action. */
+function describeActivity(a: ActivityRow): string {
+  const by = (a.context.changed_by as string | null | undefined) ?? "someone";
+  const before = a.context.before as string | undefined;
+  const after = a.context.after as string | undefined;
+  const role = (r?: string) => (r ? ROLE_LABELS[r as keyof typeof ROLE_LABELS] ?? r : "");
+  if (a.action === "invite.accepted") {
+    return before
+      ? `${a.subject} accepted an invite (${role(before)} → ${role(after)})`
+      : `${a.subject} joined as ${role(after)}`;
+  }
+  if (a.action === "member.left") return `${a.subject} left (was ${role(before)})`;
+  const verb = MEMBERSHIP_VERBS[a.action];
+  if (verb) {
+    const roles =
+      before && after ? ` (${role(before)} → ${role(after)})` : after || before ? ` (${role(after || before)})` : "";
+    return `${by} ${verb} ${a.subject}${roles}`;
+  }
+  return a.subject ? `${a.action} as ${a.subject}` : a.action;
 }

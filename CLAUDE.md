@@ -261,6 +261,11 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   (`Workspace.auto_join_domains`) was retired in migration 0013; being admitted
   by `ACE_ALLOWED_EMAIL_DOMAINS` lets a person sign in, it never puts them in a
   workspace — a new Dimagi sign-in with no invite lands on `/welcome`.
+  **Every membership change is audited:** invite sent/resent/revoked/accepted,
+  role change, removal and leaving each write a `MembershipChange` row through
+  `apps/workspaces/audit.record_membership_change` (the only writer), in the
+  same transaction, and show in the workspace activity feed (admin and above).
+  A pending invite is revoked with `DELETE /workspaces/{slug}/invites/{id}`.
   *Enforced:* `test_admission_parity.py::test_domain_admission_joins_no_workspace`.
   Spec:
   `docs/specs/2026-04-27-multi-tenant-workspaces-design.md`.
