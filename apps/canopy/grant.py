@@ -63,6 +63,13 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "opp-workbench": ("opps:read",),
 }
 
+#: What each page is called in ``site.json`` (``canopy_sdk.site``), which lists
+#: ``PAGE_SCOPES`` for canopy's Connected sites page to show. Reference only:
+#: canopy shows it, never enforces it.
+PAGE_TITLES: dict[str, str] = {
+    "opp-workbench": "An opp run (Workbench)",
+}
+
 #: How a page is recognised from the SPA's location (the WHOLE path must
 #: match; ``/ace`` is the router basename, frontend/src/router.tsx). ace-web is
 #: a single-page app: the server never renders a route, so it cannot sign a
