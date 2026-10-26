@@ -413,6 +413,15 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   everyone), and `probe.subject()` answers `""` — probe 404, not in the
   metadata — until that user exists. Never point the probe at a real person or
   give it a real workspace. Tests: `tests/test_canopy_probe.py`.
+  **site.json** (`canopy_sdk.site`, the one documented way of being a canopy
+  host): the SDK's `site_document` view at `/api/canopy/site.json`, BESIDE the
+  JWKS (canopy looks for it there), signed with the JWKS key — `iss` `ace-web`
+  plus a `site` block (origins, `jwks_url`, issuer, MCP resource) and the
+  `PAGE_SCOPES` pages titled by `grant.PAGE_TITLES`. canopy's Connected sites
+  page fills the registration from it ("Fill from the site"); it never applies
+  it on its own. NOT at `/.well-known/canopy-site.json` — that root path on
+  labs.connect.dimagi.com is connect-labs'. Tests:
+  `tests/test_canopy_site_document.py`.
 - **ace-web's view of canopy's API is GENERATED, not hand-written.**
   `frontend/src/api/canopy-generated.ts` comes from canopy-web's own OpenAPI
   schema via `npm run gen:canopy-api` (`frontend/scripts/gen-canopy-contract.mjs`).

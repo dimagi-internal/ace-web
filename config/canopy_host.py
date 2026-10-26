@@ -62,6 +62,7 @@ class CanopyHostSettings(Mapping):
             or (f"{public}/api/canopy/oauth/token" if public else ""),
             "SCOPE_TOOLS": _registry("SCOPE_TOOLS"),
             "PAGE_SCOPES": _registry("PAGE_SCOPES"),
+            "PAGE_TITLES": _registry("PAGE_TITLES"),
             # An SPA: the browser names its page (its path) and the registry
             # decides the scopes — the SDK's key mode (read-only scopes only).
             "PAGE_MODE": "key",
@@ -70,6 +71,12 @@ class CanopyHostSettings(Mapping):
             # visitor assertion has always carried), so "is this subject still
             # live" is asked by email, not by primary key (the SDK default).
             "SUBJECT_ACTIVE": "apps.canopy.grant.subject_active",
+            # --- site.json (canopy_sdk.site): this site's own facts, signed -------
+            # The SDK fills `origins` (the origin of ISSUER), `issuer` and
+            # `mcp_resource` itself. Only the keys' URL needs naming: ace-web
+            # serves its JWKS at its own Ninja route `/api/canopy/jwks`, not the
+            # SDK's `canopy/jwks.json`, and that route is what canopy registers.
+            "JWKS_URL": f"{public}/api/canopy/jwks" if public else "",
             # --- canopy's live probe: OFF unless CANOPY_PROBE_ENABLED --------------
             **({"PROBE": _probe(public)} if s.CANOPY_PROBE_ENABLED else {}),
         }

@@ -1,4 +1,5 @@
 from canopy_sdk.django.views import probe_endpoint as canopy_grant_probe_endpoint
+from canopy_sdk.django.views import site_document as canopy_site_document
 from canopy_sdk.django.views import token_endpoint as canopy_grant_token_endpoint
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
@@ -36,6 +37,14 @@ urlpatterns = [
     # CANOPY_PROBE_ENABLED, the grant is on, and the principal exists. Its
     # public URL is CANOPY_HOST["PROBE"]["ENDPOINT"] — keep the two in step.
     path("api/canopy/oauth/probe", canopy_grant_probe_endpoint, name="canopy_grant_probe"),
+    # site.json (canopy_sdk.site): this site's own facts — origins, keys,
+    # issuer, MCP server, pages — signed with the JWKS key, BESIDE the JWKS
+    # (`/api/canopy/jwks` -> `/api/canopy/site.json`, canopy's
+    # host_grants.site_needs.document_url), so canopy's Connected sites page
+    # fills the `ace-web` registration from it. Unauthenticated like the JWKS.
+    # NOT also at /.well-known/canopy-site.json: that root path on
+    # labs.connect.dimagi.com is connect-labs' (same origin).
+    path("api/canopy/site.json", canopy_site_document, name="canopy_site_document"),
     path("api/", api.urls),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
