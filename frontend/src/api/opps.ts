@@ -264,6 +264,51 @@ export async function deleteOppRun(
   }
 }
 
+/** Hide a run from the default views. Drive is untouched; see ``apps/opps/archive.py``. */
+export async function archiveOppRun(
+  workspaceSlug: string,
+  slug: string,
+  runId: string,
+): Promise<void> {
+  const { response } = await apiClient.POST(
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/archive",
+    { params: { path: { workspace_slug: workspaceSlug, slug, run_id: runId } } },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`archiveOppRun: ${response.status}`);
+  }
+}
+
+export async function unarchiveOppRun(
+  workspaceSlug: string,
+  slug: string,
+  runId: string,
+): Promise<void> {
+  const { response } = await apiClient.DELETE(
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/archive",
+    { params: { path: { workspace_slug: workspaceSlug, slug, run_id: runId } } },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`unarchiveOppRun: ${response.status}`);
+  }
+}
+
+export interface ArchivedRun {
+  opp_slug: string;
+  run_id: string;
+  archived_at: string;
+  archived_by: string | null;
+}
+
+export async function listArchivedRuns(workspaceSlug: string): Promise<ArchivedRun[]> {
+  const { data, response } = await apiClient.GET(
+    "/api/w/{workspace_slug}/opps/archived-runs",
+    { params: { path: { workspace_slug: workspaceSlug } } },
+  );
+  if (!response.ok) throw new Error(`listArchivedRuns: ${response.status}`);
+  return (data as unknown as { items: ArchivedRun[] }).items ?? [];
+}
+
 export type ForkMode = "keep-overrides-only" | "keep-all";
 
 export interface ForkOppBody {
