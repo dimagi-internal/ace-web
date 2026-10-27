@@ -590,6 +590,8 @@ export interface OppSnapshot {
   phases: PhaseInfo[];
   /** Injected server-side from inputs/decision-overrides.yaml (#673 PR 2). */
   saved_overrides?: Record<string, SavedDecisionOverride>;
+  /** Runs of this opp hidden from `runs` (archived). A deep link to one still loads. */
+  archived_run_ids?: string[];
 }
 
 /**

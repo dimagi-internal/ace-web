@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ArrowDownUp, Plus, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
@@ -161,6 +161,12 @@ export default function OppListPage() {
             aria-label="Filter opportunities by name, tag, or ID"
             title="Matches anywhere in the opp's name, tags, labels, or ID"
           />
+          <Link
+            to={`/w/${workspaceSlug}/archive`}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Archived runs
+          </Link>
           <Button size="sm" onClick={() => setNewDialogOpen(true)}>
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             New Opp

@@ -14,6 +14,7 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from apps.opps import archive
 from apps.opps.api import list_opp_cards
 from apps.sessions.models import Session
 
@@ -129,6 +130,7 @@ def list_workspace_activity(
     limit = min(max(limit, 1), MAX_LIMIT)
 
     cards = list_opp_cards(workspace)
+    archived_by_opp = archive.archived_map(workspace)
     now = dt.datetime.now(dt.UTC)
     rows: list[ActivityRow] = []
 
@@ -137,6 +139,9 @@ def list_workspace_activity(
         if not opp_slug:
             continue
         run_id = c.get("last_run_id") or ""
+        if run_id in archived_by_opp.get(opp_slug, ()):
+            # Archived runs are hidden from every default view, this one too.
+            continue
         if not run_id:
             # No runs yet — skip. Empty-state opps appear in /ace list opps,
             # not in Activity.

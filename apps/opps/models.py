@@ -62,3 +62,34 @@ class OppWorkspace(models.Model):
 
     def __str__(self):
         return f"{self.workspace.slug}/{self.slug}: {self.display_name}"
+
+
+class ArchivedRun(models.Model):
+    """A run hidden from the workbench's default views (opp list, Runs tab,
+    activity feed) until someone opens the archive page.
+
+    The record lives here, never in the run's Drive folder: archiving changes
+    what ace-web SHOWS and nothing else, so Drive, Connect, HQ and OCS are
+    untouched and the run keeps its public summary link. Unarchiving deletes
+    the row.
+    """
+
+    workspace = models.ForeignKey(
+        "ace_workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="archived_runs",
+    )
+    opp_slug = models.CharField(max_length=64)
+    run_id = models.CharField(max_length=64)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="+",
+    )
+    archived_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "opp_archived_runs"
+        unique_together = [("workspace", "opp_slug", "run_id")]
+        ordering = ["-archived_at"]

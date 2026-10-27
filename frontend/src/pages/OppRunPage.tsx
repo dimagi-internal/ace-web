@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import { ExternalLink, History } from "lucide-react";
 
-import { getOpp } from "../api/opps";
+import { archiveOppRun, getOpp, unarchiveOppRun } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
 import { ApiError } from "../api/client";
 import type { OppSnapshot } from "../api/types.ws";
@@ -246,6 +247,18 @@ export default function OppRunPage() {
     navigate(`${runPath(loadedRunId)}${query((p) => k !== "phase" && p.set("view", k))}`);
   };
 
+  const setRunArchived = async (archiveRunId: string, archived: boolean) => {
+    try {
+      if (archived) await archiveOppRun(workspaceSlug ?? "", slug, archiveRunId);
+      else await unarchiveOppRun(workspaceSlug ?? "", slug, archiveRunId);
+      dropOpp(slug);
+      toast.success(`${archived ? "Archived" : "Unarchived"} run ${archiveRunId}`);
+      load({ silent: true, force: true });
+    } catch (e) {
+      toast.error(`${archived ? "Archive" : "Unarchive"} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <WorkbenchHeader
@@ -284,6 +297,24 @@ export default function OppRunPage() {
         slug={slug}
         runId={snapshot.current_run.run_id}
       />
+      {(snapshot.archived_run_ids ?? []).includes(snapshot.current_run.run_id) && (
+        <div className="flex items-center gap-3 border-b border-border bg-muted/50 px-6 py-2 text-xs text-muted-foreground">
+          <span>This run is archived: it is hidden from the opp list and Runs tab.</span>
+          <button
+            type="button"
+            className="underline hover:text-foreground"
+            onClick={() => setRunArchived(snapshot.current_run.run_id, false)}
+          >
+            Unarchive
+          </button>
+          <Link
+            to={`/w/${workspaceSlug}/archive`}
+            className="underline hover:text-foreground"
+          >
+            Archived runs
+          </Link>
+        </div>
+      )}
       {lineage && lineage.chain.length > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border bg-background px-6 py-2">
           <LineageStrip lineage={lineage} plain={false} onScopeChange={setLineageScope} />
@@ -339,6 +370,7 @@ export default function OppRunPage() {
             onOpenPhase={(id, phaseName) =>
               setSearchParams({ run_id: id, view: "phase", phase: phaseName })
             }
+            onArchive={(id) => setRunArchived(id, true)}
             onCompare={(base, head) =>
               navigate(
                 `/w/${workspaceSlug}/opps/${encodeURIComponent(slug)}/compare?base=${encodeURIComponent(

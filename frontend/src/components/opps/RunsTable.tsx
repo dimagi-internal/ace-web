@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, ExternalLink, GitCompareArrows } from "lucide-react";
+import { Archive, ChevronRight, ExternalLink, GitCompareArrows } from "lucide-react";
 
 import { Button } from "canopy-ui/ui";
 
@@ -46,6 +46,9 @@ interface Props {
    *  Called with the EARLIER run first, whichever order they were ticked in —
    *  run ids are timestamps, so they sort chronologically. */
   onCompare?: (base: string, head: string) => void;
+  /** When given, the expanded row offers "Archive run". The caller does the
+   *  request and refreshes; archived runs leave this table. */
+  onArchive?: (runId: string) => void;
 }
 
 /**
@@ -71,6 +74,7 @@ export function RunsTable({
   phaseCount,
   dense = false,
   onCompare,
+  onArchive,
 }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
@@ -288,6 +292,17 @@ export function RunsTable({
                   >
                     open in Phases
                   </a>
+                  {onArchive && (
+                    <button
+                      type="button"
+                      onClick={() => onArchive(r.run_id)}
+                      title="Hide this run from the workbench. Nothing is deleted; find it on the Archive page."
+                      className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                    >
+                      <Archive className="h-2.5 w-2.5" />
+                      archive
+                    </button>
+                  )}
                 </div>
               </div>
             )}

@@ -22,6 +22,7 @@ import SettingsPage from "./pages/SettingsPage";
 import SystemPage from "./pages/SystemPage";
 import UnscopedOppLinkPage from "./pages/UnscopedOppLinkPage";
 import VideoExplorerPage from "./pages/VideoExplorerPage";
+import ArchivedRunsPage from "./pages/ArchivedRunsPage";
 import VideosListPage from "./pages/VideosListPage";
 import WelcomePage from "./pages/WelcomePage";
 import WorkspaceActivityPage from "./pages/WorkspaceActivityPage";
@@ -54,6 +55,7 @@ export const router = createBrowserRouter(
             { index: true, element: <Navigate to="opps" replace /> },
             { path: "activity", element: <WorkspaceActivityPage /> },
             { path: "opps", element: <OppListPage /> },
+            { path: "archive", element: <ArchivedRunsPage /> },
             {
               path: "opps/compare/:slugA/:slugB",
               element: <OppComparePage />,

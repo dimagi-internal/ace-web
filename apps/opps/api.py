@@ -23,6 +23,7 @@ from apps.api.errors import (
 from apps.api.etag import compute_etag, maybe_not_modified
 from apps.workspaces import permissions as perms
 
+from . import archive
 from .schemas import (
     DecisionEditIn,
     DecisionEditOut,
@@ -103,6 +104,7 @@ def list_opp_cards(workspace) -> list[dict]:
     # render "P{ordinal}" without per-card fan-out (#512).
     phase_meta = _phase_display_index()
     skill_phase_index = _skill_display_index()
+    archived_by_opp = archive.archived_map(workspace)
 
     out: list[dict] = []
     for child in root_children:
@@ -151,6 +153,14 @@ def list_opp_cards(workspace) -> list[dict]:
         # through as None instead of falling back to the Unix epoch, which
         # the frontend would otherwise render as "last 12/31/1969". (#466)
         raw_ts = card.last_activity_at
+        hidden = archived_by_opp.get(child.name, set())
+        card_runs = [
+            r for r in (getattr(card, "runs_summary", None) or [])
+            if r.run_id not in hidden
+        ]
+        card_run_count = card.run_count - (
+            len(getattr(card, "runs_summary", None) or []) - len(card_runs)
+        )
         updated_at: dt.datetime | None
         if raw_ts:
             try:
@@ -175,18 +185,32 @@ def list_opp_cards(workspace) -> list[dict]:
         rich["current_phase"] = card.current_phase
         rich["current_step"] = card.current_step
         rich["current_skill"] = card.current_step
-        rich["run_count"] = card.run_count
+        rich["run_count"] = card_run_count
         rich["last_run_id"] = card.opp.current_run_id
         rich["updated_at"] = updated_at
         rich["last_activity_at"] = raw_ts
         rich["runs_summary"] = _serialize_card_runs_summary(
-            getattr(card, "runs_summary", None) or [],
+            card_runs,
             phase_meta=phase_meta,
             skill_phase_index=skill_phase_index,
         )
         out.append(rich)
 
     return out
+
+
+# Registered before ``/{slug}`` so "archived-runs" is not read as an opp slug.
+@router.get(
+    "/archived-runs",
+    response={200: dict},
+    summary="List archived runs in workspace",
+)
+def list_archived_runs(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+) -> HttpResponse:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    return JsonResponse({"items": archive.list_archived(workspace)})
 
 
 @router.get(
@@ -219,6 +243,21 @@ def list_opps(
 # ---------------------------------------------------------------------------
 # Task 2.1.3 helpers — snapshot load
 # ---------------------------------------------------------------------------
+
+
+def _hide_archived_runs(workspace, slug: str, result: dict) -> dict:
+    """Drop archived runs from ``result["runs"]`` and say which ones were hidden.
+
+    Applied AFTER the snapshot cache, never inside it: the cache is shared
+    across requests and archiving must show up on the next read without
+    rebuilding it from Drive. ``archived_run_ids`` lets the page tell that the
+    run it was opened on (a deep link still works) is an archived one.
+    """
+    hidden = archive.archived_ids(workspace, slug)
+    result["archived_run_ids"] = sorted(hidden)
+    if hidden and result.get("runs"):
+        result["runs"] = [r for r in result["runs"] if r.get("run_id") not in hidden]
+    return result
 
 
 def load_rich_opp_snapshot(
@@ -280,7 +319,7 @@ def load_rich_opp_snapshot(
         # Durable overrides from inputs/decision-overrides.yaml — kept
         # fresh by the saved_overrides overlay above (#673 PR 2).
         result["saved_overrides"] = getattr(cached, "saved_overrides", {}) or {}
-        return result
+        return _hide_archived_runs(workspace, slug, result)
     bypass_client = snapshot_cache.cold_load_client(client)
     try:
         with TouchedFileTracker() as tracker:
@@ -310,7 +349,7 @@ def load_rich_opp_snapshot(
     run_id_for_edits = run_id or (result.get("current_run") or {}).get("run_id", "")
     result["pending_edits"] = get_edits(slug, run_id_for_edits)
     result["saved_overrides"] = snap.saved_overrides or {}
-    return result
+    return _hide_archived_runs(workspace, slug, result)
 
 
 def load_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -> dict | None:
@@ -970,6 +1009,7 @@ def list_runs(
     slug: Annotated[str, Path()],
     offset: int = 0,
     limit: int = 50,
+    archived: str = "exclude",
 ) -> HttpResponse:
     """Return the full RunSummary shape (current_phase + phases_done +
     last_actor_at + lifecycle_status + ...) the frontend renders for
@@ -977,6 +1017,17 @@ def list_runs(
     thin schema — the Phase 1 v2 shape was over-simplified."""
     workspace = resolve_workspace_for_member(request, workspace_slug)
     runs = list_opp_runs_for_workspace(workspace, slug)
+    # ``archived``: exclude (default) hides archived runs, only lists just
+    # them, include returns both. get_run below is unfiltered on purpose, so
+    # a link to an archived run keeps working.
+    if archived not in ("exclude", "only", "include"):
+        raise ProblemError(
+            400, "Invalid archived filter", type_=TYPE_VALIDATION,
+            detail="archived must be exclude, only or include",
+        )
+    if archived != "include":
+        hidden = archive.archived_ids(workspace, slug)
+        runs = [r for r in runs if (r["run_id"] in hidden) == (archived == "only")]
     items = list(runs[offset:offset + limit])
     return JsonResponse({
         "items": items,
@@ -1222,6 +1273,39 @@ def delete_run(
         raise ProblemError(
             404, "Run not found", type_=TYPE_NOT_FOUND, detail=str(exc),
         ) from exc
+    return HttpResponse(status=204)
+
+
+# ---------------------------------------------------------------------------
+# Archive — hide a run from the default views without touching Drive
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{slug}/runs/{run_id}/archive", summary="Archive run")
+def archive_run(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
+    archive.archive_run(workspace, slug, run_id, request.user)
+    return HttpResponse(status=204)
+
+
+@router.delete("/{slug}/runs/{run_id}/archive", summary="Unarchive run")
+def unarchive_run(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    workspace = resolve_workspace_for(request, workspace_slug, perms.CONTENT_WRITE)
+    if not archive.unarchive_run(workspace, slug, run_id):
+        raise ProblemError(
+            404, "Run is not archived", type_=TYPE_NOT_FOUND,
+            detail=f"{slug}/{run_id} is not in the archive",
+        )
     return HttpResponse(status=204)
 
 

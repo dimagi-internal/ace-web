@@ -567,6 +567,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `docs/specs/2026-05-16-workspace-activity-view-design.md`. Runbook:
   `docs/architecture/workspace-activity.md`. Phase view is the canonical
   drill-down — row clicks go to `?run_id=<id>`, not the Workbench.
+- **Archived runs** (`apps/opps/archive.py`, `ArchivedRun` table; page at `/w/<slug>/archive`): hides a run from the opp list, the Runs tab / snapshot `runs`, `GET …/runs` and the activity feed. The row lives in ace-web's DB and nothing is written to Drive, so the run's files, public summary and direct links keep working (`get_run` and the snapshot by `run_id` are deliberately unfiltered; the snapshot reports `archived_run_ids` so the page can show an Unarchive banner). Filtering is applied AFTER the snapshot/card caches, so archiving shows on the next read with no Drive rebuild. `POST`/`DELETE …/runs/{run}/archive` need content-write; `GET …/opps/archived-runs` is registered before `/{slug}`.
 - **Run replay** (a mode of the Workbench's Phases screen, not a separate
   page): **Replay this run** is a STEP-THROUGH of a saved run, one beat at a
   time — entering a phase, starting a skill, finishing one. **→ / ←** step,
