@@ -8,6 +8,8 @@ from apps.workspaces.models import Workspace, WorkspaceMembership
 
 User = get_user_model()
 
+URL = "/api/w/ws1/opps/smallholder/runs/20261012-1549/archive"
+URL2 = "/api/w/ws1/opps/smallholder/runs/20261014-0859/archive"
 _RUNS = [
     {"run_id": "20261012-1549", "lifecycle_status": "complete"},
     {"run_id": "20261014-0859", "lifecycle_status": "complete"},
@@ -40,8 +42,8 @@ def _ids(resp):
 
 def test_archived_runs_leave_the_default_list_but_stay_listable(ctx):
     client, ws, _ = ctx
-    assert client.post("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive").status_code == 204
-    assert client.post("/api/w/ws1/opps/smallholder/runs/20261014-0859/archive").status_code == 204
+    assert client.post(URL).status_code == 204
+    assert client.post(URL2).status_code == 204
 
     assert _ids(client.get("/api/w/ws1/opps/smallholder/runs")) == ["20261015-1402"]
     assert client.get("/api/w/ws1/opps/smallholder/runs").json()["total"] == 1
@@ -54,29 +56,29 @@ def test_archived_runs_leave_the_default_list_but_stay_listable(ctx):
 def test_archive_is_idempotent_and_records_who(ctx):
     client, ws, user = ctx
     for _ in range(2):
-        assert client.post("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive").status_code == 204
+        assert client.post(URL).status_code == 204
     row = ArchivedRun.objects.get()
     assert (row.opp_slug, row.run_id, row.archived_by) == ("smallholder", "20261012-1549", user)
 
 
 def test_unarchive_restores_the_run_and_404s_when_not_archived(ctx):
     client, ws, _ = ctx
-    client.post("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive")
-    assert client.delete("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive").status_code == 204
+    client.post(URL)
+    assert client.delete(URL).status_code == 204
     assert len(_ids(client.get("/api/w/ws1/opps/smallholder/runs"))) == 3
-    assert client.delete("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive").status_code == 404
+    assert client.delete(URL).status_code == 404
 
 
 def test_archive_is_scoped_to_the_opp(ctx):
     client, ws, _ = ctx
-    client.post("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive")
+    client.post(URL)
     # Same run id under another opp is a different run.
     assert len(_ids(client.get("/api/w/ws1/opps/other/runs"))) == 3
 
 
 def test_archive_page_lists_across_opps(ctx):
     client, ws, user = ctx
-    client.post("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive")
+    client.post(URL)
     client.post("/api/w/ws1/opps/other/runs/20261014-0859/archive")
     body = client.get("/api/w/ws1/opps/archived-runs").json()
     assert {(i["opp_slug"], i["run_id"]) for i in body["items"]} == {
@@ -87,12 +89,12 @@ def test_archive_page_lists_across_opps(ctx):
 
 def test_viewer_cannot_archive(db, client):
     client, ws, _ = _client(db, client, role="viewer")
-    assert client.post("/api/w/ws1/opps/smallholder/runs/20261012-1549/archive").status_code == 403
+    assert client.post(URL).status_code == 403
     assert not ArchivedRun.objects.exists()
 
 
 def test_non_member_cannot_archive_or_list(db, client):
-    ws = Workspace.objects.create(
+    Workspace.objects.create(
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator@example.com"),
     )
