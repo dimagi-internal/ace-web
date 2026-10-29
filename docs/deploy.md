@@ -21,6 +21,9 @@ ALB on AWS ECS Fargate, reusing the shared connect-labs infrastructure
   storage. Sourced via the `REDIS_URL` secret (see below)
 - **Secrets:** AWS Secrets Manager under the `ace-web/` prefix
 - **Logs:** CloudWatch Logs group `/ecs/labs-jj-ace-web`, 30-day retention
+  (`RetentionInDays` on the stack's `LogGroup`). The CI deploy role cannot
+  change it (no `logs:PutRetentionPolicy`), so an edit to the log group is
+  applied by an admin with the stack command below, before the next CI deploy
 - **Auth:** email + password, Sign in with Google, Sign in with CommCare (Connect OAuth + PKCE), all behind one invite-only admission gate — see [auth.md](auth.md)
 - **Deploy:** GitHub Actions `.github/workflows/deploy-ace-web-labs.yml` (manual
   `workflow_dispatch` trigger)

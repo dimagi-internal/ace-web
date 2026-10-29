@@ -54,6 +54,13 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: /ecs/labs-jj-ace-web
+      # 30 days, like canopy-web and umami (only connect-labs' web/worker keep
+      # 731, for its HIPAA audit trail). Unset meant "never expire": ACE run
+      # content in exception text (PDD text, OCS transcripts, Connect/HQ
+      # responses) was kept forever. Changing this calls logs:PutRetentionPolicy,
+      # which the CI deploy role (github-actions-ace-web-deploy) does not hold —
+      # an admin applies a change to it (docs/deploy.md).
+      RetentionInDays: 30
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
