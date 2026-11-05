@@ -2156,7 +2156,7 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
 
     Before anything is forked, the owner is resolved in canopy
     (``run_dispatch.preflight_run_actor``): an owner canopy only knows as a
-    contact is confined to ask-only, so the run would be minted and never
+    contact is confined to read mode, so the run would be minted and never
     execute — that raises ``RunActorUnresolvable`` and creates nothing.
 
     The route spawns the headless turn driver
@@ -2207,7 +2207,7 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     nova_preflight(run_phases, phases)
 
     # Preflight: refuse to mint a run canopy will never execute. The turn is
-    # dispatched AS the session owner; a contact is confined to ask-only, so
+    # dispatched AS the session owner; a contact is confined to read mode, so
     # the run would sit `pending` forever behind a 202 (observed:
     # spark-facilitator/20261001-2208, canopy turn 2727e227). Checked BEFORE
     # the fork so no Drive run or Session is created.

@@ -33,7 +33,7 @@ class DispatchError(Exception):
 
 class RunActorUnresolvable(Exception):
     """canopy resolves the run's owner to a CONTACT, which canopy confines to
-    ask-only — a run started for them would be accepted and then never execute.
+    read mode — a run started for them would be accepted and then never execute.
 
     Observed: spark-facilitator/20261001-2208 (canopy turn 2727e227). ace@ was
     resolved as a contact, the ACE session refused to run, ace-web still
@@ -44,7 +44,7 @@ class RunActorUnresolvable(Exception):
         self.email = email
         super().__init__(
             f"canopy resolves {email} to a contact, not a user; canopy confines "
-            "a contact to ask-only, so a run started for them would never "
+            "a contact to read mode, so a run started for them would never "
             "execute. Give that identity a canopy user account (or start the "
             "run as a person who has one)."
         )
@@ -64,7 +64,7 @@ def preflight_run_actor(email: str) -> None:
 
     For RUN-STARTING actions only (seeded-run). Ordinary workbench chat for a
     contact — an external reviewer asking questions — is a different path and
-    is deliberately not gated: ask-only is exactly what a contact's chat is.
+    is deliberately not gated: read mode is exactly what a contact's chat is.
 
     No-op when run execution is off (the legacy subprocess path does not go
     through canopy). Raises ``RunActorUnresolvable`` for a contact and
