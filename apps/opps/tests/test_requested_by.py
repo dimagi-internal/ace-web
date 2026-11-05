@@ -7,7 +7,7 @@ Jonathan asked his own Claude Code session for a seeded run; it called
 * every record said ace@dimagi-ai.com started it and nothing said Jonathan
   asked — fixed by `requested_by` (attribution beside the truthful
   `initiated_by`);
-* canopy resolved ace@ as a CONTACT, confined the turn to ask-only, and the run
+* canopy resolved ace@ as a CONTACT, confined the turn to read mode, and the run
   sat at Phase 3 `pending` forever behind a 202 — fixed by resolving the
   owner's canopy principal BEFORE forking and refusing with 409.
 """
@@ -231,7 +231,7 @@ def test_seeded_run_409_when_canopy_resolves_the_owner_as_a_contact(agent, fake_
     problem = r.json()
     assert problem["extras"]["code"] == "run_actor_unresolvable"
     assert problem["extras"]["email"] == AGENT
-    assert AGENT in problem["detail"] and "ask-only" in problem["detail"]
+    assert AGENT in problem["detail"] and "read mode" in problem["detail"]
     assert "requested_by" not in fake_seed_env  # fork_opp never called
     assert fake_seed_env["_started"] == []
     assert not Session.objects.exists()
