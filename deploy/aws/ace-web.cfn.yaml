@@ -253,7 +253,7 @@ Resources:
             # path /canopy while canopy lived on this host; canopy.dimagi.com
             # answers ace-web's origin with CORS (no cookies — the Bearer token
             # this page minted is all a call carries), because ace-web is a
-            # connected site whose origin is labs.connect.dimagi.com.
+            # host site whose origin is labs.connect.dimagi.com.
             - Name: CANOPY_PUBLIC_BASE_URL
               Value: "https://canopy.dimagi.com"
             # Programmatic runs enqueue a session-targeted canopy Turn instead of
@@ -289,7 +289,7 @@ Resources:
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"
             # ace-web's Ed25519 private key. It signs a 60-second assertion
             # naming the person whose command we are carrying out; canopy holds
-            # only the public half, on its `ace-web` Connected site. Replaced
+            # only the public half, on its `ace-web` host site. Replaced
             # CANOPY_APP_CREDENTIAL, a shared secret that let ace-web mint a
             # token for anyone in its allowed domains — and created the canopy
             # user as a side effect.

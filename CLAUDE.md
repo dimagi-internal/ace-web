@@ -315,7 +315,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `/canopy/*` on labs; a vite proxy in dev), using the shared `canopy-ui/chat`
   kit. ace-web's own backend (`apps/canopy`) keeps exactly one
   responsibility: **acting as the person whose command it is carrying
-  out**. ace-web is a canopy **Connected site**: (1) it holds an Ed25519
+  out**. ace-web is a canopy **host site**: (1) it holds an Ed25519
   private key (`CANOPY_SIGNING_KEY`); canopy holds only the public half on
   its `ace-web` site row, so canopy's database contains nothing that can
   impersonate anyone; (2) server-side, `apps/canopy/client.act_as(email)`
@@ -352,7 +352,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   session UUID can't read that chat. `origin_key` is still ours and still
   required for LIST scoping.
   Ops + deploy prerequisites (undocumented failure modes if any is
-  missed): (1) the `ace-web` **Connected site** on canopy-web must carry our
+  missed): (1) the `ace-web` **host site** on canopy-web must carry our
   PUBLIC key, the `connect` workspace, `resolvable_domains` covering
   `ACE_ALLOWED_EMAIL_DOMAINS`, and agent `ace`; the private half lives in AWS
   Secrets Manager (`ace-web/canopy-signing-key`) with `CANOPY_SIGNING_KEY`'s
@@ -417,7 +417,7 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   host): the SDK's `site_document` view at `/api/canopy/site.json`, BESIDE the
   JWKS (canopy looks for it there), signed with the JWKS key — `iss` `ace-web`
   plus a `site` block (origins, `jwks_url`, issuer, MCP resource) and the
-  `PAGE_SCOPES` pages titled by `grant.PAGE_TITLES`. canopy's Connected sites
+  `PAGE_SCOPES` pages titled by `grant.PAGE_TITLES`. canopy's Host sites
   page fills the registration from it ("Fill from the site"); it never applies
   it on its own. NOT at `/.well-known/canopy-site.json` — that root path on
   labs.connect.dimagi.com is connect-labs'. Tests:

@@ -5838,7 +5838,7 @@
             }
           }
         },
-        "description": "The keys that verify ace-web's assertions about its own users.\n\nRegister this URL on canopy (Connected sites \u2192 \"Where your site publishes\nits keys\") instead of pasting a key: rotating then means publishing the new\nkey here and switching what we sign with, and canopy follows on its own.",
+        "description": "The keys that verify ace-web's assertions about its own users.\n\nRegister this URL on canopy (Host sites \u2192 \"Where your site publishes\nits keys\") instead of pasting a key: rotating then means publishing the new\nkey here and switching what we sign with, and canopy follows on its own.",
         "tags": [
           "canopy"
         ]

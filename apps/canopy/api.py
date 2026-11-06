@@ -48,7 +48,7 @@ workspace_router = Router(auth=session_auth, tags=["canopy"])
 
 def _enabled() -> bool:
     """Hosted chat is on when ace-web can vouch for its people: a canopy base
-    URL and the signing key canopy knows ace-web by (Connected sites)."""
+    URL and the signing key canopy knows ace-web by (Host sites)."""
     return bool(settings.CANOPY_BASE_URL) and bool(settings.CANOPY_SIGNING_KEY)
 
 
@@ -149,7 +149,7 @@ public_router = Router(auth=None, tags=["canopy"])
 def jwks(request: HttpRequest) -> dict:
     """The keys that verify ace-web's assertions about its own users.
 
-    Register this URL on canopy (Connected sites → "Where your site publishes
+    Register this URL on canopy (Host sites → "Where your site publishes
     its keys") instead of pasting a key: rotating then means publishing the new
     key here and switching what we sign with, and canopy follows on its own.
     """
