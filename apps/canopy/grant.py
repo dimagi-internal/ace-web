@@ -64,7 +64,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
 }
 
 #: What each page is called in ``site.json`` (``canopy_sdk.site``), which lists
-#: ``PAGE_SCOPES`` for canopy's Connected sites page to show. Reference only:
+#: ``PAGE_SCOPES`` for canopy's Host sites page to show. Reference only:
 #: canopy shows it, never enforces it.
 PAGE_TITLES: dict[str, str] = {
     "opp-workbench": "An opp run (Workbench)",

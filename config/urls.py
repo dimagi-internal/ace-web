@@ -40,7 +40,7 @@ urlpatterns = [
     # site.json (canopy_sdk.site): this site's own facts — origins, keys,
     # issuer, MCP server, pages — signed with the JWKS key, BESIDE the JWKS
     # (`/api/canopy/jwks` -> `/api/canopy/site.json`, canopy's
-    # host_grants.site_needs.document_url), so canopy's Connected sites page
+    # host_grants.site_needs.document_url), so canopy's Host sites page
     # fills the `ace-web` registration from it. Unauthenticated like the JWKS.
     # NOT also at /.well-known/canopy-site.json: that root path on
     # labs.connect.dimagi.com is connect-labs' (same origin).

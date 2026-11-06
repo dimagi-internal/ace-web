@@ -359,7 +359,7 @@ ACE_PUBLIC_BASE_URL = env("ACE_PUBLIC_BASE_URL",
 # --- canopy-web: hosted chat AND run execution -----------------------------------
 # Server-side base for outbound calls.
 CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="")
-# ace-web is a CONNECTED SITE in canopy (Connected sites, workspace `connect`).
+# ace-web is a HOST SITE in canopy (Host sites, workspace `connect`).
 # Everything it does there — a chat, a run, the background work that finishes a
 # run — is done AS the person whose command it is carrying out (their canopy
 # account, or their contact if they have none; apps/canopy/client.py::act_as).

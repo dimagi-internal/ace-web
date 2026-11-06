@@ -2211,7 +2211,7 @@ export interface paths {
          * Public keys for the assertions ace-web signs
          * @description The keys that verify ace-web's assertions about its own users.
          *
-         *     Register this URL on canopy (Connected sites → "Where your site publishes
+         *     Register this URL on canopy (Host sites → "Where your site publishes
          *     its keys") instead of pasting a key: rotating then means publishing the new
          *     key here and switching what we sign with, and canopy follows on its own.
          */

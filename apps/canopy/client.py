@@ -80,7 +80,7 @@ def _assertion(email: str) -> str:
     §0): ``iss`` = our site name, ``sub`` = the person, ``aud`` = canopy, 60s,
     single-use ``jti``, ``kid`` = our key's RFC 7638 thumbprint.
 
-    canopy verifies it against ace-web's PUBLIC key (Connected sites) and answers
+    canopy verifies it against ace-web's PUBLIC key (Host sites) and answers
     with either their existing canopy account or a contact. It holds nothing
     that could sign one, and it never creates an account.
     """

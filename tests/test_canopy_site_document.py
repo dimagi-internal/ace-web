@@ -1,6 +1,6 @@
 """ace-web's signed ``site.json`` (``canopy_sdk.site``), served beside its JWKS.
 
-canopy's Connected sites page fills the ``ace-web`` registration from this
+canopy's Host sites page fills the ``ace-web`` registration from this
 document ("Fill from the site's own documents") instead of an owner typing
 URLs. It is checked here the way canopy checks it: fetched beside the
 registered JWKS URL and verified with ``verify_site_document`` against the keys
