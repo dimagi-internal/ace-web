@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_USER: ace
       POSTGRES_PASSWORD: ace
@@ -8,7 +8,7 @@ services:
     ports:
       - "5434:5432"
     volumes:
-      - ace-pg-data:/var/lib/postgresql/data
+      - ace-pg18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ace"]
       interval: 5s
@@ -113,4 +113,4 @@ services:
     profiles: ["prod-parity"]
 
 volumes:
-  ace-pg-data:
+  ace-pg18-data:
