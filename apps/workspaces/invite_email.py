@@ -27,6 +27,19 @@ def accept_url(invite) -> str:
     return f"{base}/invite/{invite.token}/"
 
 
+def sign_in_options() -> str:
+    """The sentence naming the ways in — only the ones the invite page shows.
+
+    Google appears only when its OAuth client is configured; naming it
+    otherwise sends people looking for a button that isn't there.
+    """
+    from apps.auth import google_oauth
+
+    if google_oauth.is_configured():
+        return "You can sign in with Google or CommCare, or set a password."
+    return "You can set a password, or sign in with CommCare."
+
+
 def send_invite_email(invite, inviter) -> bool:
     """Email `invite`'s accept link to its address. True when handed to the
     mail backend; False when email is off or the send raised."""
@@ -40,7 +53,7 @@ def send_invite_email(invite, inviter) -> bool:
         f"\"{workspace_name}\" workspace on ACE as "
         f"{_ROLE_WORDS.get(invite.role, invite.role)}.\n\n"
         f"Accept the invite here:\n{accept_url(invite)}\n\n"
-        f"You can sign in with Google or CommCare, or set a password. "
+        f"{sign_in_options()} "
         f"Use {invite.email} — the invite is for that address only. "
         f"The link works until {expires}.\n\n"
         f"Questions? Reply to this email to reach {inviter_name}.\n"
