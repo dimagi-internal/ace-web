@@ -56,6 +56,26 @@ def test_inviting_emails_the_accept_link(client, ws, email_on):
     assert f"https://labs.example.com/ace/invite/{body['token']}/" in msg.body
 
 
+@pytest.mark.parametrize(
+    "client_id, offers_google",
+    [("", False), ("google-client-id", True)],
+)
+def test_invite_email_offers_google_only_when_it_is_configured(
+    client, ws, email_on, settings, client_id, offers_google,
+):
+    # The invite page hides the Google button when its OAuth client is unset;
+    # the email must not send people looking for it (Spark, 2026-11-09).
+    settings.GOOGLE_OAUTH_CLIENT_ID = client_id
+    settings.GOOGLE_OAUTH_CLIENT_SECRET = "secret" if client_id else ""
+    workspace, owner = ws
+    _invite(_as(client, owner), workspace)
+
+    body = mail.outbox[0].body
+    assert ("Google" in body) is offers_google
+    assert "set a password" in body
+    assert "CommCare" in body
+
+
 def test_invite_still_succeeds_when_email_is_off(client, ws, settings):
     settings.ACE_EMAIL_ENABLED = False
     workspace, owner = ws

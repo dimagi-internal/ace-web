@@ -225,6 +225,10 @@ Resources:
             # labs-jj-email-events SNS topic via the configuration set.
             - Name: ACE_EMAIL_ENABLED
               Value: "true"
+            # "Forgot your password?" on the sign-in page. Rides the SES mail
+            # above; docs/auth.md § Password reset email.
+            - Name: ACE_PASSWORD_RESET_ENABLED
+              Value: "true"
             - Name: ACE_SES_CONFIGURATION_SET
               Value: "labs-jj-email"
             - Name: DEFAULT_FROM_EMAIL

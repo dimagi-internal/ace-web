@@ -7,8 +7,8 @@ Design: `docs/specs/2026-10-08-normal-login-design.md`. Admission rule:
 |---|---|---|
 | Email + password | Yes | Users get a password from an invite or from Django admin |
 | Sign in with Connect | Yes (unchanged) | existing `CONNECT_OAUTH_*` secrets |
-| Sign in with Google | **No — button hidden** | Steps 1–3 below |
-| Password reset by email | **No — routes 404** | See "Password reset email" below |
+| Sign in with Google | **No — button hidden** (the invite email then leaves Google out too) | Steps 1–3 below |
+| Password reset by email | Yes on labs (`ACE_PASSWORD_RESET_ENABLED=true` in the task definition) | See "Password reset email" below |
 
 ## Google sign-in (one console step, then secrets)
 
@@ -55,11 +55,13 @@ invite — the settings page then shows the link to copy instead.
 
 ## Password reset email
 
-Reset is still behind `ACE_PASSWORD_RESET_ENABLED` (default false; an admin can
-set a password in Django admin, and signed-in users can change theirs at
-`/auth/password/`). Outbound email now exists, so turning it on is: set
-`ACE_PASSWORD_RESET_ENABLED=True` in the task definition, deploy, and test one
-reset to a mailbox you own before telling anyone. (The older `EMAIL_URL` SMTP
+Reset is behind `ACE_PASSWORD_RESET_ENABLED` (code default false, so local
+setups without mail stay off). **Labs turns it on** in
+`deploy/aws/ace-web.cfn.yaml`, riding the SES mail above: the sign-in page shows
+"Forgot your password?", and the email goes only to an active account that
+already has a password and would still be admitted (`AdmittedPasswordResetForm`).
+An account that came in through Connect or Google has no password to reset;
+it signs in that way and sets one at `/auth/password/`. (The older `EMAIL_URL` SMTP
 path still works for local setups but is not used on labs.)
 
 ## Giving an agent (hal@, ada@) a token without HQ
