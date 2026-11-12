@@ -7,10 +7,25 @@ Design: `docs/specs/2026-10-08-normal-login-design.md`. Admission rule:
 |---|---|---|
 | Email + password | Yes | Users get a password from an invite or from Django admin |
 | Sign in with Connect | Yes (unchanged) | existing `CONNECT_OAUTH_*` secrets |
-| Sign in with Google | **No — button hidden** (the invite email then leaves Google out too) | Steps 1–3 below |
+| Sign in with Google | Yes on labs — reuses canopy-web's Google OAuth client | The redirect URI below registered on that client |
 | Password reset by email | Yes on labs (`ACE_PASSWORD_RESET_ENABLED=true` in the task definition) | See "Password reset email" below |
 
-## Google sign-in (one console step, then secrets)
+## Google sign-in
+
+**Labs reuses canopy-web's OAuth client** (GCP project `270508200508`, client
+`270508200508-osh2en6m7u25j015qtempgn3sdgoi00c`; consent screen **External**,
+publishing status **In production**, so any Google account can authenticate).
+`deploy/aws/ace-web.cfn.yaml` reads canopy-web's secrets
+`canopy-web/google-oauth-client-id` and `canopy-web/google-oauth-client-secret`;
+the execution role's `canopy-web/*` read grant already covers them. Who may
+actually sign in is still decided by `apps/auth/identity.py` (allowed domains,
+invites, memberships), not by Google.
+
+The one console requirement: that client's **Authorized redirect URIs** must
+include `https://labs.connect.dimagi.com/ace/auth/google/callback/`. Without it,
+Google shows `redirect_uri_mismatch` after the button is clicked.
+
+### Setting up a separate client instead (e.g. another deployment)
 
 1. **Google Cloud Console → APIs & Services → Credentials → Create OAuth client
    ID → Web application**, in a Dimagi-owned project. Authorized redirect URI:
