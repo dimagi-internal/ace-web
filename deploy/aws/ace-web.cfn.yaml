@@ -307,6 +307,16 @@ Resources:
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-database-url-5KLKYs"
             - Name: DJANGO_SECRET_KEY
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"
+            # Google sign-in reuses canopy-web's OAuth client (GCP project
+            # 270508200508, consent screen External + In production), so a
+            # partner's own Google account can sign in. Admission is still by
+            # invite/membership (apps/auth/identity.py). The client must list
+            # https://labs.connect.dimagi.com/ace/auth/google/callback/ as an
+            # authorized redirect URI. See docs/auth.md.
+            - Name: GOOGLE_OAUTH_CLIENT_ID
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:canopy-web/google-oauth-client-id-19kNtL"
+            - Name: GOOGLE_OAUTH_CLIENT_SECRET
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:canopy-web/google-oauth-client-secret-Gqi4wn"
             - Name: OP_SERVICE_ACCOUNT_TOKEN
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-op-service-account-token-aW4N8Y"
             - Name: REDIS_URL
