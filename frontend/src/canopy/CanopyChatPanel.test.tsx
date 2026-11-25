@@ -194,6 +194,18 @@ describe("CanopyChatPanel", () => {
   it("calls the kit's stopChat when onStop fires", async () => {
     mockSocket({
       state: baseState({
+        // canopy-ui offers Stop only to a viewer who holds a draft (one who
+        // can send); a read-only viewer cannot stop the turn either.
+        active_draft: {
+          id: "d1",
+          slot: "next",
+          status: "open",
+          body: "",
+          version: 1,
+          last_editor: 42,
+          last_edit_at: "2026-07-25T00:00:00Z",
+          author_id: 42,
+        },
         messages: [
           {
             id: "m1",
